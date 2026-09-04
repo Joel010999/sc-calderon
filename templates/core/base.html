@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Éxodo Viajes y Turismo — Córdoba ↔ Jujuy</title>
+  <meta name="description" content="Reservá tu viaje en colectivo entre Córdoba y Jujuy con Éxodo Viajes y Turismo. Wi-Fi con Starlink durante todo el trayecto.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="preload" href="{% static 'assets/hero-bg.jpg' %}" as="image">
+  <link rel="preload" href="{% static 'assets/hero-interior.jpg' %}" as="image">
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="site-header">
+    <a href="#inicio" class="brand-mark" aria-label="Éxodo Viajes y Turismo">
+      <span class="brand-mark__flag"></span>
+      <div>
+        <p class="brand-mark__name">ÉXODO</p>
+        <p class="brand-mark__sub">Viajes y Turismo</p>
+      </div>
+    </a>
+
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="nav-links">
+      <span></span>
+      <span></span>
+    </button>
+
+    <nav class="site-nav" id="nav-links">
+      <a href="#viajes">Viajes</a>
+      <a href="#como-funciona">Cómo funciona</a>
+      <a href="#preguntas">Preguntas frecuentes</a>
+      <button class="button button--primary nav-cta" type="button" data-scroll-search="true">
+        Reservar
+      </button>
+    </nav>
+  </header>
+
+  <!-- ═══════════════════ MARQUEE ═══════════════════ -->
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee__inner">
+      <div class="marquee__content">
+        <span>VIAJÁ CÓMODO. VIAJÁ CONECTADO.</span>
+        <span class="marquee__dot">•</span>
+        <span>CÓRDOBA ↔ JUJUY</span>
+        <span class="marquee__dot">•</span>
+        <span>WI-FI A BORDO CON STARLINK</span>
+        <span class="marquee__dot">•</span>
+        <span>NUEVAS UNIDADES</span>
+        <span class="marquee__dot">•</span>
+      </div>
+      <div class="marquee__content" aria-hidden="true">
+        <span>VIAJÁ CÓMODO. VIAJÁ CONECTADO.</span>
+        <span class="marquee__dot">•</span>
+        <span>CÓRDOBA ↔ JUJUY</span>
+        <span class="marquee__dot">•</span>
+        <span>WI-FI A BORDO CON STARLINK</span>
+        <span class="marquee__dot">•</span>
+        <span>NUEVAS UNIDADES</span>
+        <span class="marquee__dot">•</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-shell">
+    <main>
+
+      <!-- ═══════════════════ HERO ═══════════════════ -->
+      <section class="hero" id="inicio">
+        <div class="hero__copy">
+          <div class="hero__eyebrow">
+            <span>Éxodo</span>
+            <span class="hero__eyebrow-dot"></span>
+            <span>Córdoba ↔ Jujuy</span>
+          </div>
+
+          <h1>CÓRDOBA<br><span class="hero__arrow">↔</span><br>JUJUY</h1>
+          <p class="hero__subtitle">Viajá cómodo. Viajá conectado.</p>
+          <p class="hero__lead">
+            Elegí tu fecha, consultá disponibilidad y avanzá con tu reserva en minutos.
+          </p>
+
+          <div class="hero__trust">
+            <div class="trust-pill">
+              <svg class="trust-pill__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L2 7 L12 12 L22 7 Z"/><path d="M2 17 L12 22 L22 17"/><path d="M2 12 L12 17 L22 12"/></svg>
+              <div>
+                <strong>Wi-Fi durante el viaje</strong>
+                <span>Conectividad con Starlink</span>
+              </div>
+            </div>
+            <div class="trust-pill">
+              <svg class="trust-pill__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              <div>
+                <strong>Servicio directo</strong>
+                <span>Córdoba ↔ Jujuy sin escalas</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SEARCH CARD -->
+        <aside class="search-card" aria-labelledby="search-title">
+          <div class="search-card__top">
+            <p class="search-card__eyebrow">Buscá tu viaje</p>
+            <h2 id="search-title">¿A dónde viajás?</h2>
+          </div>
+
+          <form id="search-form" class="search-form">
+            <div class="search-form__route">
+              <label>
+                <span>Origen</span>
+                <select id="origin" name="origin">
+                  <option value="Jujuy">Jujuy</option>
+                  <option value="Córdoba">Córdoba</option>
+                </select>
+              </label>
+
+              <button class="swap-button" type="button" id="swap-route" aria-label="Invertir origen y destino">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 3v14M5 17l-3-3M5 17l3-3M15 17V3M15 3l-3 3M15 3l3 3"/>
+                </svg>
+              </button>
+
+              <label>
+                <span>Destino</span>
+                <select id="destination" name="destination">
+                  <option value="Córdoba">Córdoba</option>
+                  <option value="Jujuy">Jujuy</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="search-form__details">
+              <label>
+                <span>Fecha</span>
+                <input id="travel-date" name="date" type="date">
+              </label>
+
+              <label>
+                <span>Pasajeros</span>
+                <select id="passengers" name="passengers">
+                  <option value="1">1 pasajero</option>
+                  <option value="2">2 pasajeros</option>
+                  <option value="3">3 pasajeros</option>
+                  <option value="4">4 pasajeros</option>
+                </select>
+              </label>
+            </div>
+
+            <button class="button button--primary button--block" type="submit">
+              Buscar viaje
+            </button>
+          </form>
+
+          <div class="search-card__route-info">
+            <div class="search-card__route-dot"></div>
+            <p><strong>Jujuy → Córdoba</strong><br>
+            <span>Casa de Turismo de Jujuy → Terminal de Córdoba</span></p>
+          </div>
+        </aside>
+      </section>
+
+      <!-- ═══════════════════ QUICK STRIP ═══════════════════ -->
+      <section class="quick-strip reveal" aria-label="Motivos para elegir Éxodo">
+        <div class="quick-strip__item">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c-3 0-8 4-8 10s5 10 8 10 8-4 8-10S15 2 12 2Z"/><path d="M2 12h20"/></svg>
+          <div>
+            <span>Conectividad</span>
+            <strong>Starlink durante el trayecto</strong>
+          </div>
+        </div>
+        <div class="quick-strip__item">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 12l4-4M3 12l4 4M21 12l-4-4M21 12l-4 4"/></svg>
+          <div>
+            <span>Ruta enfocada</span>
+            <strong>Córdoba ↔ Jujuy</strong>
+          </div>
+        </div>
+        <div class="quick-strip__item">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <div>
+            <span>Canal directo</span>
+            <strong>Continuación por WhatsApp</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ BOOKING FLOW ═══════════════════ -->
+      <section class="booking-flow" id="viajes">
+        <div class="section-head reveal">
+          <p class="section-head__tag">Flujo de reserva</p>
+          <h2>Buscá, elegí y reservá tu viaje.</h2>
+        </div>
+
+        <div class="screen-tabs" aria-label="Pantallas del flujo">
+          <button class="screen-tab is-active" type="button" data-screen-target="results">Resultados</button>
+          <button class="screen-tab" type="button" data-screen-target="detail">Detalle</button>
+          <button class="screen-tab" type="button" data-screen-target="passengers">Pasajeros</button>
+          <button class="screen-tab" type="button" data-screen-target="confirmation">Confirmación</button>
+        </div>
+
+        <!-- RESULTS -->
+        <div class="flow-screen is-active" id="screen-results">
+          <div class="flow-panel">
+            <div class="flow-panel__header">
+              <div>
+                <p class="flow-panel__eyebrow">Resultados de búsqueda</p>
+                <h3 id="results-title">Jujuy → Córdoba</h3>
+              </div>
+              <div class="summary-badge" id="search-summary">Jueves 20 de agosto de 2026 · 1 pasajero</div>
+            </div>
+            <div class="result-list" id="results-list"></div>
+          </div>
+        </div>
+
+        <!-- DETAIL -->
+        <div class="flow-screen" id="screen-detail">
+          <div class="flow-panel">
+            <div class="flow-panel__header">
+              <div>
+                <p class="flow-panel__eyebrow">Detalle del viaje</p>
+                <h3>Tu viaje seleccionado</h3>
+              </div>
+              <button class="button button--ghost" type="button" data-go-screen="results">
+                ← Volver
+              </button>
+            </div>
+
+            <div class="detail-card" id="detail-card"></div>
+
+            <div class="detail-actions">
+              <button class="button button--primary" type="button" data-go-screen="passengers">
+                Continuar reserva
+              </button>
+              <a class="button button--ghost" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20quiero%20reservar%20un%20viaje." target="_blank" rel="noreferrer">
+                Reservar por WhatsApp
+              </a>
+            </div>
+            <p class="detail-wa-hint">¿Preferís reservar por WhatsApp? <a href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo" target="_blank" rel="noreferrer">Hablar con Éxodo →</a></p>
+          </div>
+        </div>
+
+        <!-- PASSENGERS -->
+        <div class="flow-screen" id="screen-passengers">
+          <div class="flow-panel">
+            <div class="flow-panel__header">
+              <div>
+                <p class="flow-panel__eyebrow">Datos del pasajero</p>
+                <h3>Completá tus datos</h3>
+              </div>
+              <button class="button button--ghost" type="button" data-go-screen="detail">
+                ← Volver
+              </button>
+            </div>
+
+            <form class="passenger-form" id="passenger-form">
+              <div class="form-grid">
+                <label>
+                  <span>Nombre y apellido</span>
+                  <input type="text" name="fullName" placeholder="Ej: María López" required>
+                </label>
+                <label>
+                  <span>DNI</span>
+                  <input type="text" name="dni" inputmode="numeric" placeholder="Ej: 32123456" required>
+                </label>
+                <label>
+                  <span>Teléfono</span>
+                  <input type="tel" name="phone" placeholder="Ej: 388 123 4567" required>
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input type="email" name="email" placeholder="Ej: maria@email.com" required>
+                </label>
+              </div>
+
+              <div class="passenger-counter">
+                <div>
+                  <p>Cantidad de pasajeros</p>
+                  <strong id="passenger-count-label">1 pasajero</strong>
+                </div>
+                <button class="button button--ghost" type="button" id="add-passenger">
+                  + Agregar pasajero
+                </button>
+              </div>
+
+              <div id="extra-passengers" class="extra-passengers"></div>
+
+              <div class="form-submit">
+                <button class="button button--primary button--block" type="submit">Continuar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- CONFIRMATION -->
+        <div class="flow-screen" id="screen-confirmation">
+          <div class="flow-panel flow-panel--confirmation">
+            <div class="confirmation-card">
+              <div class="confirmation-card__icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <p class="flow-panel__eyebrow">Reserva iniciada</p>
+              <h3>Tu solicitud fue registrada correctamente.</h3>
+              <p class="confirmation-card__desc">Un representante de Éxodo se comunicará para confirmar tu reserva.</p>
+
+              <div class="confirmation-summary" id="confirmation-summary"></div>
+
+              <div class="detail-actions detail-actions--stack">
+                <a class="button button--primary" id="whatsapp-link" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20quiero%20continuar%20con%20mi%20reserva." target="_blank" rel="noreferrer">
+                  Continuar por WhatsApp
+                </a>
+                <button class="button button--ghost" type="button" data-reset-flow="true">
+                  Volver al inicio
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ CONNECTIVITY ═══════════════════ -->
+      <section class="connectivity-section reveal">
+        <div class="connectivity-section__content">
+          <p class="section-head__tag" style="color: var(--accent)">Conectividad</p>
+          <h2>Viajá conectado.</h2>
+          <p>Wi-Fi durante todo el viaje. Conectividad mediante Starlink para que tu trayecto sea más cómodo y productivo.</p>
+        </div>
+        <div class="connectivity-section__visual">
+          <div class="connectivity-icon">
+            <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
+          </div>
+          <p class="connectivity-label">Starlink a bordo</p>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ ROUTES ═══════════════════ -->
+      <section class="routes reveal">
+        <div class="section-head">
+          <p class="section-head__tag">Rutas</p>
+          <h2>Dos rutas, una conexión directa.</h2>
+        </div>
+
+        <div class="routes-grid">
+          <article class="route-card">
+            <p class="route-card__label">Córdoba → Jujuy</p>
+            <div class="route-card__line"></div>
+            <div class="route-card__points">
+              <div class="route-card__point">
+                <span class="route-card__dot"></span>
+                <div>
+                  <strong>Terminal de Córdoba</strong>
+                  <span>Salida</span>
+                </div>
+              </div>
+              <div class="route-card__point">
+                <span class="route-card__dot route-card__dot--end"></span>
+                <div>
+                  <strong>Casa de Turismo de Jujuy</strong>
+                  <span>Llegada</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="route-card route-card--alt">
+            <p class="route-card__label">Jujuy → Córdoba</p>
+            <div class="route-card__line"></div>
+            <div class="route-card__points">
+              <div class="route-card__point">
+                <span class="route-card__dot"></span>
+                <div>
+                  <strong>Casa de Turismo de Jujuy</strong>
+                  <span>Salida</span>
+                </div>
+              </div>
+              <div class="route-card__point">
+                <span class="route-card__dot route-card__dot--end"></span>
+                <div>
+                  <strong>Terminal de Córdoba</strong>
+                  <span>Llegada</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ BENEFITS ═══════════════════ -->
+      <section class="benefits reveal" id="como-funciona">
+        <div class="section-head">
+          <p class="section-head__tag">Por qué Éxodo</p>
+          <h2>Todo lo que necesitás para viajar tranquilo.</h2>
+        </div>
+
+        <div class="benefits-grid">
+          <article>
+            <span class="benefit-num">01</span>
+            <h3>Wi-Fi a bordo</h3>
+            <p>Conectividad mediante Starlink.</p>
+          </article>
+          <article>
+            <span class="benefit-num">02</span>
+            <h3>Córdoba ↔ Jujuy</h3>
+            <p>Conexión directa entre ambos destinos.</p>
+          </article>
+          <article>
+            <span class="benefit-num">03</span>
+            <h3>Reserva simple</h3>
+            <p>Encontrá tu viaje y avanzá fácilmente.</p>
+          </article>
+          <article>
+            <span class="benefit-num">04</span>
+            <h3>Atención por WhatsApp</h3>
+            <p>Canal directo para consultas y asistencia.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ HOW IT WORKS ═══════════════════ -->
+      <section class="how-it-works reveal">
+        <div class="section-head">
+          <p class="section-head__tag">Cómo funciona</p>
+          <h2>Reservá en 3 pasos.</h2>
+        </div>
+
+        <div class="steps-grid">
+          <div class="step-card">
+            <span class="step-num">01</span>
+            <h3>Buscá</h3>
+            <p>Elegí origen, destino y fecha.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">02</span>
+            <h3>Elegí</h3>
+            <p>Encontrá el viaje que necesitás.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">03</span>
+            <h3>Reservá</h3>
+            <p>Completá tus datos y avanzá con la reserva.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ FAQ ═══════════════════ -->
+      <section class="faq reveal" id="preguntas">
+        <div class="section-head">
+          <p class="section-head__tag">Preguntas frecuentes</p>
+          <h2>Respuestas rápidas.</h2>
+        </div>
+
+        <div class="faq-list">
+          <details>
+            <summary>¿Desde dónde sale el viaje en Córdoba?</summary>
+            <p>Terminal de Córdoba.</p>
+          </details>
+          <details>
+            <summary>¿Desde dónde sale en Jujuy?</summary>
+            <p>Casa de Turismo de Jujuy.</p>
+          </details>
+          <details>
+            <summary>¿Hay Wi-Fi durante el viaje?</summary>
+            <p>Sí, el servicio cuenta con conectividad mediante Starlink.</p>
+          </details>
+          <details>
+            <summary>¿Cómo puedo reservar?</summary>
+            <p>Podés comenzar la reserva desde la plataforma o comunicarte por WhatsApp.</p>
+          </details>
+          <details>
+            <summary>¿Cómo puedo comunicarme con Éxodo?</summary>
+            <p>Por WhatsApp.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ FINAL CTA ═══════════════════ -->
+      <section class="final-cta reveal">
+        <h2>Tu próximo viaje empieza acá.</h2>
+        <p>Córdoba ↔ Jujuy — Buscá tu viaje y reservá de forma simple.</p>
+        <div class="final-cta__buttons">
+          <button class="button button--primary" type="button" data-scroll-search="true">
+            Buscar viaje
+          </button>
+          <a class="button button--ghost-light" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20quiero%20información%20sobre%20los%20viajes." target="_blank" rel="noreferrer">
+            Hablar por WhatsApp
+          </a>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ═══════════════════ FOOTER ═══════════════════ -->
+    <footer class="site-footer">
+      <div class="site-footer__brand">
+        <strong>ÉXODO</strong> <span>Viajes y Turismo</span>
+      </div>
+      <p>Prototipo comercial desarrollado por <strong>RenderByte</strong>.</p>
+      <p class="site-footer__year">2026</p>
+    </footer>
+
+  </div>
+
+  <!-- WhatsApp Float -->
+  <a class="whatsapp-float" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20tengo%20una%20consulta%20sobre%20los%20viajes." target="_blank" rel="noreferrer" aria-label="Contactar por WhatsApp">
+    <svg class="whatsapp-float__icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+    <span>¿Tenés dudas? Hablá con nosotros</span>
+  </a>
+
+  <!-- Mobile Sticky CTA -->
+  <div class="mobile-sticky">
+    <button class="button button--primary button--block" type="button" data-scroll-search="true">
+      Reservar ahora
+    </button>
+  </div>
+
+  <script src="{% static 'js/script.js' %}" defer></script>
+</body>
+</html>
