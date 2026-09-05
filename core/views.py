@@ -24,3 +24,20 @@ def checkout(request):
     """
     # TODO: Implementar checkout (invitado/logueado)
     return render(request, 'core/base.html') # Usando base.html temporalmente
+
+from django.http import JsonResponse
+from django.db import connection
+from django.db.utils import OperationalError
+
+def health_check(request):
+    db_ok = False
+    try:
+        connection.ensure_connection()
+        db_ok = True
+    except Exception:
+        pass
+    
+    if db_ok:
+        return JsonResponse({'status': 'ok', 'database': 'ok'}, status=200)
+    else:
+        return JsonResponse({'status': 'error', 'database': 'error'}, status=503)

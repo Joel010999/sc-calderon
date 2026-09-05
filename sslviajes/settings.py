@@ -21,12 +21,39 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-sip5y2wzki)-ou%gr^5ucgt#%f6phakln&(d+^x_8)blk^n%4a'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-sip5y2wzki)-ou%gr^5ucgt#%f6phakln&(d+^x_8)blk^n%4a')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [host.strip() for host in os.getenv('ALLOWED_HOSTS', '').split(',') if host.strip()]
+if not ALLOWED_HOSTS and DEBUG:
+    ALLOWED_HOSTS = ['*']
+
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+            },
+        },
+        'root': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+        },
+    }
+
+LOGIN_URL = '/panel/login/'
 
 
 # Application definition
@@ -40,6 +67,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'django_htmx',
+    'panel',
 ]
 
 MIDDLEWARE = [
@@ -124,8 +152,5 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
