@@ -40,5 +40,5 @@ def health_check(request):
                 return JsonResponse({'status': 'ok', 'database': 'ok'}, status=200)
     except Exception:
         logger.exception("Database health check failed")
-    
+
     return JsonResponse({'status': 'error', 'database': 'error'}, status=503)

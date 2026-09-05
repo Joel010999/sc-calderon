@@ -6,12 +6,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         roles = ['Administrador', 'Vendedor']
-        
+
         for role_name in roles:
             group, created = Group.objects.get_or_create(name=role_name)
             if created:
                 self.stdout.write(self.style.SUCCESS(f'Rol creado: {role_name}'))
             else:
                 self.stdout.write(self.style.WARNING(f'El rol ya existe: {role_name}'))
-        
+
         self.stdout.write(self.style.SUCCESS('Configuración de roles finalizada.'))

@@ -10,8 +10,8 @@ def is_panel_user(user):
     if not user.is_authenticated:
         return False
     return (
-        user.is_superuser or 
-        user.is_staff or 
+        user.is_superuser or
+        user.is_staff or
         user.groups.filter(name__in=['Administrador', 'Vendedor']).exists()
     )
 
@@ -35,7 +35,7 @@ def panel_login(request):
             messages.error(request, "Credenciales inválidas.")
     else:
         form = AuthenticationForm()
-    
+
     return render(request, 'panel/login.html', {'form': form})
 
 @require_POST
