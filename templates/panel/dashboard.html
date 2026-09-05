@@ -1,138 +1,106 @@
 {% extends 'panel/base.html' %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <h1 class="text-3xl font-bold text-gray-900 mb-8">Dashboard General</h1>
+<div class="container">
+    <h1 class="dashboard-title">Dashboard General</h1>
 
-    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 mb-8">
-        <!-- Tarjeta de ejemplo -->
-        <div class="bg-white overflow-hidden shadow rounded-lg">
-            <div class="p-5">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 bg-blue-500 rounded-md p-3">
-                        <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                        </svg>
-                    </div>
-                    <div class="ml-5 w-0 flex-1">
-                        <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">
-                                Ventas Hoy
-                            </dt>
-                            <dd>
-                                <div class="text-lg font-medium text-gray-900">
-                                    0
-                                </div>
-                            </dd>
-                        </dl>
-                    </div>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-body">
+                <div class="stat-icon stat-icon-blue">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Ventas Hoy</div>
+                    <div class="stat-value">0</div>
                 </div>
             </div>
-            <div class="bg-gray-50 px-5 py-3">
-                <div class="text-sm">
-                    <a href="#" class="font-medium text-blue-700 hover:text-blue-900"> Ver todas </a>
-                </div>
+            <div class="stat-footer">
+                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
             </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow rounded-lg">
-            <div class="p-5">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 bg-green-500 rounded-md p-3">
-                        <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                        </svg>
-                    </div>
-                    <div class="ml-5 w-0 flex-1">
-                        <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">
-                                Reservas Pendientes
-                            </dt>
-                            <dd>
-                                <div class="text-lg font-medium text-gray-900">
-                                    0
-                                </div>
-                            </dd>
-                        </dl>
-                    </div>
+        <div class="stat-card">
+            <div class="stat-body">
+                <div class="stat-icon stat-icon-green">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Reservas Pendientes</div>
+                    <div class="stat-value">0</div>
                 </div>
             </div>
-            <div class="bg-gray-50 px-5 py-3">
-                <div class="text-sm">
-                    <a href="#" class="font-medium text-blue-700 hover:text-blue-900"> Ir a reservas </a>
-                </div>
+            <div class="stat-footer">
+                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
             </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow rounded-lg">
-            <div class="p-5">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 bg-yellow-500 rounded-md p-3">
-                        <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div>
-                    <div class="ml-5 w-0 flex-1">
-                        <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">
-                                Próximas Salidas
-                            </dt>
-                            <dd>
-                                <div class="text-lg font-medium text-gray-900">
-                                    0
-                                </div>
-                            </dd>
-                        </dl>
-                    </div>
+        <div class="stat-card">
+            <div class="stat-body">
+                <div class="stat-icon stat-icon-yellow">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Próximas Salidas</div>
+                    <div class="stat-value">0</div>
                 </div>
             </div>
-            <div class="bg-gray-50 px-5 py-3">
-                <div class="text-sm">
-                    <a href="#" class="font-medium text-blue-700 hover:text-blue-900"> Ver salidas </a>
-                </div>
+            <div class="stat-footer">
+                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
             </div>
         </div>
     </div>
 
-    <!-- Módulos (Accesos directos) -->
-    <h2 class="text-2xl font-bold text-gray-900 mb-4">Módulos del Sistema</h2>
-    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <a href="#" class="block p-4 border rounded-lg shadow hover:bg-gray-50 text-center">
-            <div class="text-blue-600 mb-2">
-                <svg class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+    <h2 class="section-title">Módulos del Sistema</h2>
+    <div class="modules-grid">
+        <div class="module-card disabled">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
             </div>
-            <span class="font-medium text-gray-700">Ventas</span>
-        </a>
-        <a href="#" class="block p-4 border rounded-lg shadow hover:bg-gray-50 text-center">
-            <div class="text-blue-600 mb-2">
-                <svg class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <span class="module-name">Ventas</span>
+            <span class="module-soon">Próximamente</span>
+        </div>
+        <div class="module-card disabled">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             </div>
-            <span class="font-medium text-gray-700">Reservas</span>
-        </a>
-        <a href="#" class="block p-4 border rounded-lg shadow hover:bg-gray-50 text-center">
-            <div class="text-blue-600 mb-2">
-                <svg class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+            <span class="module-name">Reservas</span>
+            <span class="module-soon">Próximamente</span>
+        </div>
+        <div class="module-card disabled">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
             </div>
-            <span class="font-medium text-gray-700">Salidas</span>
-        </a>
-        <a href="#" class="block p-4 border rounded-lg shadow hover:bg-gray-50 text-center">
-            <div class="text-blue-600 mb-2">
-                <svg class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            <span class="module-name">Salidas</span>
+            <span class="module-soon">Próximamente</span>
+        </div>
+        <div class="module-card disabled">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
             </div>
-            <span class="font-medium text-gray-700">Pagos</span>
-        </a>
-        <a href="#" class="block p-4 border rounded-lg shadow hover:bg-gray-50 text-center">
-            <div class="text-blue-600 mb-2">
-                <svg class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+            <span class="module-name">Pagos</span>
+            <span class="module-soon">Próximamente</span>
+        </div>
+        <div class="module-card disabled">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
             </div>
-            <span class="font-medium text-gray-700">Colectivos</span>
-        </a>
-        <a href="#" class="block p-4 border rounded-lg shadow hover:bg-gray-50 text-center">
-            <div class="text-blue-600 mb-2">
-                <svg class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            <span class="module-name">Colectivos</span>
+            <span class="module-soon">Próximamente</span>
+        </div>
+        <div class="module-card disabled">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
             </div>
-            <span class="font-medium text-gray-700">Clientes</span>
-        </a>
+            <span class="module-name">Clientes</span>
+            <span class="module-soon">Próximamente</span>
+        </div>
     </div>
 </div>
 {% endblock %}
