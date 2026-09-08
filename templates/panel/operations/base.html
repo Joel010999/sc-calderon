@@ -1,0 +1,17 @@
+{% extends 'panel/base.html' %}
+{% block content %}
+<div class="container operations">
+    <nav class="ops-nav" aria-label="Navegación del panel">
+        <a href="{% url 'panel:dashboard' %}">Dashboard</a>
+        <a href="{% url 'panel:operations' %}">Operaciones</a>
+        <a href="{% url 'panel:routes' %}">Recorridos</a>
+        <a href="{% url 'panel:buses' %}">Colectivos</a>
+    </nav>
+    <header class="ops-header">
+        <div><p class="ops-eyebrow">Configuración operativa</p><h1>{{ title }}</h1></div>
+        {% block actions %}{% endblock %}
+    </header>
+    {% if not can_manage %}<p class="read-only">Acceso de consulta. Solo administradores pueden modificar colectivos y butacas.</p>{% endif %}
+    {% block operations_content %}{% endblock %}
+</div>
+{% endblock %}
