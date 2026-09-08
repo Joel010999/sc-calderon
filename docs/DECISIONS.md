@@ -37,6 +37,18 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - Activar y desactivar son acciones POST con CSRF e idempotentes. No se ofrece eliminación física de colectivos ni butacas.
 - Cada cambio efectivo de colectivo o butaca registra actor, acción, entidad, descripción, valores anteriores y posteriores y fecha en la misma transacción. No se registran eventos para operaciones fallidas ni cambios sin efecto. La auditoría no tiene interfaz de edición o eliminación.
 
+### Viajes programados, horarios y tarifas en el panel
+
+- Superusuarios y miembros de `Administrador` pueden crear viajes y gestionar tarifas. Vendedores y usuarios `is_staff` sin ese grupo solo consultan, salvo que sean superusuarios. Se mantienen las restricciones para usuarios comunes y anónimos.
+- La creación utiliza dos pasos: selección de recorrido y colectivo, y carga de horarios con revisión visual antes de confirmar. El recorrido y el colectivo deben estar activos; el colectivo debe tener al menos una butaca activa.
+- El panel trabaja en horario argentino y convierte las entradas locales a fechas conscientes de zona horaria. La primera salida debe estar en el futuro; esta restricción pertenece al panel, no al servicio de dominio, para no impedir una futura importación histórica.
+- El mismo colectivo no puede tener viajes superpuestos. El intervalo se obtiene de la primera y última parada de cada viaje. Solo los viajes `CANCELLED` dejan de bloquear el colectivo.
+- Los intervalos que solamente se tocan están permitidos provisionalmente. No se agrega un tiempo de preparación por suposición; queda pendiente de consultar con Sandro.
+- La comprobación de superposición y la creación se realizan dentro de una transacción con bloqueo del colectivo. Los horarios y permisos se copian a las paradas concretas del viaje.
+- No se permite editar recorrido, colectivo, horarios ni estado del viaje en esta etapa. Tampoco se ofrecen eliminaciones de viajes o tarifas.
+- Las tarifas se limitan al viaje de la URL y a tramos válidos de su cronograma. Se usan importes `Decimal`; el estado se cambia únicamente por acciones POST con CSRF e idempotentes.
+- La creación del viaje y cada cambio efectivo de tarifa registran auditoría en la misma transacción. El viaje se audita con un único evento y su cronograma completo; los importes se serializan como texto decimal y las fechas como ISO 8601.
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.
@@ -50,6 +62,7 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - Conducta exacta del vencimiento de la reserva durante la revisión de una transferencia.
 - Distribución definitiva del colectivo y butacas inhabilitadas.
 - Horarios habituales y duración entre paradas.
+- Tiempo adicional de preparación del colectivo entre viajes.
 - Tarifas reales por origen, destino y categoría.
 - Hojas, columnas, relaciones y calidad de datos de AppSheet/Google Sheets.
 - Plantilla definitiva en blanco del pasaje PDF y pasaje real de referencia a entregar por el cliente.

@@ -115,8 +115,16 @@ class OperationsDataMixin:
         return {item.stop_id: self.start + timedelta(hours=index)
                 for index, item in enumerate((route or self.route).route_stops.all())}
 
-    def create_trip(self, route=None):
-        return schedule_trip(route=route or self.route, bus=self.bus, schedules=self.schedules(route))
+    def ensure_active_seat(self):
+        Seat.objects.get_or_create(bus=self.bus, number=1, defaults={
+            "deck": Seat.Deck.UPPER, "category": SeatCategory.SEMI_CAMA,
+            "position_x": 0, "position_y": 0,
+        })
+
+    def create_trip(self, route=None, days_offset=0):
+        self.ensure_active_seat()
+        schedules = {key: value + timedelta(days=days_offset) for key, value in self.schedules(route).items()}
+        return schedule_trip(route=route or self.route, bus=self.bus, schedules=schedules)
 
     def assert_database_rejects(self, action):
         with self.assertRaises(IntegrityError), transaction.atomic():
@@ -242,6 +250,9 @@ class StructureTests(OperationsDataMixin, TestCase):
 
 
 class SchedulingTests(OperationsDataMixin, TestCase):
+    def setUp(self):
+        self.ensure_active_seat()
+
     def test_creates_trip_with_exact_operational_snapshot(self):
         for route in Route.objects.all():
             with self.subTest(route=route.code):
@@ -257,6 +268,7 @@ class SchedulingTests(OperationsDataMixin, TestCase):
                 )))
                 self.assertEqual(dict(trip.trip_stops.values_list("stop_id", "scheduled_at")),
                                  self.schedules(route))
+                self.start += timedelta(days=1)
 
     def test_snapshot_does_not_follow_route_changes(self):
         trip = self.create_trip()
@@ -423,8 +435,8 @@ class FareTests(OperationsDataMixin, TestCase):
         self.assertIn("ARS 12345.67", str(fare))
 
     def test_fares_follow_valid_segments_in_both_directions(self):
-        for route in Route.objects.all():
-            trip = self.create_trip(route)
+        for index, route in enumerate(Route.objects.order_by("code"), 1):
+            trip = self.create_trip(route, days_offset=index)
             items = {item.stop.code: item for item in trip.trip_stops.select_related("stop")}
             origins = ("CBA", "JMA") if route.code == "CBA-JUJ" else ("SSJ", "PAL", "PER")
             destinations = ("PER", "PAL", "SSJ") if route.code == "CBA-JUJ" else ("JMA", "CBA")
@@ -439,7 +451,7 @@ class FareTests(OperationsDataMixin, TestCase):
                                 fare.full_clean()
 
     def test_stops_from_other_trips_are_rejected(self):
-        other_trip = self.create_trip()
+        other_trip = self.create_trip(days_offset=1)
         for changes in (
             {"origin_stop": other_trip.trip_stops.get(stop=self.stops["CBA"])},
             {"destination_stop": other_trip.trip_stops.get(stop=self.stops["SSJ"])},

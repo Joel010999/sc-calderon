@@ -1,0 +1,10 @@
+{% extends 'panel/operations/base.html' %}
+{% block operations_content %}
+<p><a href="{% url 'panel:trips' %}">← Volver a viajes</a></p>
+{% if selection %}<p class="ops-intro">Elegí un recorrido activo y un colectivo activo con butacas activas.</p>
+{% else %}<div class="ops-card"><h2>{{ route.name }}</h2><p>Colectivo: {{ bus.code }} · {{ bus.display_name }}</p><p>Ingresá todas las fechas y horas en horario argentino. Podrás revisarlas antes de crear el viaje.</p><a href="{% url 'panel:trip_create' %}">Cambiar selección</a></div>{% endif %}
+<form method="post" class="ops-card ops-form" novalidate>{% csrf_token %}
+{% include 'panel/operations/form_fields.html' %}
+<button class="ops-button" type="submit" name="action" value="review">{% if selection %}Continuar con los horarios{% else %}Revisar viaje{% endif %}</button>
+</form>
+{% endblock %}

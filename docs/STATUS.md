@@ -4,11 +4,11 @@
 - Estado: fundación técnica aprobada.
 - `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
 - Panel personalizado, seguridad, health check, roles y estáticos locales: completados.
-- Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `a4bb423`.
-- Rama activa de desarrollo: `feature/operations-panel-20260908`.
-- Etapa actual: panel operativo base implementado.
+- Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `fbe3585`.
+- Rama activa de desarrollo: `feature/trips-fares-panel-20260908`.
+- Etapa actual: panel de viajes programados, horarios y tarifas implementado.
 - Documentación creada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
-- Próxima etapa: viajes programados y tarifas en el panel. Todavía no son administrables desde el panel.
+- Próxima etapa: arquitectura de ventas, reservas y disponibilidad de butacas.
 - Pagos, ventas, PDF, autenticación pública y migración: todavía no implementados.
 - Decisiones pendientes: consultar [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
@@ -35,7 +35,21 @@
 - Auditoría `panel.AuditEvent` implementada con actor, acción, entidad, descripción, datos anteriores y posteriores y fecha. Los cambios y su auditoría se guardan en una única transacción explícita, sin signals. Si falla la auditoría, se revierte el cambio. No hay interfaz para editar ni eliminar eventos.
 - Migración nueva `panel/migrations/0001_initial.py`: crea únicamente `AuditEvent`. Solo se aplica en las bases temporales del runner de tests; no se ejecuta sobre bases persistentes.
 - Se agregaron 38 pruebas de permisos, formularios, estados, auditoría y regresión; se conservan las 66 pruebas anteriores.
-- No se agregaron pantallas de viajes, horarios, tarifas, ventas, reservas, pasajeros, pagos, PDF, QR, disponibilidad, autenticación pública, AppSheet ni workers.
+- En la etapa de configuración base no se agregaron pantallas de viajes ni tarifas; se incorporan en la etapa siguiente, registrada a continuación.
+
+## Panel de viajes y tarifas
+
+- Listado de viajes con recorrido, colectivo, estado, salida y llegada locales: próximos primero y pasados del más reciente al más antiguo, con desempate por identificador. Las consultas cargan relaciones de forma conjunta para evitar N+1.
+- Creación en dos pasos: selección de recorrido y colectivo válidos; luego horarios de todas las paradas y confirmación visual. La confirmación está firmada y vinculada a los datos revisados. No se precargan horarios productivos.
+- `schedule_trip` rechaza recorridos y colectivos inactivos, colectivos sin butacas activas y superposición del mismo colectivo. Usa los extremos de la fotografía de paradas, ignora viajes cancelados y permite intervalos contiguos, sin inventar tiempos de preparación.
+- La validación y escritura usan una transacción con bloqueo del colectivo. El panel exige salida futura; el dominio conserva la posibilidad de programar fechas históricas para una futura importación controlada.
+- Detalle con cronograma completo, permisos de subida y bajada y tarifas por tramo y categoría. Recorrido, colectivo, horarios y estado del viaje no son editables.
+- Tarifas creables y editables por administradores, con origen y destino limitados al viaje de la URL. Importes `Decimal`, validación de segmentos y duplicados, activación/desactivación POST con CSRF e idempotente, sin eliminación física.
+- Auditoría extendida a viajes y tarifas, con cronograma completo en un evento de creación de viaje, importes como texto decimal y fechas ISO 8601. Un fallo de auditoría revierte la modificación completa; no se auditan formularios inválidos ni acciones sin efecto.
+- Resumen operativo ampliado con viajes programados futuros, viajes en estado de embarque y acceso a Viajes. No se implementa gestión de embarque ni edición de estados.
+- Se agregaron 45 pruebas específicas. Las 104 anteriores se conservan; se adaptaron únicamente sus datos de prueba a la exigencia de butacas activas, intervalos no superpuestos y los nuevos conteos del resumen.
+- No se modificaron modelos ni se requirieron migraciones nuevas. Las validaciones utilizan bases temporales del runner de tests.
+- Continúan fuera de alcance ventas, reservas, pasajeros, disponibilidad, pagos, PDF, QR, embarque, cambios comerciales, autenticación pública, AppSheet y workers.
 
 ## Retiro del prototipo y pendientes
 

@@ -1,0 +1,12 @@
+{% extends 'panel/operations/base.html' %}
+{% load tz %}
+{% block actions %}{% if can_manage %}<a class="ops-button" href="{% url 'panel:trip_create' %}">Nuevo viaje</a>{% endif %}{% endblock %}
+{% block operations_content %}
+{% timezone display_timezone %}
+<p class="ops-intro">Fechas y horas de Argentina. Los próximos viajes se muestran primero; los pasados, del más reciente al más antiguo.</p>
+<h2>Próximos viajes</h2>
+{% include 'panel/operations/trip_table.html' with trips=upcoming empty_message='Todavía no hay viajes próximos.' %}
+<h2>Viajes pasados</h2>
+{% include 'panel/operations/trip_table.html' with trips=past empty_message='No hay viajes pasados.' %}
+{% endtimezone %}
+{% endblock %}

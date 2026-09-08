@@ -4,8 +4,9 @@ from django.db import IntegrityError
 from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.utils import timezone
 
-from operations.models import Bus, Route, RouteStop, Seat, SeatCategory
+from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Trip
 from .forms import BusForm, SeatForm
 from .permissions import can_manage_operations, operations_access
 from .services import WRITE_ERROR, save_configuration, set_configuration_active
@@ -37,6 +38,8 @@ def overview(request):
         ("Butacas activas", seats["total"]),
         ("Butacas cama activas", seats["cama"]),
         ("Butacas semicama activas", seats["semicama"]),
+        ("Viajes programados futuros", Trip.objects.filter(status=Trip.Status.SCHEDULED, departure_at__gt=timezone.now()).count()),
+        ("Viajes en embarque", Trip.objects.filter(status=Trip.Status.BOARDING).count()),
     ]
     return render_operations(request, "overview", title="Operaciones", metrics=metrics)
 
