@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'core',
     'django_htmx',
     'panel',
+    'operations.apps.OperationsConfig',
 ]
 
 MIDDLEWARE = [
