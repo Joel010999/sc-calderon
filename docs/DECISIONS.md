@@ -18,6 +18,14 @@ La especificación es la referencia completa. Este resumen no convierte referenc
 
 La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.md](ARCHITECTURE.md): monolito modular Django, PostgreSQL productivo, panel propio, recursos frontend locales, Railway y WhiteNoise. La primera implementación funcional será `operations`. La tecnología de procesamiento en segundo plano queda diferida y requiere una decisión aprobada.
 
+### Retiro del dominio del prototipo
+
+- Los modelos `core.Ruta`, `core.Parada`, `core.Bus`, `core.Salida`, `core.Reserva` y `core.ReservaItem` pertenecían exclusivamente al prototipo.
+- El propietario confirmó explícitamente que no existe información real que deba conservarse en esas tablas. No se requiere una migración de datos.
+- Se retiran mediante una nueva migración de esquema antes de construir funcionalidad nueva, conservando la aplicación `core` y su infraestructura.
+- `operations` queda como única fuente de verdad para paradas, recorridos, colectivos, butacas, viajes y tarifas.
+- La futura migración desde AppSheet/Google Sheets es una etapa diferente y permanece pendiente según [PROJECT_SPEC.md](PROJECT_SPEC.md#migración).
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.

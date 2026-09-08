@@ -26,7 +26,9 @@
 
 ## Observaciones para la próxima etapa
 
-- `core` conserva modelos anteriores (`Ruta`, `Parada`, `Bus`, `Salida`, `Reserva` y `ReservaItem`) que se superponen con parte del dominio. No se modificaron, conectaron ni migraron hacia `operations`. Su convivencia o retiro requiere una decisión explícita antes de integrar funcionalidad que los utilice.
+- El dominio antiguo de `core` (`Ruta`, `Parada`, `Bus`, `Salida`, `Reserva` y `ReservaItem`) fue retirado del código mediante una nueva migración de eliminación posterior a `0001_initial`, que permanece intacta. La migración de retiro solo se aplicó en la base temporal del runner de tests; no en la base local ni en Railway.
+- El propietario confirmó que no hay información real que conservar en esas tablas. `operations` es la única fuente de verdad del dominio operativo; se conserva `core` para el sitio y la infraestructura. Ver la [decisión confirmada](DECISIONS.md#retiro-del-dominio-del-prototipo).
+- Se agregaron dos pruebas del registro de aplicaciones en `core/tests.py`: ausencia de los seis modelos antiguos y presencia de los ocho modelos de `operations`. El próximo paso continúa siendo el panel personalizado de operaciones.
 - Las operaciones sensibles del futuro panel deben cumplir la auditoría de usuario, fecha, acción y valores relevantes definida en [ARCHITECTURE.md](ARCHITECTURE.md#reglas-de-diseño).
 - Continúan pendientes las definiciones con Sandro de [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
