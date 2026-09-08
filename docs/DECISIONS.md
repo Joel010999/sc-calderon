@@ -26,6 +26,17 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - `operations` queda como única fuente de verdad para paradas, recorridos, colectivos, butacas, viajes y tarifas.
 - La futura migración desde AppSheet/Google Sheets es una etapa diferente y permanece pendiente según [PROJECT_SPEC.md](PROJECT_SPEC.md#migración).
 
+### Permisos iniciales del panel de configuración operativa
+
+- Un superusuario o un usuario del grupo `Administrador` puede consultar, crear, editar, activar y desactivar colectivos y butacas.
+- El grupo `Vendedor` puede consultar recorridos, colectivos y butacas, sin modificar estructura operativa.
+- Un usuario `is_staff` sin grupo `Administrador` puede ingresar y consultar, pero no modificar estructura operativa, salvo que sea superusuario.
+- Un usuario común no tiene acceso al panel. Un usuario anónimo es redirigido al login.
+- Los permisos se verifican en el servidor, en las vistas y en los servicios de escritura. Ocultar acciones en la interfaz no reemplaza esas validaciones.
+- Los recorridos y paradas son de solo lectura en esta etapa, incluso para administradores.
+- Activar y desactivar son acciones POST con CSRF e idempotentes. No se ofrece eliminación física de colectivos ni butacas.
+- Cada cambio efectivo de colectivo o butaca registra actor, acción, entidad, descripción, valores anteriores y posteriores y fecha en la misma transacción. No se registran eventos para operaciones fallidas ni cambios sin efecto. La auditoría no tiene interfaz de edición o eliminación.
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.

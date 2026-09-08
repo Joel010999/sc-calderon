@@ -1,0 +1,17 @@
+{% extends 'panel/operations/base.html' %}
+{% block operations_content %}
+<p class="ops-intro">Los recorridos y sus paradas son de solo lectura en esta etapa.</p>
+{% for route in routes %}
+<article class="ops-card route-card">
+    <header class="ops-header"><h2>{{ route.code }} · {{ route.name }}</h2><span class="badge {% if not route.is_active %}inactive{% endif %}">{{ route.is_active|yesno:'Activo,Inactivo' }}</span></header>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Paradas de {{ route.name }}">
+        <table><caption>Paradas en orden del recorrido {{ route.code }}</caption>
+            <thead><tr><th scope="col">Orden</th><th scope="col">Parada</th><th scope="col">Subida</th><th scope="col">Bajada</th></tr></thead>
+            <tbody>{% for item in route.route_stops.all %}
+                <tr><td>{{ item.sequence }}</td><th scope="row">{{ item.stop.name }} <small>{{ item.stop.code }}</small></th><td>{{ item.allows_boarding|yesno:'Sí,No' }}</td><td>{{ item.allows_alighting|yesno:'Sí,No' }}</td></tr>
+            {% empty %}<tr><td colspan="4">Este recorrido todavía no tiene paradas configuradas.</td></tr>{% endfor %}</tbody>
+        </table>
+    </div>
+</article>
+{% empty %}<div class="empty-state"><h2>Todavía no hay recorridos</h2><p>Los recorridos aparecerán cuando se cargue la configuración inicial.</p></div>{% endfor %}
+{% endblock %}

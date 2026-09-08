@@ -1,0 +1,11 @@
+{% extends 'panel/operations/base.html' %}
+{% block operations_content %}
+<p class="ops-intro">Consultá los recorridos y configurá la estructura de colectivos y butacas.</p>
+<dl class="ops-metrics">
+    {% for label, value in metrics %}<div class="ops-card"><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+</dl>
+<div class="ops-links">
+    <a class="ops-card" href="{% url 'panel:routes' %}"><h2>Recorridos</h2><p>Paradas, orden y permisos de subida y bajada.</p><span>Consultar recorridos →</span></a>
+    <a class="ops-card" href="{% url 'panel:buses' %}"><h2>Colectivos</h2><p>Estructura de butacas y distribución por planta.</p><span>Ver colectivos →</span></a>
+</div>
+{% endblock %}

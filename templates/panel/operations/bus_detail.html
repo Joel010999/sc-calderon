@@ -1,0 +1,36 @@
+{% extends 'panel/operations/base.html' %}
+{% load l10n %}
+{% block actions %}{% if can_manage %}<a class="ops-button secondary" href="{% url 'panel:bus_edit' bus.pk %}">Editar colectivo</a>{% endif %}{% endblock %}
+{% block operations_content %}
+<section class="ops-card">
+    <h2>Datos del colectivo</h2>
+    <dl class="bus-data"><div><dt>Código</dt><dd>{{ bus.code }}</dd></div><div><dt>Patente</dt><dd>{{ bus.license_plate|default:'Sin informar' }}</dd></div><div><dt>Estado</dt><dd>{{ bus.is_active|yesno:'Activo,Inactivo' }}</dd></div><div><dt>Butacas activas</dt><dd>{{ bus.active_seats }}</dd></div><div><dt>Cama activas</dt><dd>{{ bus.cama_seats }}</dd></div><div><dt>Semicama activas</dt><dd>{{ bus.semicama_seats }}</dd></div></dl>
+    {% if can_manage %}
+    <form method="post" action="{% if bus.is_active %}{% url 'panel:bus_deactivate' bus.pk %}{% else %}{% url 'panel:bus_activate' bus.pk %}{% endif %}">
+        {% csrf_token %}<button class="ops-button {% if bus.is_active %}danger{% endif %}" type="submit">{% if bus.is_active %}Desactivar{% else %}Activar{% endif %} colectivo</button>
+    </form>{% endif %}
+</section>
+<header class="ops-header"><div><h2>Distribución de butacas</h2><p>Las posiciones se muestran según la configuración guardada. Las butacas inactivas también se muestran.</p></div>{% if can_manage %}<a class="ops-button" href="{% url 'panel:seat_create' bus.pk %}">Nueva butaca</a>{% endif %}</header>
+{% for deck in decks %}
+<section class="ops-card deck" aria-labelledby="deck-{{ deck.value }}">
+    <h3 id="deck-{{ deck.value }}">{{ deck.label }}</h3>
+    {% if deck.items %}
+    <div class="seat-scroll" tabindex="0" role="region" aria-label="Mapa de {{ deck.label }}; desplazable horizontalmente">
+        <div class="seat-map">
+        {% for item in deck.items %}{% with seat=item.seat %}
+            <article class="seat-card {% if not seat.is_active %}inactive{% endif %}" style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
+                <h4>Butaca {{ seat.number }}</h4><p>{{ seat.get_category_display }}</p><p class="seat-position">Posición: {{ seat.position_x }}, {{ seat.position_y }}</p>
+                <span class="badge {% if not seat.is_active %}inactive{% endif %}">{{ seat.is_active|yesno:'Activa,Inactiva' }}</span>
+                {% if can_manage %}
+                <a href="{% url 'panel:seat_edit' bus.pk seat.pk %}">Editar <span class="sr-only">butaca {{ seat.number }}</span></a>
+                <form method="post" action="{% if seat.is_active %}{% url 'panel:seat_deactivate' bus.pk seat.pk %}{% else %}{% url 'panel:seat_activate' bus.pk seat.pk %}{% endif %}">
+                    {% csrf_token %}<button class="ops-button small {% if seat.is_active %}danger{% endif %}" type="submit">{% if seat.is_active %}Desactivar{% else %}Activar{% endif %}<span class="sr-only"> butaca {{ seat.number }}</span></button>
+                </form>{% endif %}
+            </article>
+        {% endwith %}{% endfor %}
+        </div>
+    </div>
+    {% else %}<p class="empty-state">Todavía no hay butacas en esta planta.</p>{% endif %}
+</section>
+{% endfor %}
+{% endblock %}

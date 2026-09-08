@@ -6,14 +6,7 @@ from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.contrib.auth.forms import AuthenticationForm
 
-def is_panel_user(user):
-    if not user.is_authenticated:
-        return False
-    return (
-        user.is_superuser or
-        user.is_staff or
-        user.groups.filter(name__in=['Administrador', 'Vendedor']).exists()
-    )
+from .permissions import is_panel_user
 
 def panel_login(request):
     if request.user.is_authenticated:

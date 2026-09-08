@@ -4,10 +4,11 @@
 - Estado: fundación técnica aprobada.
 - `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
 - Panel personalizado, seguridad, health check, roles y estáticos locales: completados.
-- Rama activa de desarrollo: `feature/domain-foundation-20260907`.
-- Etapa actual: fundación de dominio de `operations` implementada.
+- Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `a4bb423`.
+- Rama activa de desarrollo: `feature/operations-panel-20260908`.
+- Etapa actual: panel operativo base implementado.
 - Documentación creada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
-- Próxima etapa: panel personalizado de operaciones.
+- Próxima etapa: viajes programados y tarifas en el panel. Todavía no son administrables desde el panel.
 - Pagos, ventas, PDF, autenticación pública y migración: todavía no implementados.
 - Decisiones pendientes: consultar [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
@@ -24,12 +25,23 @@
 - Se agregaron 50 tests de dominio; se mantienen los 14 tests existentes del panel.
 - No se crearon colectivos de 60 butacas, horarios ni tarifas productivas. Tampoco reservas, ventas, disponibilidad, pagos, PDF, QR, embarque, autenticación pública, importadores ni workers.
 
-## Observaciones para la próxima etapa
+## Panel de configuración operativa
+
+- Resumen operativo con conteos reales de recorridos, colectivos y butacas activos. Los conteos de cama y semicama incluyen solo butacas activas, según su propio estado.
+- Recorridos y paradas visibles en modo lectura, con orden y permisos de subida y bajada. Las vistas no cargan datos iniciales automáticamente.
+- Colectivos y butacas administrables por superusuarios y miembros de `Administrador`. Vendedores y usuarios `is_staff` sin ese grupo tienen acceso de consulta. Ver [política inicial](DECISIONS.md#permisos-iniciales-del-panel-de-configuración-operativa).
+- Formularios con campos explícitos; el colectivo de una butaca se obtiene de la URL y no puede cambiarse desde el formulario. Activación y desactivación mediante POST con CSRF, sin eliminación física.
+- Mapa de butacas por planta construido con CSS Grid a partir de posiciones almacenadas. Interfaz responsive con CSS local, navegación, estados vacíos y errores accesibles.
+- Auditoría `panel.AuditEvent` implementada con actor, acción, entidad, descripción, datos anteriores y posteriores y fecha. Los cambios y su auditoría se guardan en una única transacción explícita, sin signals. Si falla la auditoría, se revierte el cambio. No hay interfaz para editar ni eliminar eventos.
+- Migración nueva `panel/migrations/0001_initial.py`: crea únicamente `AuditEvent`. Solo se aplica en las bases temporales del runner de tests; no se ejecuta sobre bases persistentes.
+- Se agregaron 38 pruebas de permisos, formularios, estados, auditoría y regresión; se conservan las 66 pruebas anteriores.
+- No se agregaron pantallas de viajes, horarios, tarifas, ventas, reservas, pasajeros, pagos, PDF, QR, disponibilidad, autenticación pública, AppSheet ni workers.
+
+## Retiro del prototipo y pendientes
 
 - El dominio antiguo de `core` (`Ruta`, `Parada`, `Bus`, `Salida`, `Reserva` y `ReservaItem`) fue retirado del código mediante una nueva migración de eliminación posterior a `0001_initial`, que permanece intacta. La migración de retiro solo se aplicó en la base temporal del runner de tests; no en la base local ni en Railway.
 - El propietario confirmó que no hay información real que conservar en esas tablas. `operations` es la única fuente de verdad del dominio operativo; se conserva `core` para el sitio y la infraestructura. Ver la [decisión confirmada](DECISIONS.md#retiro-del-dominio-del-prototipo).
-- Se agregaron dos pruebas del registro de aplicaciones en `core/tests.py`: ausencia de los seis modelos antiguos y presencia de los ocho modelos de `operations`. El próximo paso continúa siendo el panel personalizado de operaciones.
-- Las operaciones sensibles del futuro panel deben cumplir la auditoría de usuario, fecha, acción y valores relevantes definida en [ARCHITECTURE.md](ARCHITECTURE.md#reglas-de-diseño).
+- Se conservan las dos pruebas del registro de aplicaciones en `core/tests.py`: ausencia de los seis modelos antiguos y presencia de los ocho modelos de `operations`.
 - Continúan pendientes las definiciones con Sandro de [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
 Actualizar este documento cuando finalice cada módulo.

@@ -1,0 +1,17 @@
+{% extends 'panel/operations/base.html' %}
+{% block actions %}{% if can_manage %}<a class="ops-button" href="{% url 'panel:bus_create' %}">Nuevo colectivo</a>{% endif %}{% endblock %}
+{% block operations_content %}
+{% if buses %}
+<p class="ops-intro">Los conteos incluyen únicamente las butacas activas de cada colectivo.</p>
+<div class="ops-card table-scroll" tabindex="0" role="region" aria-label="Lista de colectivos">
+<table><caption>Colectivos y butacas activas</caption>
+    <thead><tr><th scope="col">Código</th><th scope="col">Nombre</th><th scope="col">Patente</th><th scope="col">Estado</th><th scope="col">Butacas activas</th><th scope="col">Cama</th><th scope="col">Semicama</th></tr></thead>
+    <tbody>{% for bus in buses %}<tr>
+        <th scope="row"><a href="{% url 'panel:bus_detail' bus.pk %}">{{ bus.code }}</a></th><td>{{ bus.display_name }}</td><td>{{ bus.license_plate|default:'Sin informar' }}</td>
+        <td><span class="badge {% if not bus.is_active %}inactive{% endif %}">{{ bus.is_active|yesno:'Activo,Inactivo' }}</span></td>
+        <td>{{ bus.active_seats }}</td><td>{{ bus.cama_seats }}</td><td>{{ bus.semicama_seats }}</td>
+    </tr>{% endfor %}</tbody>
+</table>
+</div>
+{% else %}<div class="empty-state"><h2>Todavía no hay colectivos</h2><p>{% if can_manage %}Creá un colectivo para comenzar a configurar sus butacas.{% else %}Un administrador debe cargar los colectivos.{% endif %}</p></div>{% endif %}
+{% endblock %}
