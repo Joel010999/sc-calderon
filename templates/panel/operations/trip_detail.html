@@ -1,0 +1,22 @@
+{% extends 'panel/operations/base.html' %}
+{% load tz %}
+{% block operations_content %}
+{% timezone display_timezone %}
+<p><a href="{% url 'panel:trips' %}">← Volver a viajes</a></p>
+<section class="ops-card"><h2>{{ trip.route.name }}</h2>
+<dl class="bus-data"><div><dt>Recorrido</dt><dd>{{ trip.route.code }}</dd></div><div><dt>Colectivo</dt><dd>{{ trip.bus.code }} · {{ trip.bus.display_name }}</dd></div><div><dt>Estado</dt><dd>{{ trip.get_status_display }}</dd></div><div><dt>Salida</dt><dd>{{ trip.departure_at|date:'d/m/Y H:i' }}</dd></div><div><dt>Llegada</dt><dd>{{ trip.arrival_at|date:'d/m/Y H:i'|default:'Sin cronograma' }}</dd></div></dl>
+<p class="muted">Horario argentino. El recorrido, colectivo, cronograma y estado no son editables en esta etapa.</p></section>
+<section class="ops-card"><h2>Cronograma de paradas</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Cronograma del viaje"><table>
+<thead><tr><th scope="col">Orden</th><th scope="col">Parada</th><th scope="col">Fecha y hora</th><th scope="col">Subida</th><th scope="col">Bajada</th></tr></thead>
+<tbody>{% for item in trip.trip_stops.all %}<tr><td>{{ item.sequence }}</td><th scope="row">{{ item.stop.name }}</th><td>{{ item.scheduled_at|date:'d/m/Y H:i' }}</td><td>{{ item.allows_boarding|yesno:'Sí,No' }}</td><td>{{ item.allows_alighting|yesno:'Sí,No' }}</td></tr>{% empty %}<tr><td colspan="5">No hay paradas programadas.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+<header class="ops-header"><h2>Tarifas del viaje</h2>{% if can_manage %}<a class="ops-button" href="{% url 'panel:fare_create' trip.pk %}">Nueva tarifa</a>{% endif %}</header>
+{% if trip.fares.all %}<div class="ops-card table-scroll" tabindex="0" role="region" aria-label="Tarifas por tramo"><table>
+<thead><tr><th scope="col">Tramo</th><th scope="col">Categoría</th><th scope="col">Importe</th><th scope="col">Moneda</th><th scope="col">Estado</th>{% if can_manage %}<th scope="col">Acciones</th>{% endif %}</tr></thead>
+<tbody>{% for fare in trip.fares.all %}<tr><th scope="row">{{ fare.origin_stop.stop.name }} → {{ fare.destination_stop.stop.name }}</th><td>{{ fare.get_seat_category_display }}</td><td>{{ fare.amount }}</td><td>{{ fare.currency }}</td><td>{{ fare.is_active|yesno:'Activa,Inactiva' }}</td>
+{% if can_manage %}<td><a href="{% url 'panel:fare_edit' trip.pk fare.pk %}">Editar tarifa {{ fare.pk }}</a>
+<form method="post" action="{% if fare.is_active %}{% url 'panel:fare_deactivate' trip.pk fare.pk %}{% else %}{% url 'panel:fare_activate' trip.pk fare.pk %}{% endif %}">{% csrf_token %}<button class="ops-button small {% if fare.is_active %}danger{% endif %}" type="submit">{% if fare.is_active %}Desactivar{% else %}Activar{% endif %} tarifa {{ fare.pk }}</button></form></td>{% endif %}
+</tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-state">Todavía no hay tarifas configuradas para este viaje.</p>{% endif %}
+{% endtimezone %}
+{% endblock %}

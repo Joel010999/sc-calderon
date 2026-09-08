@@ -5,6 +5,7 @@ from datetime import timezone as datetime_timezone
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import OuterRef, Subquery
 
 from .models import Bus, Route, Trip, TripStop
 from .validators import validate_aware_datetime
@@ -25,6 +26,13 @@ def schedule_trip(*, route, bus, schedules):
         bus = Bus.objects.select_for_update().get(pk=bus.pk)
     except (Route.DoesNotExist, Bus.DoesNotExist) as exc:
         raise ValidationError("El recorrido o el colectivo ya no existe.") from exc
+
+    if not route.is_active:
+        raise ValidationError("El recorrido debe estar activo.")
+    if not bus.is_active:
+        raise ValidationError("El colectivo debe estar activo.")
+    if not bus.seats.filter(is_active=True).exists():
+        raise ValidationError("El colectivo debe tener al menos una butaca activa.")
 
     route_stops = list(route.route_stops.select_for_update().order_by("sequence"))
     if not route_stops:
@@ -50,6 +58,19 @@ def schedule_trip(*, route, bus, schedules):
         if previous is not None and instant <= previous:
             raise ValidationError("Los horarios deben ser estrictamente crecientes según el orden del recorrido.")
         previous = instant
+
+    # El bloqueo del colectivo serializa las programaciones concurrentes en
+    # PostgreSQL. Los límites provienen de la fotografía del viaje, no del recorrido.
+    stops = TripStop.objects.filter(trip_id=OuterRef("pk"))
+    conflicts = Trip.objects.filter(bus=bus).exclude(status=Trip.Status.CANCELLED).annotate(
+        interval_start=Subquery(stops.order_by("sequence").values("scheduled_at")[:1]),
+        interval_end=Subquery(stops.order_by("-sequence").values("scheduled_at")[:1]),
+    ).filter(
+        interval_start__lt=times[route_stops[-1].stop_id],
+        interval_end__gt=times[route_stops[0].stop_id],
+    )
+    if conflicts.exists():
+        raise ValidationError("El colectivo ya tiene un viaje con horarios superpuestos.")
 
     trip = Trip(route=route, bus=bus, departure_at=times[route_stops[0].stop_id])
     trip.full_clean()

@@ -1,0 +1,16 @@
+{% extends 'panel/operations/base.html' %}
+{% load tz %}
+{% block operations_content %}
+{% timezone display_timezone %}
+<section class="ops-card"><h2>{{ route.name }}</h2><p>Colectivo: {{ bus.code }} · {{ bus.display_name }}</p><p class="read-only">Confirmá el cronograma completo. El colectivo y los horarios no podrán editarse desde el panel después de crear el viaje.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Confirmación de horarios"><table><thead><tr><th scope="col">Parada</th><th scope="col">Fecha y hora argentina</th><th scope="col">Subida</th><th scope="col">Bajada</th></tr></thead><tbody>
+{% for item, scheduled_at in rows %}<tr><th scope="row">{{ item.sequence }}. {{ item.stop.name }}</th><td>{{ scheduled_at|date:'d/m/Y H:i' }}</td><td>{{ item.allows_boarding|yesno:'Sí,No' }}</td><td>{{ item.allows_alighting|yesno:'Sí,No' }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+<form method="post" class="form-actions">{% csrf_token %}
+{% for field in form %}<input type="hidden" name="{{ field.name }}" value="{{ field.value }}">{% endfor %}
+<input type="hidden" name="confirmation" value="{{ confirmation }}">
+<button class="ops-button" name="action" value="create" type="submit">Confirmar y crear viaje</button>
+<button class="ops-button secondary" name="action" value="edit" type="submit">Corregir horarios</button>
+</form>
+{% endtimezone %}
+{% endblock %}

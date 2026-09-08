@@ -183,6 +183,7 @@ class OperationsPanelTests(TestCase):
         self.assertEqual(dict(response.context["metrics"]), {
             "Recorridos activos": 1, "Colectivos activos": 1, "Butacas activas": 2,
             "Butacas cama activas": 1, "Butacas semicama activas": 1,
+            "Viajes programados futuros": 0, "Viajes en embarque": 0,
         })
         response = self.client.get(self.url("buses"), secure=True)
         bus = next(bus for bus in response.context["buses"] if bus.pk == self.bus.pk)

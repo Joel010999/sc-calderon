@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import operations_views as operations
+from . import trip_views as trips
 
 app_name = 'panel'
 
@@ -9,6 +10,14 @@ urlpatterns = [
     path('logout/', views.panel_logout, name='logout'),
     path('', views.dashboard, name='dashboard'),
     path('operaciones/', operations.overview, name='operations'),
+    path('operaciones/viajes/', trips.trips, name='trips'),
+    path('operaciones/viajes/nuevo/', trips.trip_select, name='trip_create'),
+    path('operaciones/viajes/nuevo/<int:route_pk>/<int:bus_pk>/horarios/', trips.trip_schedule, name='trip_schedule'),
+    path('operaciones/viajes/<int:pk>/', trips.trip_detail, name='trip_detail'),
+    path('operaciones/viajes/<int:trip_pk>/tarifas/nueva/', trips.fare_form, name='fare_create'),
+    path('operaciones/viajes/<int:trip_pk>/tarifas/<int:pk>/editar/', trips.fare_form, name='fare_edit'),
+    path('operaciones/viajes/<int:trip_pk>/tarifas/<int:pk>/activar/', trips.fare_state, {'active': True}, name='fare_activate'),
+    path('operaciones/viajes/<int:trip_pk>/tarifas/<int:pk>/desactivar/', trips.fare_state, {'active': False}, name='fare_deactivate'),
     path('operaciones/recorridos/', operations.routes, name='routes'),
     path('operaciones/colectivos/', operations.buses, name='buses'),
     path('operaciones/colectivos/nuevo/', operations.bus_form, name='bus_create'),

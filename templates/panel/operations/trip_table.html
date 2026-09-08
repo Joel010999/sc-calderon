@@ -1,0 +1,9 @@
+{% if trips %}<div class="ops-card table-scroll" tabindex="0" role="region" aria-label="Listado de viajes">
+<table><thead><tr><th scope="col">Recorrido</th><th scope="col">Salida</th><th scope="col">Llegada</th><th scope="col">Colectivo</th><th scope="col">Estado</th><th scope="col">Detalle</th></tr></thead>
+<tbody>{% for trip in trips %}<tr>
+<th scope="row">{{ trip.route.name }} <small>{{ trip.route.code }}</small></th>
+<td>{{ trip.departure_at|date:'d/m/Y H:i' }}</td><td>{{ trip.arrival_at|date:'d/m/Y H:i'|default:'Sin cronograma' }}</td>
+<td>{{ trip.bus.display_name }} <small>{{ trip.bus.code }}</small></td><td>{{ trip.get_status_display }}</td>
+<td><a href="{% url 'panel:trip_detail' trip.pk %}">Ver viaje {{ trip.pk }}</a></td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="empty-state">{{ empty_message }}</p>{% endif %}

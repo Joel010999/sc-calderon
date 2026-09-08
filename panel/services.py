@@ -3,7 +3,7 @@
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 
-from operations.models import Bus, Seat
+from operations.models import Bus, Seat, Trip, TripFare
 from .forms import BusForm, SeatForm
 from .models import AuditEvent
 from .permissions import require_operations_manager
@@ -15,12 +15,37 @@ WRITE_ERROR = "No se pudo guardar el cambio. Revisá los datos: el código, la p
 
 
 def snapshot(instance):
+    if isinstance(instance, Trip):
+        stops = list(instance.trip_stops.order_by("sequence").values(
+            "stop_id", "sequence", "scheduled_at", "allows_boarding", "allows_alighting"
+        ))
+        for stop in stops:
+            stop["scheduled_at"] = stop["scheduled_at"].isoformat()
+        return {
+            "route_id": instance.route_id, "bus_id": instance.bus_id,
+            "status": instance.status, "departure_at": instance.departure_at.isoformat(),
+            "stops": stops,
+        }
+    if isinstance(instance, TripFare):
+        return {
+            "trip_id": instance.trip_id, "origin_stop_id": instance.origin_stop_id,
+            "destination_stop_id": instance.destination_stop_id,
+            "seat_category": instance.seat_category, "amount": format(instance.amount, ".2f"),
+            "currency": instance.currency, "is_active": instance.is_active,
+        }
     fields = BUS_FIELDS if isinstance(instance, Bus) else SEAT_FIELDS
     return {field: getattr(instance, field) for field in fields}
 
 
 def record_event(actor, instance, action, before):
-    label = f"Colectivo {instance.code}" if isinstance(instance, Bus) else f"Butaca {instance.number} del colectivo {instance.bus_id}"
+    if isinstance(instance, Trip):
+        label = f"Viaje {instance.pk} del recorrido {instance.route_id}"
+    elif isinstance(instance, TripFare):
+        label = f"Tarifa {instance.pk} del viaje {instance.trip_id}"
+    elif isinstance(instance, Bus):
+        label = f"Colectivo {instance.code}"
+    else:
+        label = f"Butaca {instance.number} del colectivo {instance.bus_id}"
     AuditEvent.objects.create(
         actor=actor, action=action, entity_type=instance._meta.label,
         entity_id=str(instance.pk), description=f"{action.label}: {label}",

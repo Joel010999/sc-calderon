@@ -1,0 +1,13 @@
+{% extends 'panel/operations/base.html' %}
+{% load tz %}
+{% block operations_content %}
+{% timezone display_timezone %}
+<p><a href="{% url 'panel:trip_detail' trip.pk %}">← Volver al viaje {{ trip.pk }}</a></p>
+<p>{{ trip.route.name }} · {{ trip.departure_at|date:'d/m/Y H:i' }} · Horario argentino</p>
+<form method="post" class="ops-card ops-form" novalidate>{% csrf_token %}
+{% include 'panel/operations/form_fields.html' %}
+<p class="muted">La tarifa corresponde exclusivamente a este viaje. El estado se cambia desde el detalle.</p>
+<div class="form-actions"><button type="submit" class="ops-button">Guardar tarifa</button><a class="ops-button secondary" href="{% url 'panel:trip_detail' trip.pk %}">Cancelar</a></div>
+</form>
+{% endtimezone %}
+{% endblock %}
