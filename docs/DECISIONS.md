@@ -49,6 +49,40 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - Las tarifas se limitan al viaje de la URL y a tramos válidos de su cronograma. Se usan importes `Decimal`; el estado se cambia únicamente por acciones POST con CSRF e idempotentes.
 - La creación del viaje y cada cambio efectivo de tarifa registran auditoría en la misma transacción. El viaje se audita con un único evento y su cronograma completo; los importes se serializan como texto decimal y las fechas como ISO 8601.
 
+### Fundación de reservas y disponibilidad de butacas
+
+- Se adopta `Booking` como agregado principal único, acompañado por `BookingLeg`, `BookingPassenger` y `SeatAssignment`. No se crean entidades separadas para `Compra`, `Reserva` y `Venta`.
+- Canales soportados: `ONLINE` y `MANUAL`. Estados de reserva: `HELD`, `CONFIRMED`, `EXPIRED` y `RELEASED`.
+- Plazos de vencimiento y cierre configurables:
+  - Retención online: 15 minutos por defecto (`SALES_ONLINE_HOLD_MINUTES`). Cierre de venta online a la hora exacta previa a la subida (`SALES_ONLINE_CUTOFF_MINUTES`, validando `now >= cutoff_time`).
+  - Reserva manual: 24 horas por defecto (`SALES_MANUAL_HOLD_HOURS`).
+  - Ambos canales excluyen únicamente estados iniciados (`STARTED`) y finales (`COMPLETED`, `CANCELLED`); el canal `ONLINE` admite viajes en estado `BOARDING` siempre que no se haya alcanzado el horario límite de corte.
+- Autorización de ventas manuales:
+  - Exige un usuario activo perteneciente al grupo `Vendedor`, `Administrador` o superusuario. Las reservas online no admiten vendedor. No se amplían permisos sobre el módulo `operations`.
+- Límites de pasajeros y tramos:
+  - Tramos admitidos: 1 (solo ida) o 2 (ida y vuelta).
+  - Límite de pasajeros: 4 por defecto, configurable en settings (`SALES_MAX_PASSENGERS_PER_BOOKING`) y validado en el servidor.
+  - `BookingPassenger` modela únicamente la posición relativa (1 a N) sin almacenar datos personales definitivos, a la espera de la validación con Sandro.
+- Atomicidad, orden de bloqueos y recarga de base de datos:
+  - Toda creación y confirmación es atómica bajo `transaction.atomic`.
+  - Orden coherente de bloqueos: primero viajes involucrados con `select_for_update().order_by("pk")`, luego expiración oportunista inicial acotada a esos viajes, y luego bloqueo ordenado de butacas solicitadas con `Seat.objects.select_for_update().order_by("pk")`. Este orden coordina y serializa con los bloqueos que el panel de configuración operativa realiza sobre `Seat` al editar.
+  - Relectura del reloj en `create_booking`: tras adquirir los bloqueos sobre viajes y butacas, se relee `timezone.now()` (salvo que `now` haya sido provisto explícitamente en tests) para asegurar que el corte online (`cutoff_time`) y la expiración (`expires_at`) se evalúen con el tiempo efectivo posterior al bloqueo, impidiendo ventas tardías si hubo demoras al esperar los bloqueos.
+  - `create_booking` recarga obligatoriamente de la base de datos las instancias de `Trip`, `Seat`, `TripStop` y `TripFare` activas, sin confiar en objetos provistos por el llamador.
+  - El snapshot `TripStop` del viaje programado es la autoridad definitiva para orden y permisos de subida/bajada; cambios o eliminaciones posteriores en `RouteStop` no invalidan viajes programados ni reservas.
+  - Si falla cualquier tramo o butaca, la transacción se revierte por completo sin restos huérfanos.
+- Butacas e integridad condicional:
+  - Una butaca se reserva para el viaje completo sin reventa por tramos intermedios en el MVP.
+  - Se implementa `UniqueConstraint(trip, seat)` condicional para estados `HELD` y `CONFIRMED`. Al liberar o expirar una reserva, las asignaciones pasan a `RELEASED`, permitiendo reutilizar la butaca sin eliminar el registro histórico para auditoría.
+  - Exclusivamente los errores de integridad (`IntegrityError`) correspondientes a colisiones en la asignación de butaca (`sales_active_trip_seat_unique`) se traducen a `SeatUnavailableError`. Esta detección se restringe estrictamente a `constraint_name` en PostgreSQL (`sales_active_trip_seat_unique`) y al mensaje exacto de columnas en SQLite (`unique constraint failed: sales_seatassignment.trip_id, sales_seatassignment.seat_id`), sin recurrir a fallbacks genéricos de texto que clasifiquen erróneamente errores ajenos. Errores ajenos se propagan intactos manteniendo el rollback atómico completo.
+- Confirmación, liberación y expiración:
+  - `confirm_booking`: bloquea inmediatamente la reserva (`Booking.objects.select_for_update()`) sin lecturas previas fuera de transacción (`b_pre`). La verificación de expiración se realiza dentro de la transacción con el reloj efectivo tras adquirir el lock. Si la reserva ya expiró, se transiciona atómicamente la reserva a `EXPIRED` y las asignaciones a `RELEASED`, se confirma ese cambio en la base de datos (commit) y sólo después se lanza `BookingExpiredError`, impidiendo que la liberación se revierta. El servicio es idempotente si la reserva ya está confirmada y seguro frente a carreras con `release_expired_bookings` y `release_booking`.
+  - La expiración oportunista se acota estrictamente a los viajes afectados (`release_expired_bookings(trip_ids=...)`), evitando bloquear o evaluar globalmente todas las reservas vencidas de la base.
+  - Compatibilidad PostgreSQL en `release_expired_bookings`: dado que PostgreSQL rechaza `SELECT DISTINCT ... FOR UPDATE`, la consulta sobre `Booking` prescinde de `DISTINCT` filtrando la clave primaria mediante una subconsulta sobre `BookingLeg` (`pk__in=BookingLeg.objects.filter(trip_id__in=trip_ids).values('booking_id')`), garantizando bloqueo determinístico por `order_by('pk')` y alcance exacto.
+  - `release_booking` opera únicamente sobre reservas en estado `HELD` con comportamiento idempotente. Rechaza con excepción de dominio (`InvalidBookingError`) cualquier intento de liberar reservas `CONFIRMED`, protegiendo pasajes confirmados de reventas no autorizadas a la espera de una política comercial de cancelaciones aprobada.
+- Precios e importes:
+  - El precio se congela como snapshot histórico en `Decimal` a partir de la tarifa activa (`TripFare.amount`).
+  - Fechas conscientes de zona horaria (`America/Argentina/Buenos_Aires`).
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.
