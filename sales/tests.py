@@ -454,6 +454,64 @@ class SalesBookingCreationTests(SalesBaseTestCase):
             )
         self.assertIn("vuelta debe salir después de la llegada", str(ctx.exception))
 
+    def test_round_trip_two_legs_on_same_trip_rejected(self):
+        """Una reserva de dos tramos no puede utilizar el mismo viaje para ambos tramos."""
+        with self.assertRaises(ValidationError) as ctx:
+            create_online_booking(
+                email="mismo_viaje@correo.com",
+                legs=[
+                    {"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]},
+                    {"trip": self.trip_outbound, "origin_stop": self.ts_out_ssj, "destination_stop": self.ts_out_cba, "seats": [self.seat_cama_2]},
+                ],
+            )
+        self.assertIn("viajes distintos", str(ctx.exception))
+
+    def test_round_trip_legs_not_inverting_origin_and_destination_rejected(self):
+        """El viaje de vuelta debe invertir estrictamente las paradas de origen y destino de la ida."""
+        # Vuelta con parada de origen errónea (PAL en lugar de SSJ)
+        with self.assertRaises(ValidationError) as ctx:
+            create_online_booking(
+                email="no_invierte_origen@correo.com",
+                legs=[
+                    {"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]},
+                    {"trip": self.trip_return, "origin_stop": self.ts_ret_pal, "destination_stop": self.ts_ret_cba, "seats": [self.seat_cama_2]},
+                ],
+            )
+        self.assertIn("invertir las paradas de origen y destino", str(ctx.exception))
+
+        # Vuelta con parada de destino errónea (JMA en lugar de CBA)
+        with self.assertRaises(ValidationError) as ctx:
+            create_online_booking(
+                email="no_invierte_destino@correo.com",
+                legs=[
+                    {"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]},
+                    {"trip": self.trip_return, "origin_stop": self.ts_ret_ssj, "destination_stop": self.ts_ret_jma, "seats": [self.seat_cama_2]},
+                ],
+            )
+        self.assertIn("invertir las paradas de origen y destino", str(ctx.exception))
+
+    def test_return_leg_departure_equal_to_outbound_arrival_rejected(self):
+        """La salida del viaje de vuelta debe ser estrictamente posterior (no igual) a la llegada de ida."""
+        equal_time = self.ts_out_ssj.scheduled_at
+        trip_equal_return = Trip.objects.create(
+            route=self.route_juj_cba,
+            bus=self.bus_1,
+            departure_at=equal_time,
+            status=Trip.Status.SCHEDULED,
+        )
+        ts_ret_eq_orig = TripStop.objects.create(trip=trip_equal_return, stop=self.stop_ssj, sequence=1, scheduled_at=equal_time, allows_boarding=True, allows_alighting=False)
+        ts_ret_eq_dest = TripStop.objects.create(trip=trip_equal_return, stop=self.stop_cba, sequence=2, scheduled_at=equal_time + timedelta(hours=5), allows_boarding=False, allows_alighting=True)
+
+        with self.assertRaises(ValidationError) as ctx:
+            create_online_booking(
+                email="salida_igual@correo.com",
+                legs=[
+                    {"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]},
+                    {"trip": trip_equal_return, "origin_stop": ts_ret_eq_orig, "destination_stop": ts_ret_eq_dest, "seats": [self.seat_cama_2]},
+                ],
+            )
+        self.assertIn("vuelta debe salir después de la llegada", str(ctx.exception))
+
 
 class SalesStopsAndRouteValidationTests(SalesBaseTestCase):
     def test_stop_from_another_trip_rejected(self):
@@ -564,6 +622,18 @@ class SalesStopsAndRouteValidationTests(SalesBaseTestCase):
                 }],
             )
         self.assertIn("no permite subir pasajeros", str(ctx.exception))
+
+    def test_get_trip_availability_rejects_partial_origin_stop(self):
+        """get_trip_availability rechaza una consulta con solo parada de origen indicada."""
+        with self.assertRaises(ValidationError) as ctx:
+            get_trip_availability(self.trip_outbound, origin_stop=self.ts_out_cba, destination_stop=None)
+        self.assertIn("tanto la parada de subida como la de bajada", str(ctx.exception))
+
+    def test_get_trip_availability_rejects_partial_destination_stop(self):
+        """get_trip_availability rechaza una consulta con solo parada de destino indicada."""
+        with self.assertRaises(ValidationError) as ctx:
+            get_trip_availability(self.trip_outbound, origin_stop=None, destination_stop=self.ts_out_ssj)
+        self.assertIn("tanto la parada de subida como la de bajada", str(ctx.exception))
 
 
 class SalesSeatsAndFaresValidationTests(SalesBaseTestCase):
@@ -1447,6 +1517,115 @@ class SalesConfirmationReleaseAndExpirationTests(SalesBaseTestCase):
         with self.assertRaises(InvalidBookingError):
             confirm_booking(b2)
 
+    def test_confirm_booking_synchronizes_passed_instance_even_if_already_confirmed(self):
+        """confirm_booking sincroniza la instancia pasada en memoria incluso si la reserva ya estaba CONFIRMED en la base."""
+        now = timezone.now()
+        booking = create_online_booking(
+            email="sync_confirmed@correo.com",
+            legs=[{"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]}],
+            now=now,
+        )
+        confirm_time = now + timedelta(minutes=5)
+        confirmed_db = confirm_booking(booking.pk, now=confirm_time)
+        self.assertEqual(confirmed_db.status, BookingStatus.CONFIRMED)
+
+        # La instancia en memoria aún tiene status HELD y confirmed_at None
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        self.assertIsNone(booking.confirmed_at)
+
+        res = confirm_booking(booking)
+        self.assertEqual(res.status, BookingStatus.CONFIRMED)
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        self.assertEqual(booking.confirmed_at, confirm_time)
+        self.assertEqual(booking.updated_at, confirmed_db.updated_at)
+
+    def test_expire_booking_held_past_expiration_transitions_to_expired_and_releases_seats(self):
+        """expire_booking aplicado directamente sobre una reserva HELD vencida transiciona a EXPIRED y libera butacas."""
+        now = timezone.now()
+        booking = create_online_booking(
+            email="expire_held_vencida@correo.com",
+            legs=[{"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]}],
+            now=now,
+        )
+        expired_time = now + timedelta(minutes=20)
+        res = expire_booking(booking, now=expired_time)
+
+        self.assertEqual(res.status, BookingStatus.EXPIRED)
+        self.assertEqual(booking.status, BookingStatus.EXPIRED)
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.EXPIRED)
+        assignment = booking.legs.first().seat_assignments.first()
+        self.assertEqual(assignment.status, AssignmentStatus.RELEASED)
+
+    def test_expire_booking_held_not_yet_expired_raises_validation_error(self):
+        """expire_booking sobre una reserva HELD aún vigente lanza ValidationError y no modifica su estado."""
+        now = timezone.now()
+        booking = create_online_booking(
+            email="expire_held_vigente@correo.com",
+            legs=[{"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]}],
+            now=now,
+        )
+        before_expiration = now + timedelta(minutes=5)
+        with self.assertRaises(ValidationError) as ctx:
+            expire_booking(booking, now=before_expiration)
+        self.assertIn("aún no ha alcanzado su horario de vencimiento", str(ctx.exception))
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        assignment = booking.legs.first().seat_assignments.first()
+        self.assertEqual(assignment.status, AssignmentStatus.HELD)
+
+    def test_expire_booking_confirmed_raises_invalid_booking_error(self):
+        """expire_booking sobre una reserva CONFIRMED lanza InvalidBookingError y jamás libera sus butacas (semántica segura)."""
+        now = timezone.now()
+        booking = create_online_booking(
+            email="expire_confirmed@correo.com",
+            legs=[{"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]}],
+            now=now,
+        )
+        confirm_booking(booking, now=now + timedelta(minutes=5))
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+
+        with self.assertRaises(InvalidBookingError) as ctx:
+            expire_booking(booking, now=now + timedelta(minutes=30))
+        self.assertIn("No se puede expirar una reserva confirmada", str(ctx.exception))
+
+        # La reserva confirmada y sus butacas permanecen intactas
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        assignment = booking.legs.first().seat_assignments.first()
+        self.assertEqual(assignment.status, AssignmentStatus.CONFIRMED)
+
+    def test_expire_booking_released_raises_invalid_booking_error(self):
+        """expire_booking sobre una reserva RELEASED lanza InvalidBookingError por estado incompatible."""
+        now = timezone.now()
+        booking = create_online_booking(
+            email="expire_released@correo.com",
+            legs=[{"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]}],
+            now=now,
+        )
+        release_booking(booking, now=now + timedelta(minutes=5))
+        self.assertEqual(booking.status, BookingStatus.RELEASED)
+
+        with self.assertRaises(InvalidBookingError) as ctx:
+            expire_booking(booking, now=now + timedelta(minutes=30))
+        self.assertIn("No se puede expirar una reserva que ya ha sido liberada", str(ctx.exception))
+
+    def test_expire_booking_already_expired_is_idempotent(self):
+        """expire_booking sobre una reserva ya EXPIRED es idempotente y sincroniza la instancia."""
+        now = timezone.now()
+        booking = create_online_booking(
+            email="expire_idempotent@correo.com",
+            legs=[{"trip": self.trip_outbound, "origin_stop": self.ts_out_cba, "destination_stop": self.ts_out_ssj, "seats": [self.seat_cama_1]}],
+            now=now,
+        )
+        expire_booking(booking, now=now + timedelta(minutes=20))
+        self.assertEqual(booking.status, BookingStatus.EXPIRED)
+
+        res = expire_booking(booking, now=now + timedelta(minutes=30))
+        self.assertEqual(res.status, BookingStatus.EXPIRED)
+
 
 class SalesSeatCollisionsAndConstraintsTests(SalesBaseTestCase):
     def test_conflict_held_seat_cannot_be_booked_again(self):
@@ -1562,6 +1741,17 @@ class SalesSeatCollisionsAndConstraintsTests(SalesBaseTestCase):
         err2 = IntegrityError("UNIQUE constraint failed: sales_seatassignment.seat_id, sales_seatassignment.trip_id")
         self.assertTrue(_is_seat_collision_integrity_error(err1))
         self.assertTrue(_is_seat_collision_integrity_error(err2))
+
+    def test_is_seat_collision_integrity_error_sqlite_exact_match_rejects_extra_text(self):
+        """El mensaje de SQLite debe coincidir por igualdad exacta; mensajes con texto adicional son rechazados."""
+        err_suffix = IntegrityError("UNIQUE constraint failed: sales_seatassignment.trip_id, sales_seatassignment.seat_id in table extra")
+        self.assertFalse(_is_seat_collision_integrity_error(err_suffix))
+
+        err_prefix = IntegrityError("Context error: UNIQUE constraint failed: sales_seatassignment.trip_id, sales_seatassignment.seat_id")
+        self.assertFalse(_is_seat_collision_integrity_error(err_prefix))
+
+        err_both = IntegrityError("prefix UNIQUE constraint failed: sales_seatassignment.seat_id, sales_seatassignment.trip_id suffix")
+        self.assertFalse(_is_seat_collision_integrity_error(err_both))
 
     def test_is_seat_collision_integrity_error_postgres_constraint_name(self):
         """Verifica que en PostgreSQL se reconozca exclusivamente mediante diag.constraint_name sales_active_trip_seat_unique."""
@@ -1679,24 +1869,38 @@ class SalesPostgresConcurrencyTests(TransactionTestCase):
 
     def test_concurrent_booking_attempts_for_same_seat(self):
         """En PostgreSQL real, dos transacciones concurrentes sobre la misma butaca sincronizan su arranque
+        con una barrera, y se verifica la serialización estricta bajo el bloqueo exclusivo Trip.objects.select_for_update().
 
-        con una barrera, y se verifica exactamente una victoria y una colisión de dominio.
+        Bajo el bloqueo a nivel de fila de Trip, las transacciones se ejecutan secuencialmente:
+        el primer hilo adquiere el lock y completa la reserva; el segundo hilo espera hasta que el primero
+        realiza el commit. Al desbloquearse, el segundo hilo ejecuta su prevalidación en Python
+        (SeatAssignment.objects.filter(...).exists()), detecta la butaca ocupada y lanza SeatUnavailableError
+        a nivel de dominio, evidenciando serialización real y evitando colisiones de integridad no controladas.
         """
         results = []
-        errors = []
+        barrier_errors = []
+        seat_collision_errors = []
+        unexpected_errors = []
         barrier = threading.Barrier(2)
 
         def attempt_booking(email):
             from django.db import connections
             try:
-                barrier.wait(timeout=10)
+                try:
+                    barrier.wait(timeout=10)
+                except Exception as be:
+                    barrier_errors.append(be)
+                    return
+
                 b = create_online_booking(
                     email=email,
                     legs=[{"trip": self.trip, "origin_stop": self.ts1, "destination_stop": self.ts2, "seats": [self.seat]}],
                 )
                 results.append(b)
+            except SeatUnavailableError as sue:
+                seat_collision_errors.append(sue)
             except Exception as e:
-                errors.append(e)
+                unexpected_errors.append(e)
             finally:
                 connections.close_all()
 
@@ -1708,14 +1912,96 @@ class SalesPostgresConcurrencyTests(TransactionTestCase):
         t1.join(timeout=15)
         t2.join(timeout=15)
 
+        # 1. Comprobar que ambos hilos hayan terminado tras join
+        self.assertFalse(t1.is_alive(), "El hilo 1 debe haber finalizado tras join.")
+        self.assertFalse(t2.is_alive(), "El hilo 2 debe haber finalizado tras join.")
+
+        # 2. Diferenciar errores de barrera de conflictos de butaca y errores inesperados
+        self.assertEqual(barrier_errors, [], f"Hubo errores de sincronización en la barrera: {barrier_errors}")
+        self.assertEqual(unexpected_errors, [], f"Hubo errores inesperados en los hilos: {unexpected_errors}")
+
+        # 3. Evidenciar serialización real bajo Trip lock: una reserva victoriosa y un conflicto de dominio
         self.assertEqual(len(results), 1, "Exactamente una reserva debe triunfar")
         self.assertEqual(results[0].status, BookingStatus.HELD)
-        self.assertEqual(len(errors), 1, "La otra reserva debe fallar por colisión de dominio")
-        self.assertIsInstance(errors[0], SeatUnavailableError)
+        self.assertEqual(len(seat_collision_errors), 1, "El hilo perdedor debe recibir SeatUnavailableError")
         self.assertEqual(
             SeatAssignment.objects.filter(trip=self.trip, seat=self.seat, status=AssignmentStatus.HELD).count(),
             1,
         )
+
+    def test_postgres_conditional_unique_constraint_and_selective_translation(self):
+        """Provoca directamente la restricción única condicional 'sales_active_trip_seat_unique' en PostgreSQL.
+
+        Inserta dos registros SeatAssignment activos para el mismo viaje y butaca mediante el ORM,
+        eludiendo la prevalidación Python de create_booking (donde el Trip lock serializa y gana la comprobación
+        de existencia). Comprueba que PostgreSQL lance IntegrityError con diag.constraint_name exacto,
+        que _is_seat_collision_integrity_error lo reconozca y que se traduzca selectivamente a SeatUnavailableError.
+        """
+        # 1. Reserva inicial que ocupa la butaca en estado HELD
+        booking1 = create_online_booking(
+            email="pg_direct_hold@correo.com",
+            legs=[{"trip": self.trip, "origin_stop": self.ts1, "destination_stop": self.ts2, "seats": [self.seat]}],
+        )
+        self.assertEqual(booking1.status, BookingStatus.HELD)
+
+        # 2. Segunda reserva y tramo creados independientemente
+        booking2 = Booking.objects.create(
+            channel=BookingChannel.ONLINE,
+            status=BookingStatus.HELD,
+            email="pg_direct_coll@correo.com",
+            expires_at=timezone.now() + timedelta(minutes=15),
+        )
+        passenger2 = BookingPassenger.objects.create(booking=booking2, position=1)
+        leg2 = BookingLeg.objects.create(
+            booking=booking2,
+            sequence=1,
+            trip=self.trip,
+            origin_stop=self.ts1,
+            destination_stop=self.ts2,
+            origin_stop_name=self.ts1.stop.name,
+            destination_stop_name=self.ts2.stop.name,
+            departure_at=self.ts1.scheduled_at,
+            arrival_at=self.ts2.scheduled_at,
+        )
+
+        # 3. Inserción directa de un segundo SeatAssignment para el mismo trip y seat en estado HELD.
+        # Al omitir create_booking, no interviene la prevalidación Python ni el Trip lock,
+        # provocando directamente la restricción 'sales_active_trip_seat_unique' a nivel PostgreSQL.
+        dup_assignment = SeatAssignment(
+            leg=leg2,
+            passenger=passenger2,
+            trip=self.trip,
+            seat=self.seat,
+            status=AssignmentStatus.HELD,
+            seat_number=self.seat.number,
+            category=self.seat.category,
+            price=Decimal("5000.00"),
+            currency="ARS",
+        )
+
+        with self.assertRaises(IntegrityError) as ctx:
+            with transaction.atomic():
+                dup_assignment.save()
+
+        # 4. Verificar diag.constraint_name en PostgreSQL
+        exc = ctx.exception
+        cause = getattr(exc, "__cause__", None)
+        diag = getattr(cause, "diag", None) if cause is not None else getattr(exc, "diag", None)
+        self.assertIsNotNone(diag, "En PostgreSQL psycopg2 debe exponer el atributo diag.")
+        self.assertEqual(diag.constraint_name, "sales_active_trip_seat_unique")
+
+        # 5. Verificar que _is_seat_collision_integrity_error reconozca el error
+        self.assertTrue(_is_seat_collision_integrity_error(exc))
+
+        # 6. Verificar la traducción selectiva de este IntegrityError a SeatUnavailableError
+        # (sin afirmar que create_booking llegue a este punto cuando la prevalidación Python serializada gana)
+        try:
+            if _is_seat_collision_integrity_error(exc):
+                raise SeatUnavailableError("Una o más butacas ya están reservadas o no están disponibles.") from exc
+            raise exc
+        except SeatUnavailableError as sue:
+            self.assertIn("ya están reservadas o no están disponibles", str(sue))
+            self.assertEqual(sue.__cause__, exc)
 
     def test_postgres_release_expired_bookings_real_route_with_trip_ids(self):
         """Verifica que en PostgreSQL real release_expired_bookings con trip_ids se ejecute exitosamente

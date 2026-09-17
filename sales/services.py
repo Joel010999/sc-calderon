@@ -37,10 +37,10 @@ def _is_seat_collision_integrity_error(exc):
         return True
 
     # Mensaje exacto de columnas en SQLite para la restricción condicional
-    msg = str(exc).lower()
-    if (
-        "unique constraint failed: sales_seatassignment.trip_id, sales_seatassignment.seat_id" in msg
-        or "unique constraint failed: sales_seatassignment.seat_id, sales_seatassignment.trip_id" in msg
+    msg = str(exc).strip().lower()
+    if msg in (
+        "unique constraint failed: sales_seatassignment.trip_id, sales_seatassignment.seat_id",
+        "unique constraint failed: sales_seatassignment.seat_id, sales_seatassignment.trip_id",
     ):
         return True
 
@@ -124,6 +124,9 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
         available_seats = [s for s in available_seats if s.category == category]
 
     fares_by_category = {}
+    if bool(origin_stop) != bool(destination_stop):
+        raise ValidationError("Debe especificar tanto la parada de subida como la de bajada, o ninguna de las dos.")
+
     if origin_stop and destination_stop:
         if origin_stop.trip_id != trip.pk:
             raise ValidationError("La parada de subida debe pertenecer al viaje indicado.")
@@ -186,6 +189,14 @@ def create_booking(*, channel, email, phone="", seller=None, legs, now=None):
 
     if not legs or len(legs) not in (1, 2):
         raise ValidationError("Se permiten únicamente reservas de solo ida o ida y vuelta (1 o 2 tramos).")
+
+    if len(legs) == 2:
+        leg1_trip = legs[0].get("trip")
+        leg2_trip = legs[1].get("trip")
+        leg1_trip_pk = leg1_trip.pk if hasattr(leg1_trip, "pk") else leg1_trip
+        leg2_trip_pk = leg2_trip.pk if hasattr(leg2_trip, "pk") else leg2_trip
+        if leg1_trip_pk == leg2_trip_pk:
+            raise ValidationError("Una reserva de dos tramos debe corresponder a viajes distintos.")
 
     max_passengers = get_max_passengers_per_booking()
     passenger_count = len(legs[0].get("seats", []))
@@ -256,13 +267,25 @@ def create_booking(*, channel, email, phone="", seller=None, legs, now=None):
         for ts in TripStop.objects.filter(pk__in=all_stop_pks).select_related("stop")
     }
 
-    # Validación cronológica entre tramo de ida y vuelta antes de evaluar tarifas/butacas
+    # Validación cronológica y de recorrido entre tramo de ida y vuelta antes de evaluar tarifas/butacas
     if len(legs) == 2:
+        leg1_orig_val = legs[0].get("origin_stop")
         leg1_dest_val = legs[0].get("destination_stop")
         leg2_orig_val = legs[1].get("origin_stop")
+        leg2_dest_val = legs[1].get("destination_stop")
+
+        ts_orig1 = trip_stops.get(leg1_orig_val.pk if hasattr(leg1_orig_val, "pk") else leg1_orig_val)
         ts_dest1 = trip_stops.get(leg1_dest_val.pk if hasattr(leg1_dest_val, "pk") else leg1_dest_val)
         ts_orig2 = trip_stops.get(leg2_orig_val.pk if hasattr(leg2_orig_val, "pk") else leg2_orig_val)
-        if ts_dest1 and ts_orig2 and ts_orig2.scheduled_at < ts_dest1.scheduled_at:
+        ts_dest2 = trip_stops.get(leg2_dest_val.pk if hasattr(leg2_dest_val, "pk") else leg2_dest_val)
+
+        if not ts_orig1 or not ts_dest1 or not ts_orig2 or not ts_dest2:
+            raise ValidationError("Una o más paradas indicadas no existen.")
+
+        if ts_orig2.stop_id != ts_dest1.stop_id or ts_dest2.stop_id != ts_orig1.stop_id:
+            raise ValidationError("El viaje de vuelta debe invertir las paradas de origen y destino de la ida.")
+
+        if ts_orig2.scheduled_at <= ts_dest1.scheduled_at:
             raise ValidationError("El viaje de vuelta debe salir después de la llegada del viaje de ida.")
 
     resolved_legs = []
@@ -454,18 +477,14 @@ def confirm_booking(booking_or_id, now=None):
         effective_now = now if now is not None else timezone.now()
 
         if booking.status == BookingStatus.CONFIRMED:
-            return booking
-
-        if booking.status == BookingStatus.EXPIRED:
+            pass
+        elif booking.status == BookingStatus.EXPIRED:
             raise BookingExpiredError("La reserva ha expirado y no se puede confirmar.")
-
-        if booking.status == BookingStatus.RELEASED:
+        elif booking.status == BookingStatus.RELEASED:
             raise InvalidBookingError("La reserva ha sido liberada y no se puede confirmar.")
-
-        if booking.status != BookingStatus.HELD:
+        elif booking.status != BookingStatus.HELD:
             raise InvalidBookingError(f"Estado de reserva inválido para confirmación: {booking.status}")
-
-        if booking.expires_at <= effective_now:
+        elif booking.expires_at <= effective_now:
             booking.status = BookingStatus.EXPIRED
             booking.full_clean()
             booking.save(update_fields=["status", "updated_at"])
@@ -518,6 +537,9 @@ def release_booking(booking_or_id, now=None):
     booking = Booking.objects.select_for_update().get(pk=booking_id)
 
     if booking.status == BookingStatus.RELEASED:
+        if isinstance(booking_or_id, Booking):
+            booking_or_id.status = booking.status
+            booking_or_id.updated_at = booking.updated_at
         return booking
 
     if booking.status == BookingStatus.CONFIRMED:
@@ -537,12 +559,21 @@ def release_booking(booking_or_id, now=None):
         status=AssignmentStatus.RELEASED,
         updated_at=now,
     )
+
+    if isinstance(booking_or_id, Booking):
+        booking_or_id.status = booking.status
+        booking_or_id.updated_at = booking.updated_at
+
     return booking
 
 
 @transaction.atomic
 def expire_booking(booking_or_id, now=None):
-    """Marca individualmente una reserva vencida como EXPIRED y libera sus butacas."""
+    """Marca individualmente una reserva vencida como EXPIRED y libera sus butacas.
+
+    Mantiene semántica segura: rechaza con InvalidBookingError reservas CONFIRMED o RELEASED,
+    sin liberar butacas confirmadas. Si ya está EXPIRED es idempotente.
+    """
     if now is None:
         now = timezone.now()
     validate_aware_datetime(now)
@@ -550,18 +581,37 @@ def expire_booking(booking_or_id, now=None):
     booking_id = booking_or_id.pk if isinstance(booking_or_id, Booking) else booking_or_id
     booking = Booking.objects.select_for_update().get(pk=booking_id)
 
-    if booking.status == BookingStatus.HELD:
-        if booking.expires_at <= now:
-            booking.status = BookingStatus.EXPIRED
-            booking.full_clean()
-            booking.save(update_fields=["status", "updated_at"])
-            SeatAssignment.objects.filter(
-                leg__booking=booking,
-                status=AssignmentStatus.HELD,
-            ).update(
-                status=AssignmentStatus.RELEASED,
-                updated_at=now,
-            )
-        else:
-            raise ValidationError("La reserva aún no ha alcanzado su horario de vencimiento.")
+    if booking.status == BookingStatus.CONFIRMED:
+        raise InvalidBookingError("No se puede expirar una reserva confirmada.")
+
+    if booking.status == BookingStatus.RELEASED:
+        raise InvalidBookingError("No se puede expirar una reserva que ya ha sido liberada.")
+
+    if booking.status == BookingStatus.EXPIRED:
+        if isinstance(booking_or_id, Booking):
+            booking_or_id.status = booking.status
+            booking_or_id.updated_at = booking.updated_at
+        return booking
+
+    if booking.status != BookingStatus.HELD:
+        raise InvalidBookingError(f"No se puede expirar una reserva en estado {booking.get_status_display()}.")
+
+    if booking.expires_at <= now:
+        booking.status = BookingStatus.EXPIRED
+        booking.full_clean()
+        booking.save(update_fields=["status", "updated_at"])
+        SeatAssignment.objects.filter(
+            leg__booking=booking,
+            status=AssignmentStatus.HELD,
+        ).update(
+            status=AssignmentStatus.RELEASED,
+            updated_at=now,
+        )
+    else:
+        raise ValidationError("La reserva aún no ha alcanzado su horario de vencimiento.")
+
+    if isinstance(booking_or_id, Booking):
+        booking_or_id.status = booking.status
+        booking_or_id.updated_at = booking.updated_at
+
     return booking
