@@ -49,17 +49,17 @@ class ReservationPanelBaseTestCase(TestCase):
         cls.user_staff = User.objects.create_user(username="staff_test", password="password123", is_staff=True)
 
         # Paradas
-        cls.stop_cba = Stop.objects.create(code="CBA", name="CÃ³rdoba Capital", city="CÃ³rdoba", province="CÃ³rdoba")
-        cls.stop_jma = Stop.objects.create(code="JMA", name="JesÃºs MarÃ­a", city="JesÃºs MarÃ­a", province="CÃ³rdoba")
+        cls.stop_cba = Stop.objects.create(code="CBA", name="Córdoba Capital", city="Córdoba", province="Córdoba")
+        cls.stop_jma = Stop.objects.create(code="JMA", name="JesÃºs MarÃ­a", city="JesÃºs MarÃ­a", province="Córdoba")
         cls.stop_ssj = Stop.objects.create(code="SSJ", name="San Salvador de Jujuy", city="San Salvador de Jujuy", province="Jujuy")
 
         # Recorridos
-        cls.route_cba_ssj = Route.objects.create(code="CBA-SSJ", name="CÃ³rdoba a Jujuy")
+        cls.route_cba_ssj = Route.objects.create(code="CBA-SSJ", name="Córdoba a Jujuy")
         cls.rs_out_1 = RouteStop.objects.create(route=cls.route_cba_ssj, stop=cls.stop_cba, sequence=1, allows_boarding=True, allows_alighting=False)
         cls.rs_out_2 = RouteStop.objects.create(route=cls.route_cba_ssj, stop=cls.stop_jma, sequence=2, allows_boarding=True, allows_alighting=False)
         cls.rs_out_3 = RouteStop.objects.create(route=cls.route_cba_ssj, stop=cls.stop_ssj, sequence=3, allows_boarding=False, allows_alighting=True)
 
-        cls.route_ssj_cba = Route.objects.create(code="SSJ-CBA", name="Jujuy a CÃ³rdoba")
+        cls.route_ssj_cba = Route.objects.create(code="SSJ-CBA", name="Jujuy a Córdoba")
         cls.rs_ret_1 = RouteStop.objects.create(route=cls.route_ssj_cba, stop=cls.stop_ssj, sequence=1, allows_boarding=True, allows_alighting=False)
         cls.rs_ret_2 = RouteStop.objects.create(route=cls.route_ssj_cba, stop=cls.stop_jma, sequence=2, allows_boarding=False, allows_alighting=True)
         cls.rs_ret_3 = RouteStop.objects.create(route=cls.route_ssj_cba, stop=cls.stop_cba, sequence=3, allows_boarding=False, allows_alighting=True)
@@ -222,7 +222,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
         # Columnas e informaciÃ³n visible
         self.assertIn(str(self.b_held.public_id)[:8], content)
         self.assertIn("held@correo.com", content)
-        self.assertIn("CÃ³rdoba Capital â†’ San Salvador de Jujuy", content)
+        self.assertIn("Córdoba Capital → San Salvador de Jujuy", content)
         self.assertIn("seller_test", content)
         self.assertIn("Retenida", content)
 
@@ -324,7 +324,7 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
         self.assertIn("detalle@correo.com", content)
         self.assertIn("3513333333", content)
         # Tramos / paradas
-        self.assertIn("CÃ³rdoba Capital", content)
+        self.assertIn("Córdoba Capital", content)
         self.assertIn("San Salvador de Jujuy", content)
         # Pasajero y documento
         self.assertIn("Carlos Romero", content)
@@ -337,7 +337,7 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
         self.assertIn("15000.00", content)
         # Vendedor
         self.assertIn("seller_test", content)
-        # AuditorÃ­a existente
+        # Auditoría existente
         self.assertIn("CreaciÃ³n: Reserva", content)
         # AcciÃ³n para liberar visible para HELD
         self.assertIn("Liberar reserva", content)
@@ -372,8 +372,8 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
         avail_seat_pks = [s.pk for s in avail["available_seats"]]
         self.assertIn(self.seat_cama_1.pk, avail_seat_pks)
 
-        # AuditorÃ­a de liberaciÃ³n registrada
-        audit = AuditEvent.objects.filter(entity_type=self.booking._meta.label, entity_id=str(self.booking.pk), description__startswith="LiberaciÃ³n:")
+        # Auditoría de liberaciÃ³n registrada
+        audit = AuditEvent.objects.filter(entity_type=self.booking._meta.label, entity_id=str(self.booking.pk), description__startswith="Liberación:")
         self.assertTrue(audit.exists())
         self.assertEqual(audit.first().actor, self.user_seller)
 
@@ -446,7 +446,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         self.assertEqual(assignment.price, Decimal("15000.00"))
         self.assertEqual(assignment.status, AssignmentStatus.HELD)
 
-        # AuditorÃ­a de creaciÃ³n registrada en panel.AuditEvent en la misma transacciÃ³n
+        # Auditoría de creaciÃ³n registrada en panel.AuditEvent en la misma transacciÃ³n
         audit = AuditEvent.objects.filter(entity_type=booking._meta.label, entity_id=str(booking.pk), action=AuditEvent.Action.CREATE)
         self.assertTrue(audit.exists())
         self.assertEqual(audit.first().actor, self.user_seller)

@@ -9,7 +9,8 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import CharField, Count, Q
+from django.db.models.functions import Cast
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -78,12 +79,12 @@ def booking_list(request):
         except ValueError:
             # Búsqueda parcial de UUID en string si no es UUID completo
             if len(q) >= 4 and all(c in "0123456789abcdefABCDEF-" for c in q):
-                search_query |= Q(public_id__icontains=q)
+                search_query |= Q(public_id_text__icontains=q)
 
         if norm_doc:
             search_query |= Q(passengers__normalized_document__icontains=norm_doc)
 
-        queryset = queryset.filter(search_query)
+        queryset = queryset.annotate(public_id_text=Cast("public_id", output_field=CharField())).filter(search_query)
 
     # Deduplicar claves primarias preservando orden
     matching_ids = list(dict.fromkeys(queryset.values_list("pk", flat=True)))
