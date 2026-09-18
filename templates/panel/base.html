@@ -24,20 +24,51 @@
             </div>
         </div>
     </nav>
+
+    <div class="panel-layout">
+        <aside class="panel-sidebar" aria-label="Menú lateral">
+            <nav class="sidebar-nav">
+                <div class="sidebar-section">
+                    <span class="sidebar-heading">Principal</span>
+                    <a href="{% url 'panel:dashboard' %}" class="sidebar-link">Dashboard</a>
+                </div>
+                {% if can_access_reservations %}
+                <div class="sidebar-section">
+                    <span class="sidebar-heading">Reservas</span>
+                    <a href="{% url 'panel:booking_list' %}" class="sidebar-link">Reservas</a>
+                    <a href="{% url 'panel:booking_create' %}" class="sidebar-link">Nueva reserva</a>
+                </div>
+                {% endif %}
+                <div class="sidebar-section">
+                    <span class="sidebar-heading">Operaciones</span>
+                    <a href="{% url 'panel:operations' %}" class="sidebar-link">Operaciones</a>
+                    <a href="{% url 'panel:trips' %}" class="sidebar-link">Viajes</a>
+                    <a href="{% url 'panel:buses' %}" class="sidebar-link">Colectivos</a>
+                    <a href="{% url 'panel:routes' %}" class="sidebar-link">Recorridos</a>
+                </div>
+            </nav>
+        </aside>
+
+        <div class="panel-main-area">
     {% endif %}
 
-    <main>
-        {% if messages %}
-            <div class="alert-container">
-                {% for message in messages %}
-                    <div class="{% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}" role="{% if message.tags == 'success' %}status{% else %}alert{% endif %}">
-                        {{ message }}
+            <main>
+                {% if messages %}
+                    <div class="alert-container">
+                        {% for message in messages %}
+                            <div class="{% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}" role="{% if message.tags == 'success' %}status{% else %}alert{% endif %}">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
                     </div>
-                {% endfor %}
-            </div>
-        {% endif %}
+                {% endif %}
 
-        {% block content %}{% endblock %}
-    </main>
+                {% block content %}{% endblock %}
+            </main>
+
+    {% if request.user.is_authenticated %}
+        </div>
+    </div>
+    {% endif %}
 </body>
 </html>

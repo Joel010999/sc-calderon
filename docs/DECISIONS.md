@@ -90,6 +90,45 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
   - El precio se congela como snapshot histórico en `Decimal` a partir de la tarifa activa (`TripFare.amount`).
   - Fechas conscientes de zona horaria (`America/Argentina/Buenos_Aires`).
 
+### Panel personalizado de reservas manuales
+
+- **Acceso y autorización**:
+  - Exclusivo para usuarios autenticados pertenecientes a los grupos `Administrador`, `Vendedor` o superusuarios (`can_manage_reservations`).
+  - Usuarios comunes o `is_staff` sin grupo reciben HTTP 403 Forbidden.
+  - Usuarios anónimos son redirigidos a la pantalla de inicio de sesión (`panel:login`).
+  - Navegación integrada en el panel personalizado con enlaces a "Reservas" y "Nueva reserva" en la barra lateral e indicadores en el resumen.
+
+- **Datos personales de pasajeros (`BookingPassenger`)**:
+  - Se incorporan al modelo los campos de identificación aprobados: `first_name`, `last_name`, `document_type`, `document_number`, `normalized_document`, `birth_date`, `nationality` y `gender` (opcional). Los datos de contacto (`email` y `phone`) corresponden a la reserva (`Booking`) y no se almacenan en el pasajero.
+  - Se genera una única migración (`sales/migrations/0002_bookingpassenger_birth_date_and_more.py`).
+  - `normalized_document`: almacena el documento sin puntos, espacios ni guiones en mayúsculas mediante `normalize_document()` con índice (`db_index=True`). No impone restricción de unicidad global para no bloquear compras recurrentes del mismo pasajero.
+  - Los datos definitivos obligatorios permanecen en consulta con Sandro; el panel y el servicio validan campos completos para reservas manuales mientras se mantiene retrocompatibilidad (`passengers_data=None`) en el dominio base.
+
+- **Ciclo de vida y creación de reservas manuales**:
+  - Las reservas manuales se crean estrictamente en estado `HELD` mediante el servicio de dominio `sales.services.create_manual_booking` (nunca insertando `SeatAssignment` directamente).
+  - Vencimiento automático configurable a 24 horas (`SALES_MANUAL_HOLD_HOURS`).
+  - Se excluyen viajes en estados iniciados (`STARTED`) o finales (`COMPLETED`, `CANCELLED`); solo se admiten viajes vigentes (`SCHEDULED`, `BOARDING`).
+  - Validación estricta en servidor de origen, destino, paradas intermedias, sentido, cronología (en ida y vuelta, la salida del regreso debe ser posterior a la llegada de la ida), disponibilidad en tiempo real, categorías y límite de pasajeros (`SALES_MAX_PASSENGERS_PER_BOOKING`).
+  - Los precios se determinan exclusivamente en el servidor a partir de las tarifas activas (`TripFare`); no se confía en importes provistos por el cliente.
+  - Quedan a la espera de pagos y confirmación en etapas posteriores; no se implementa confirmación económica, cobro, caja ni pasarelas en esta etapa.
+
+- **Listado y filtros**:
+  - Presenta identificador público (`public_id`), fecha y hora local, canal, estado con distintivos visuales (`HELD`, `CONFIRMED`, `EXPIRED`, `RELEASED`), correo de contacto, resumen de tramos/viajes, cantidad de pasajeros, vencimiento y vendedor.
+  - Filtros por estado, fecha, viaje y vendedor.
+  - Búsqueda por identificador público, correo de contacto o documento normalizado de cualquier pasajero asociado.
+  - Paginación de 20 elementos por página con preservación de filtros en los enlaces.
+
+- **Detalle y liberación segura**:
+  - Detalle completo con datos de contacto, vendedor, tramos, paradas, pasajeros, butacas asignadas por planta/categoría, precios unitarios históricos y total en `Decimal`.
+  - Historial de auditoría visible reutilizando `panel.AuditEvent`.
+  - Acción de liberación (`release`) disponible **únicamente** para reservas en estado `HELD`, ejecutada mediante POST con protección CSRF a través de `panel.reservation_services.release_panel_booking`.
+  - No se ofrece confirmación económica ni cancelación comercial de reservas `CONFIRMED`.
+
+- **Auditoría e integridad transaccional**:
+  - Cada creación y liberación de reserva manual registra un evento en `panel.AuditEvent` dentro de la misma transacción atómica (`transaction.atomic`). Si la auditoría falla, la operación completa se revierte.
+  - Interfaz responsive desarrollada con HTML semántico y CSS local; sin dependencias externas ni CDNs.
+  - Plano de asientos generado dinámicamente según la configuración de plantas (`Seat.Deck`) y coordenadas de butacas; sin esquemas rígidos hardcodeados.
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.

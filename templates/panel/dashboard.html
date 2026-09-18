@@ -31,11 +31,15 @@
                 </div>
                 <div class="stat-info">
                     <div class="stat-label">Reservas Pendientes</div>
-                    <div class="stat-value">0</div>
+                    <div class="stat-value">{{ held_reservations_count|default:0 }}</div>
                 </div>
             </div>
             <div class="stat-footer">
+                {% if can_access_reservations %}
+                <a class="stat-link" href="{% url 'panel:booking_list' %}?status=HELD">Ver reservas retenidas</a>
+                {% else %}
                 <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                {% endif %}
             </div>
         </div>
 
@@ -66,6 +70,15 @@
             <span class="module-name">Ventas</span>
             <span class="module-soon">Próximamente</span>
         </div>
+        {% if can_access_reservations %}
+        <a class="module-card" href="{% url 'panel:booking_list' %}">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </div>
+            <span class="module-name">Reservas</span>
+            <span class="module-soon">Gestión de reservas manuales</span>
+        </a>
+        {% else %}
         <div class="module-card disabled">
             <div class="module-icon">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -73,6 +86,7 @@
             <span class="module-name">Reservas</span>
             <span class="module-soon">Próximamente</span>
         </div>
+        {% endif %}
         <div class="module-card disabled">
             <div class="module-icon">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>

@@ -1,0 +1,229 @@
+{% extends 'panel/base.html' %}
+{% load l10n %}
+
+{% block content %}
+<div class="container operations">
+    <header class="ops-header">
+        <div>
+            <p class="ops-eyebrow"><a href="{% url 'panel:booking_list' %}">← Volver a Reservas</a></p>
+            <h1>Reserva <span class="font-mono">{{ booking.public_id }}</span></h1>
+        </div>
+        <div class="header-actions">
+            {% if can_release %}
+            <form method="post" action="{% url 'panel:booking_release' booking.public_id %}" onsubmit="return confirm('¿Confirmás la liberación de esta reserva? Las butacas retenidas quedarán disponibles nuevamente.');">
+                {% csrf_token %}
+                <button type="submit" class="ops-button danger">Liberar reserva</button>
+            </form>
+            {% endif %}
+        </div>
+    </header>
+
+    <!-- Estado y datos generales -->
+    <section class="ops-card" aria-label="Información general de la reserva">
+        <h2>Información de la reserva</h2>
+        <dl class="bus-data">
+            <div>
+                <dt>Estado</dt>
+                <dd>
+                    <span class="badge badge-status-{{ booking.status|lower }}">
+                        {{ booking.get_status_display }}
+                    </span>
+                </dd>
+            </div>
+            <div>
+                <dt>Canal</dt>
+                <dd>{{ booking.get_channel_display }}</dd>
+            </div>
+            <div>
+                <dt>Vendedor</dt>
+                <dd>{{ booking.seller.username|default:"No asignado (Online)" }}</dd>
+            </div>
+            <div>
+                <dt>Fecha de creación</dt>
+                <dd>{{ booking.created_at|date:"d/m/Y H:i" }}</dd>
+            </div>
+            <div>
+                <dt>Vencimiento de retención</dt>
+                <dd>
+                    {% if booking.status == 'CONFIRMED' %}
+                        <span class="muted">Confirmada</span>
+                    {% elif booking.status == 'RELEASED' %}
+                        <span class="muted">Liberada</span>
+                    {% else %}
+                        {{ booking.expires_at|date:"d/m/Y H:i" }}
+                    {% endif %}
+                </dd>
+            </div>
+            {% if booking.confirmed_at %}
+            <div>
+                <dt>Fecha de confirmación</dt>
+                <dd>{{ booking.confirmed_at|date:"d/m/Y H:i" }}</dd>
+            </div>
+            {% endif %}
+            <div>
+                <dt>Total</dt>
+                <dd class="text-xl font-bold font-mono">$ {{ total|unlocalize }}</dd>
+            </div>
+        </dl>
+    </section>
+
+    <!-- Datos de contacto -->
+    <section class="ops-card" aria-label="Datos de contacto">
+        <h2>Datos de contacto</h2>
+        <dl class="bus-data">
+            <div>
+                <dt>Correo electrónico</dt>
+                <dd>{{ booking.email }}</dd>
+            </div>
+            <div>
+                <dt>Teléfono</dt>
+                <dd>{{ booking.phone|default:"Sin informar" }}</dd>
+            </div>
+        </dl>
+    </section>
+
+    <!-- Tramos y paradas -->
+    <section class="ops-card" aria-label="Tramos y paradas del viaje">
+        <h2>Tramos e itinerario</h2>
+        {% for leg in booking.legs.all %}
+        <div class="leg-card {% if not forloop.first %}mt-4{% endif %}">
+            <h3 class="leg-title">
+                Tramo {{ leg.sequence }}: {{ leg.origin_stop_name }} → {{ leg.destination_stop_name }}
+                <small class="muted">(Viaje {{ leg.trip_id }} · Colectivo {{ leg.trip.bus.code }})</small>
+            </h3>
+            <div class="schedule-grid">
+                <div>
+                    <span class="schedule-label">Subida:</span>
+                    <strong>{{ leg.origin_stop_name }}</strong>
+                    <span class="schedule-time">{{ leg.departure_at|date:"d/m/Y H:i" }}</span>
+                </div>
+                <div>
+                    <span class="schedule-label">Bajada:</span>
+                    <strong>{{ leg.destination_stop_name }}</strong>
+                    <span class="schedule-time">{{ leg.arrival_at|date:"d/m/Y H:i" }}</span>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <p class="empty-state">No hay tramos registrados para esta reserva.</p>
+        {% endfor %}
+    </section>
+
+    <!-- Pasajeros y asignación de butacas con precios históricos -->
+    <section class="ops-card" aria-label="Pasajeros y butacas">
+        <h2>Pasajeros y butacas asignadas</h2>
+        <div class="table-scroll">
+            <table class="table-passengers">
+                <caption>Detalle de pasajeros, documentos, butacas asignadas y tarifas históricas</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">#</th>
+                        <th scope="col">Pasajero</th>
+                        <th scope="col">Documento</th>
+                        <th scope="col">Nacimiento</th>
+                        <th scope="col">Nacionalidad</th>
+                        <th scope="col">Butaca / Tramo</th>
+                        <th scope="col">Categoría</th>
+                        <th scope="col" style="text-align: right;">Precio histórico</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for passenger in booking.passengers.all %}
+                    <tr>
+                        <td>{{ passenger.position }}</td>
+                        <td>
+                            <strong>{{ passenger.first_name }} {{ passenger.last_name }}</strong>
+                            {% if passenger.gender %}<small class="muted">{{ passenger.gender }}</small>{% endif %}
+                        </td>
+                        <td>
+                            {{ passenger.document_type }}: {{ passenger.document_number|default:"—" }}
+                            {% if passenger.normalized_document %}
+                            <small class="muted font-mono">Norm: {{ passenger.normalized_document }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ passenger.birth_date|date:"d/m/Y"|default:"—" }}
+                        </td>
+                        <td>
+                            {{ passenger.nationality|default:"Argentina" }}
+                        </td>
+                        <td>
+                            {% for sa in passenger.seat_assignments.all %}
+                                <div>
+                                    <strong>Butaca {{ sa.seat_number }}</strong>
+                                    <small class="muted">(Tramo {{ sa.leg.sequence }})</small>
+                                </div>
+                            {% empty %}
+                                <span class="muted">Sin asignar</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for sa in passenger.seat_assignments.all %}
+                                <div>
+                                    <span class="badge-category badge-{{ sa.category|lower }}">
+                                        {{ sa.get_category_display }}
+                                    </span>
+                                </div>
+                            {% empty %}
+                                —
+                            {% endfor %}
+                        </td>
+                        <td style="text-align: right;" class="font-mono">
+                            {% for sa in passenger.seat_assignments.all %}
+                                <div>
+                                    {{ sa.currency }} {{ sa.price|unlocalize }}
+                                </div>
+                            {% empty %}
+                                —
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="empty-state">No hay pasajeros registrados.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <th colspan="8" style="text-align: right;">Total de la reserva:</th>
+                        <td style="text-align: right;" class="font-mono font-bold">$ {{ total|unlocalize }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </section>
+
+    <!-- Historial de Auditoría -->
+    <section class="ops-card" aria-label="Historial de auditoría de la reserva">
+        <h2>Historial de auditoría</h2>
+        {% if audit_events %}
+        <div class="table-scroll">
+            <table class="table-audit">
+                <caption>Eventos registrados para esta reserva en panel.AuditEvent</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Fecha y hora</th>
+                        <th scope="col">Acción</th>
+                        <th scope="col">Usuario actor</th>
+                        <th scope="col">Descripción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in audit_events %}
+                    <tr>
+                        <td>{{ event.created_at|date:"d/m/Y H:i:s" }}</td>
+                        <td><span class="badge">{{ event.get_action_display }}</span></td>
+                        <td>{{ event.actor.username|default:"Sistema" }}</td>
+                        <td>{{ event.description }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="empty-state">No hay eventos de auditoría registrados para esta reserva.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

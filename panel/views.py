@@ -6,7 +6,8 @@ from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.contrib.auth.forms import AuthenticationForm
 
-from .permissions import is_panel_user
+from .permissions import can_manage_reservations, is_panel_user
+
 
 def panel_login(request):
     if request.user.is_authenticated:
@@ -40,4 +41,8 @@ def panel_logout(request):
 def dashboard(request):
     if not is_panel_user(request.user):
         return HttpResponseForbidden("No tienes autorización para acceder a este panel.")
-    return render(request, 'panel/dashboard.html')
+    held_count = 0
+    if can_manage_reservations(request.user):
+        from sales.models import Booking, BookingStatus
+        held_count = Booking.objects.filter(status=BookingStatus.HELD).count()
+    return render(request, 'panel/dashboard.html', {'held_reservations_count': held_count})

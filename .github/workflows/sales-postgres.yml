@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/sales-foundation-20260917
+      - feature/manual-reservations-panel-20260918
   pull_request:
 
 permissions:

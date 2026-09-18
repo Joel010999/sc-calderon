@@ -1805,11 +1805,70 @@ class SalesSeatCollisionsAndConstraintsTests(SalesBaseTestCase):
 
 
 class SalesArchitectureAndNoPersonalDataTests(TestCase):
-    def test_no_personal_data_fields_on_passenger(self):
+    def test_initial_passenger_data_fields_on_passenger(self):
         fields = [f.name for f in BookingPassenger._meta.get_fields()]
-        forbidden = ["first_name", "nombre", "last_name", "apellido", "dni", "birth_date", "gender", "genero", "nationality", "nacionalidad"]
-        for field in forbidden:
-            self.assertNotIn(field, fields, f"El modelo BookingPassenger no debe incluir datos personales definitivos: {field}")
+        expected = ["first_name", "last_name", "document_type", "document_number", "normalized_document", "birth_date", "gender", "nationality"]
+        for field in expected:
+            self.assertIn(field, fields, f"El modelo BookingPassenger debe incluir el campo: {field}")
+        self.assertNotIn("email", fields, "BookingPassenger no debe almacenar email.")
+        self.assertNotIn("phone", fields, "BookingPassenger no debe almacenar phone.")
+        booking_fields = [f.name for f in Booking._meta.get_fields()]
+        self.assertIn("email", booking_fields, "Booking debe conservar el campo email.")
+        self.assertIn("phone", booking_fields, "Booking debe conservar el campo phone.")
+
+    def test_validate_passenger_data_approved_fields_success(self):
+        from sales.services import validate_passenger_data
+        valid_data = {
+            "first_name": "Esteban",
+            "last_name": "Quito",
+            "document_type": "DNI",
+            "document_number": "31.222.333",
+            "birth_date": "1990-04-12",
+            "nationality": "Argentina",
+            "gender": "Masculino",
+        }
+        # No debe lanzar excepción aun sin email ni phone
+        try:
+            validate_passenger_data(valid_data, position=1)
+        except ValidationError:
+            self.fail("validate_passenger_data no debe fallar con datos válidos aprobados sin email ni phone.")
+
+    def test_validate_passenger_data_required_fields_enforced(self):
+        from sales.services import validate_passenger_data
+        invalid_data = {
+            "first_name": "",
+            "last_name": "",
+            "document_type": "",
+            "document_number": "",
+            "birth_date": "",
+            "nationality": "",
+        }
+        with self.assertRaises(ValidationError) as ctx:
+            validate_passenger_data(invalid_data, position=1)
+        errs = ctx.exception.message_dict
+        self.assertIn("first_name", errs)
+        self.assertIn("last_name", errs)
+        self.assertIn("document_type", errs)
+        self.assertIn("document_number", errs)
+        self.assertIn("birth_date", errs)
+        self.assertIn("nationality", errs)
+        self.assertNotIn("email", errs, "Email no debe ser exigido para el pasajero.")
+        self.assertNotIn("phone", errs, "Phone no debe ser exigido para el pasajero.")
+
+    def test_validate_passenger_data_future_birth_date_rejected(self):
+        from sales.services import validate_passenger_data
+        future_date = (timezone.now() + timedelta(days=5)).date().isoformat()
+        data = {
+            "first_name": "Futuro",
+            "last_name": "Viajero",
+            "document_type": "DNI",
+            "document_number": "45.000.000",
+            "birth_date": future_date,
+            "nationality": "Argentina",
+        }
+        with self.assertRaises(ValidationError) as ctx:
+            validate_passenger_data(data, position=1)
+        self.assertIn("birth_date", ctx.exception.message_dict)
 
     def test_booking_aggregate_no_separate_compra_reserva_venta_models(self):
         from django.apps import apps

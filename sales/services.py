@@ -21,8 +21,53 @@ from .models import (
     BookingPassenger,
     BookingStatus,
     SeatAssignment,
+    normalize_document,
 )
 from .validators import validate_aware_datetime
+
+
+def validate_passenger_data(p_data, position=1):
+    errors = {}
+    first_name = (p_data.get("first_name") or "").strip()
+    last_name = (p_data.get("last_name") or "").strip()
+    document_type = (p_data.get("document_type") or "").strip()
+    document_number = (p_data.get("document_number") or "").strip()
+    birth_date = p_data.get("birth_date")
+    nationality = (p_data.get("nationality") or "").strip()
+
+    if not first_name:
+        errors["first_name"] = f"El nombre del pasajero {position} es obligatorio."
+    if not last_name:
+        errors["last_name"] = f"El apellido del pasajero {position} es obligatorio."
+    if not document_type:
+        errors["document_type"] = f"El tipo de documento del pasajero {position} es obligatorio."
+    if not document_number:
+        errors["document_number"] = f"El número de documento del pasajero {position} es obligatorio."
+    if not birth_date:
+        errors["birth_date"] = f"La fecha de nacimiento del pasajero {position} es obligatoria."
+    else:
+        from datetime import date, datetime
+        parsed_date = None
+        if isinstance(birth_date, str):
+            try:
+                parsed_date = date.fromisoformat(birth_date.strip())
+            except ValueError:
+                errors["birth_date"] = f"La fecha de nacimiento del pasajero {position} no es válida."
+        elif isinstance(birth_date, datetime):
+            parsed_date = birth_date.date()
+        elif isinstance(birth_date, date):
+            parsed_date = birth_date
+
+        if parsed_date:
+            today = timezone.localdate() if hasattr(timezone, "localdate") else timezone.now().date()
+            if parsed_date > today:
+                errors["birth_date"] = f"La fecha de nacimiento del pasajero {position} no puede ser en el futuro."
+
+    if not nationality:
+        errors["nationality"] = f"La nacionalidad del pasajero {position} es obligatoria."
+
+    if errors:
+        raise ValidationError(errors)
 
 
 def _is_seat_collision_integrity_error(exc):
@@ -159,7 +204,7 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
 
 
 @transaction.atomic
-def create_booking(*, channel, email, phone="", seller=None, legs, now=None):
+def create_booking(*, channel, email, phone="", seller=None, legs, passengers_data=None, now=None):
     """Crea una reserva (ida o ida/vuelta) con sus tramos, pasajeros y butacas.
 
     Operación completamente atómica con bloqueos ordenados por PK sobre los viajes
@@ -204,6 +249,12 @@ def create_booking(*, channel, email, phone="", seller=None, legs, now=None):
         raise ValidationError("Debe seleccionar al menos una butaca.")
     if passenger_count > max_passengers:
         raise ValidationError(f"El límite máximo de pasajeros por reserva es de {max_passengers}.")
+
+    if passengers_data is not None:
+        if len(passengers_data) != passenger_count:
+            raise ValidationError("La cantidad de pasajeros no coincide con las butacas seleccionadas.")
+        for idx, p_info in enumerate(passengers_data, start=1):
+            validate_passenger_data(p_info, position=idx)
 
     for idx, leg_data in enumerate(legs, start=1):
         leg_seats = leg_data.get("seats", [])
@@ -385,7 +436,27 @@ def create_booking(*, channel, email, phone="", seller=None, legs, now=None):
 
         passengers = []
         for pos in range(1, passenger_count + 1):
-            passenger = BookingPassenger(booking=booking, position=pos)
+            p_kwargs = {"booking": booking, "position": pos}
+            if passengers_data and len(passengers_data) >= pos:
+                p_info = passengers_data[pos - 1]
+                b_date = p_info.get("birth_date")
+                if isinstance(b_date, str) and b_date.strip():
+                    from datetime import date
+                    try:
+                        b_date = date.fromisoformat(b_date.strip())
+                    except ValueError:
+                        pass
+                p_kwargs.update({
+                    "first_name": (p_info.get("first_name") or "").strip(),
+                    "last_name": (p_info.get("last_name") or "").strip(),
+                    "document_type": (p_info.get("document_type") or "DNI").strip(),
+                    "document_number": (p_info.get("document_number") or "").strip(),
+                    "normalized_document": normalize_document(p_info.get("document_number") or ""),
+                    "birth_date": b_date,
+                    "nationality": (p_info.get("nationality") or "Argentina").strip(),
+                    "gender": (p_info.get("gender") or "").strip(),
+                })
+            passenger = BookingPassenger(**p_kwargs)
             passenger.full_clean()
             passenger.save()
             passengers.append(passenger)
@@ -445,7 +516,7 @@ def create_online_booking(*, email, phone="", legs, now=None):
     )
 
 
-def create_manual_booking(*, seller, email, phone="", legs, now=None):
+def create_manual_booking(*, seller, email, phone="", legs, passengers_data=None, now=None):
     """Crea una reserva canal MANUAL con vendedor autorizado."""
     return create_booking(
         channel=BookingChannel.MANUAL,
@@ -453,6 +524,7 @@ def create_manual_booking(*, seller, email, phone="", legs, now=None):
         phone=phone,
         seller=seller,
         legs=legs,
+        passengers_data=passengers_data,
         now=now,
     )
 
