@@ -15,7 +15,7 @@ from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, connections, transaction
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, Trip, TripFare, TripStop
@@ -551,7 +551,7 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         self.assertEqual(booking.status, BookingStatus.CONFIRMED)
 
 
-class PaymentsPostgresConcurrencyTests(TestCase):
+class PaymentsPostgresConcurrencyTests(TransactionTestCase):
     """Pruebas concurrentes y de restricción única condicional en PostgreSQL.
 
     Se omiten automáticamente en SQLite y se ejecutan sin skip en el workflow de PostgreSQL.
