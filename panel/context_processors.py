@@ -1,4 +1,4 @@
-from .permissions import can_manage_operations, can_manage_reservations
+from .permissions import can_manage_operations, can_manage_payments, can_manage_reservations
 
 
 def panel_permissions(request):
@@ -7,8 +7,10 @@ def panel_permissions(request):
         return {
             "can_access_reservations": False,
             "can_manage_operations": False,
+            "can_manage_payments": False,
         }
     return {
         "can_access_reservations": can_manage_reservations(user),
         "can_manage_operations": can_manage_operations(user),
+        "can_manage_payments": can_manage_payments(user),
     }

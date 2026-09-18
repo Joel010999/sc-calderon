@@ -39,6 +39,14 @@
                     <a href="{% url 'panel:booking_create' %}" class="sidebar-link">Nueva reserva</a>
                 </div>
                 {% endif %}
+                {% if can_manage_payments %}
+                <div class="sidebar-section">
+                    <span class="sidebar-heading">Pagos</span>
+                    <a href="{% url 'panel:payment_list' %}" class="sidebar-link">Pagos</a>
+                    <a href="{% url 'panel:pending_transfers' %}" class="sidebar-link">Transferencias pendientes</a>
+                </div>
+                {% endif %}
+
                 <div class="sidebar-section">
                     <span class="sidebar-heading">Operaciones</span>
                     <a href="{% url 'panel:operations' %}" class="sidebar-link">Operaciones</a>

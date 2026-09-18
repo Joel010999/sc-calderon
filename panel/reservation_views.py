@@ -154,12 +154,25 @@ def booking_detail(request, public_id):
 
     can_release = (booking.status == BookingStatus.HELD)
 
+    from payments.models import Payment, PaymentStatus
+    active_payment = Payment.objects.filter(
+        booking=booking,
+        status__in=[PaymentStatus.UNDER_REVIEW, PaymentStatus.APPROVED],
+    ).select_related("registered_by", "reviewed_by").first()
+
+    payment_history = Payment.objects.filter(
+        booking=booking
+    ).select_related("registered_by", "reviewed_by").order_by("-created_at")
+
     return render(request, "panel/reservations/detail.html", {
         "booking": booking,
         "total": total,
         "audit_events": audit_events,
         "can_release": can_release,
+        "active_payment": active_payment,
+        "payment_history": payment_history,
     })
+
 
 
 @reservations_access()

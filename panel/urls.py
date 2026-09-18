@@ -3,6 +3,7 @@ from . import views
 from . import operations_views as operations
 from . import trip_views as trips
 from . import reservation_views as reservations
+from . import payment_views as payments
 
 app_name = 'panel'
 
@@ -14,6 +15,14 @@ urlpatterns = [
     path('reservas/nueva/', reservations.booking_create, name='booking_create'),
     path('reservas/<uuid:public_id>/', reservations.booking_detail, name='booking_detail'),
     path('reservas/<uuid:public_id>/liberar/', reservations.booking_release, name='booking_release'),
+    path('reservas/<uuid:public_id>/pagar-efectivo/', payments.booking_pay_cash, name='booking_pay_cash'),
+    path('reservas/<uuid:public_id>/pagar-transferencia/', payments.booking_pay_transfer, name='booking_pay_transfer'),
+    path('pagos/', payments.payment_list, name='payment_list'),
+    path('pagos/transferencias-pendientes/', payments.pending_transfers, name='pending_transfers'),
+    path('pagos/<uuid:public_id>/', payments.payment_detail, name='payment_detail'),
+    path('pagos/<uuid:public_id>/revisar/', payments.transfer_review, name='transfer_review'),
+    path('pagos/<uuid:public_id>/comprobante/', payments.download_voucher, name='payment_voucher'),
+
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),
     path('operaciones/viajes/nuevo/', trips.trip_select, name='trip_create'),

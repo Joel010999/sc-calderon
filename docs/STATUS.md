@@ -123,4 +123,15 @@
 - Se conservan las dos pruebas del registro de aplicaciones en `core/tests.py`: ausencia de los seis modelos antiguos y presencia de los ocho modelos de `operations`.
 - Continúan pendientes las definiciones con Sandro de [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
+## Pagos manuales y confirmación económica
+
+Estado: implementado en `feature/manual-payments-20260918`, pendiente de revisión final.
+
+- Se agregó la aplicación `payments` con migración inicial y modelo `Payment`.
+- El panel permite registrar efectivo, presentar y revisar transferencias, descargar comprobantes protegidos y consultar métricas de pagos aprobados.
+- Efectivo y aprobación de transferencia confirman atómicamente pago, reserva y asignaciones; el rechazo mantiene HELD mientras la reserva siga vigente.
+- La restricción condicional de pagos activos, los bloqueos ordenados y las transacciones tienen cobertura SQLite y PostgreSQL.
+- No están terminados caja, pagos parciales, Mercado Pago, Payway, tarjetas, checkout público, reembolsos, PDF, QR, correo ni pasarelas externas.
+- Antes de producción se debe configurar almacenamiento persistente para comprobantes. La política de vencimiento de transferencias del checkout público sigue pendiente con Sandro.
+
 Actualizar este documento cuando finalice cada módulo.

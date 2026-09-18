@@ -129,6 +129,17 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
   - Interfaz responsive desarrollada con HTML semántico y CSS local; sin dependencias externas ni CDNs.
   - Plano de asientos generado dinámicamente según la configuración de plantas (`Seat.Deck`) y coordenadas de butacas; sin esquemas rígidos hardcodeados.
 
+## FundaciÃ³n de pagos manuales (2026-09-18)
+
+- Se crea `payments`, dependiente de `sales`; `operations` y `sales` no dependen de ella.
+- Cada `Payment` cubre el importe total de una reserva manual HELD. No hay pagos parciales.
+- Efectivo queda APPROVED y confirma la reserva y butacas en una sola transacciÃ³n. Transferencia requiere comprobante y queda UNDER_REVIEW hasta aprobaciÃ³n o rechazo con motivo.
+- Una transferencia vencida no puede aprobarse, no extiende el vencimiento y deja el pago sin modificar; la reserva se libera como EXPIRED antes del error de dominio.
+- Comprobantes permitidos: PDF, JPG, JPEG y PNG, con lÃ­mite configurable inicial de 10 MB y almacenamiento privado.
+- Una restricciÃ³n condicional impide dos pagos UNDER_REVIEW o APPROVED para una reserva. Rechazados y pendientes no cuentan en mÃ©tricas.
+- Quedan fuera de alcance caja, reembolsos, Mercado Pago, Payway, tarjetas, checkout pÃºblico y pagos parciales.
+- Pendientes con Sandro: polÃ­tica de vencimiento de transferencias durante revisiÃ³n en checkout pÃºblico. Antes de Railway debe definirse almacenamiento persistente para comprobantes.
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.

@@ -5,6 +5,7 @@ on:
     branches:
       - feature/sales-foundation-20260917
       - feature/manual-reservations-panel-20260918
+      - feature/manual-payments-20260918
   pull_request:
 
 permissions:
@@ -44,6 +45,8 @@ jobs:
           python manage.py makemigrations --check --dry-run
       - name: PostgreSQL concurrency tests
         run: python manage.py test sales.tests.SalesPostgresConcurrencyTests --verbosity 2
+      - name: Payments PostgreSQL constraint and concurrency tests
+        run: python manage.py test payments.tests.PaymentsPostgresConcurrencyTests --verbosity 2
       - name: Sales tests on PostgreSQL
         run: python manage.py test sales
       - name: Complete suite on PostgreSQL
