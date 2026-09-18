@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     'django_htmx',
     'panel',
     'operations.apps.OperationsConfig',
+    'sales.apps.SalesConfig',
 ]
 
 MIDDLEWARE = [
@@ -179,3 +180,9 @@ STORAGES = {
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
+
+# Sales configuration
+SALES_MAX_PASSENGERS_PER_BOOKING = int(os.getenv('SALES_MAX_PASSENGERS_PER_BOOKING', 4))
+SALES_ONLINE_HOLD_MINUTES = int(os.getenv('SALES_ONLINE_HOLD_MINUTES', 15))
+SALES_ONLINE_CUTOFF_MINUTES = int(os.getenv('SALES_ONLINE_CUTOFF_MINUTES', 60))
+SALES_MANUAL_HOLD_HOURS = int(os.getenv('SALES_MANUAL_HOLD_HOURS', 24))

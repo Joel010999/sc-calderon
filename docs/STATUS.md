@@ -5,11 +5,11 @@
 - `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
 - Panel personalizado, seguridad, health check, roles y estáticos locales: completados.
 - Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `fbe3585`.
-- Rama activa de desarrollo: `feature/trips-fares-panel-20260908`.
-- Etapa actual: panel de viajes programados, horarios y tarifas implementado.
-- Documentación creada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
-- Próxima etapa: arquitectura de ventas, reservas y disponibilidad de butacas.
-- Pagos, ventas, PDF, autenticación pública y migración: todavía no implementados.
+- Rama activa de desarrollo: `feature/sales-foundation-20260917`.
+- Etapa actual: fundación de reservas y disponibilidad de butacas implementada.
+- Documentación creada/actualizada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
+- Próxima etapa: panel de ventas interno, flujo comercial de reservas/pasajes y migración de datos desde Google Sheets (previa a la activación de pasarelas).
+- Ventas comerciales finales, pasarelas de pago (Mercado Pago, Payway), vistas públicas, checkout, panel de ventas, caja, comprobantes, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
 - Decisiones pendientes: consultar [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
 ## Fundación de operaciones
@@ -48,8 +48,36 @@
 - Auditoría extendida a viajes y tarifas, con cronograma completo en un evento de creación de viaje, importes como texto decimal y fechas ISO 8601. Un fallo de auditoría revierte la modificación completa; no se auditan formularios inválidos ni acciones sin efecto.
 - Resumen operativo ampliado con viajes programados futuros, viajes en estado de embarque y acceso a Viajes. No se implementa gestión de embarque ni edición de estados.
 - Se agregaron 45 pruebas específicas. Las 104 anteriores se conservan; se adaptaron únicamente sus datos de prueba a la exigencia de butacas activas, intervalos no superpuestos y los nuevos conteos del resumen.
-- No se modificaron modelos ni se requirieron migraciones nuevas. Las validaciones utilizan bases temporales del runner de tests.
-- Continúan fuera de alcance ventas, reservas, pasajeros, disponibilidad, pagos, PDF, QR, embarque, cambios comerciales, autenticación pública, AppSheet y workers.
+- Continúan fuera de alcance pagos, vistas públicas, checkout, panel de ventas, caja, comprobantes, PDF, QR, correo transaccional, cambios comerciales, autenticación pública, AppSheet y workers.
+
+## Fundación de reservas y disponibilidad de butacas
+
+- Aplicación independiente `sales` registrada en Django (`sales.apps.SalesConfig`). `operations` permanece intacta como fuente de verdad y no depende de `sales`.
+- Modelos agregados como núcleo del dominio de reservas: `Booking`, `BookingLeg`, `BookingPassenger` y `SeatAssignment`. No se crearon entidades separadas para `Compra`, `Reserva` ni `Venta`.
+- `Booking`: agregado principal con identificador público `public_id` (UUID4 indexado y único), canal (`ONLINE` o `MANUAL`), estado (`HELD`, `CONFIRMED`, `EXPIRED`, `RELEASED`), correo obligatorio, teléfono opcional, vendedor asignado únicamente en canal `MANUAL`, fecha de expiración consciente y fecha opcional de confirmación. Índices compuestos en `[status, expires_at]` y `[created_at]`.
+- `BookingLeg`: secuencia 1 o 2 (solo ida o ida/vuelta) con unicidad por reserva, relación con `operations.Trip`, paradas de subida y bajada (`TripStop`), y snapshots congelados de los nombres de paradas y horarios programados de subida y bajada. En reservas de dos tramos, se exige obligatoriamente que ambos correspondan a viajes distintos, que la vuelta invierta los `Stop` de origen y destino de la ida (`TripStop.stop_id`) y que la salida de la vuelta sea estrictamente posterior a la llegada de la ida.
+- `BookingPassenger`: posición relativa de 1 a N con unicidad por reserva, sin campos de datos personales definitivos, a la espera de la validación con Sandro.
+- `SeatAssignment`: asignación de butaca por tramo y pasajero; valida coincidencia entre el viaje y el tramo, y entre el colectivo y la butaca; registra snapshots históricos de número de butaca, categoría, precio en `Decimal` y moneda. Mantiene los registros en estado `RELEASED` para auditoría histórica.
+- Restricción única condicional en base de datos: `UniqueConstraint(fields=['trip', 'seat'], condition=Q(status__in=['HELD', 'CONFIRMED']))`, lo cual impide sobreventa o colisiones mientras las butacas estén retenidas o confirmadas, permitiendo la reutilización inmediata cuando pasan a `RELEASED`.
+- Servicios de dominio en `sales.services`:
+  - `create_booking`, `create_online_booking`, `create_manual_booking`: creación transaccional atómica (`transaction.atomic`) con orden determinístico de bloqueos por PK: primero sobre los viajes (`Trip.objects.select_for_update()`), luego expiración oportunista inicial acotada a los viajes involucrados, y luego sobre las butacas solicitadas (`Seat.objects.select_for_update()`), coordinando con los bloqueos de edición de butacas del panel operativo. Relectura de `timezone.now` tras adquirir bloqueos (salvo inyección explícita en tests) para evaluar el corte online y la fecha de expiración con el tiempo efectivo real.
+  - Recarga estricta desde la base de datos de los datos vigentes de `Trip`, `Seat`, `TripStop` y `TripFare`, sin confiar en instancias provistas por el llamador.
+  - Autoridad de paradas y orden delegada exclusivamente en el snapshot `TripStop` del viaje programado; cambios posteriores en `RouteStop` no invalidan reservas ni disponibilidad.
+  - El cierre de venta online opera a la hora exacta de corte (`now >= cutoff_time`). Tanto el canal `ONLINE` como el `MANUAL` excluyen viajes en estados iniciados (`STARTED`) y finales (`COMPLETED`, `CANCELLED`); `ONLINE` admite viajes en estado `BOARDING` antes del horario límite de la parada.
+  - Traducción selectiva de errores de integridad: restringida estrictamente al `constraint_name` en PostgreSQL (`sales_active_trip_seat_unique`) y al mensaje exacto por igualdad en SQLite (`unique constraint failed: sales_seatassignment.trip_id, sales_seatassignment.seat_id`), sin comparaciones por subcadena ni comodines genéricos de texto; errores ajenos se preservan y mantienen el rollback atómico completo.
+  - `get_trip_availability`: consulta disponibilidad de butacas con expiración oportunista previa acotada al viaje consultado, garantizando que una butaca reservada ocupa todo el viaje sin reventa por tramos intermedios en el MVP. Exige paradas completas (origen y destino) o ninguna, rechazando consultas parciales con `ValidationError`.
+  - `confirm_booking`: confirmación transaccional e idempotente que bloquea `Booking` directamente sin lecturas `b_pre` fuera de transacción y verifica la expiración bajo bloqueo con el reloj efectivo. Si está vencida, transiciona atómicamente la reserva a `EXPIRED` y las asignaciones a `RELEASED`, confirma el cambio (commit) y sólo después lanza `BookingExpiredError` para no revertir la liberación. Sincroniza la instancia en memoria provista incluso si la reserva ya estaba confirmada en base.
+  - `release_booking`: liberación que pasa reservas `HELD` y sus asignaciones a `RELEASED`, sincronizando la instancia en memoria. Rechaza con `InvalidBookingError` reservas `CONFIRMED` para impedir la reventa no autorizada de pasajes confirmados sin una política de cancelación aprobada.
+  - `expire_booking` y `release_expired_bookings`: transición atómica de reservas vencidas a `EXPIRED` y butacas a `RELEASED`. `expire_booking` mantiene semántica segura individual rechazando con `InvalidBookingError` reservas `CONFIRMED` o `RELEASED`, rechazando reservas `HELD` vigentes con `ValidationError` y sincronizando la instancia en memoria. La selección en `release_expired_bookings` no usa `DISTINCT` para ser plenamente compatible con PostgreSQL `select_for_update`, filtrando por PK mediante subconsulta en `BookingLeg`.
+- Reglas configurables en settings:
+  - `SALES_MAX_PASSENGERS_PER_BOOKING = 4` (validado en servidor).
+  - `SALES_ONLINE_HOLD_MINUTES = 15`.
+  - `SALES_ONLINE_CUTOFF_MINUTES = 60` (cierre de venta online a la hora exacta previa a la subida).
+  - `SALES_MANUAL_HOLD_HOURS = 24` (permitido en viajes `SCHEDULED` y `BOARDING`).
+  - Validación de vendedor manual: requiere usuario activo perteneciente al grupo `Vendedor`, `Administrador` o superusuario, sin ampliar permisos operativos.
+- Migración inicial `sales/migrations/0001_initial.py` creada y probada únicamente en bases temporales de tests; no aplicada a base local ni a bases reales.
+- Se incorporaron 79 pruebas en `sales/tests.py`: sales descubrió 79, ejecutó 76 en SQLite, OK con skipped=1 (la clase PostgreSQL contiene tres métodos no ejecutados en SQLite); suite completa descubrió 228, ejecutó 225 en SQLite, OK con skipped=1. Las pruebas PostgreSQL verifican terminación de hilos tras `join()`, diferenciación de errores de sincronización en barrera frente a colisiones de butaca, serialización real bajo `Trip` lock, y provocación directa de la restricción condicional única (`sales_active_trip_seat_unique`) con verificación de `diag.constraint_name` y traducción selectiva de `IntegrityError` a `SeatUnavailableError`.
+- Quedan explícitamente fuera de alcance en esta entrega: ventas finales, pasarelas de pago (Mercado Pago, Payway), vistas públicas, checkout, panel de ventas, caja, comprobantes, PDF, QR, correo transaccional, migración desde Google Sheets/AppSheet, Celery y Redis.
 
 ## Retiro del prototipo y pendientes
 
