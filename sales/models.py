@@ -154,9 +154,24 @@ class BookingLeg(TimestampedModel):
             raise ValidationError(errors)
 
 
+def normalize_document(doc):
+    if not doc:
+        return ""
+    import re
+    return re.sub(r"[^A-Za-z0-9]", "", str(doc)).upper()
+
+
 class BookingPassenger(TimestampedModel):
     booking = models.ForeignKey(Booking, verbose_name="reserva", on_delete=models.PROTECT, related_name="passengers")
     position = models.PositiveSmallIntegerField("posición", validators=[MinValueValidator(1)])
+    first_name = models.CharField("nombre", max_length=100, blank=True, default="")
+    last_name = models.CharField("apellido", max_length=100, blank=True, default="")
+    document_type = models.CharField("tipo de documento", max_length=20, blank=True, default="DNI")
+    document_number = models.CharField("número de documento", max_length=30, blank=True, default="")
+    normalized_document = models.CharField("documento normalizado", max_length=30, blank=True, default="", db_index=True)
+    birth_date = models.DateField("fecha de nacimiento", null=True, blank=True)
+    nationality = models.CharField("nacionalidad", max_length=50, blank=True, default="Argentina")
+    gender = models.CharField("género", max_length=20, blank=True, default="")
 
     class Meta:
         verbose_name = "pasajero de reserva"
@@ -176,13 +191,22 @@ class BookingPassenger(TimestampedModel):
         ]
 
     def __str__(self):
+        if self.first_name and self.last_name:
+            return f"Pasajero {self.position}: {self.first_name} {self.last_name} ({self.booking.public_id})"
         return f"Pasajero {self.position} ({self.booking.public_id})"
 
     def clean(self):
         super().clean()
+        if self.document_number:
+            self.normalized_document = normalize_document(self.document_number)
         max_allowed = get_max_passengers_per_booking()
         if self.position is not None and (self.position < 1 or self.position > max_allowed):
             raise ValidationError({"position": f"La posición debe estar entre 1 y {max_allowed}."})
+
+    def save(self, *args, **kwargs):
+        # Mantener el indice de busqueda sincronizado si se corrige el documento.
+        self.normalized_document = normalize_document(self.document_number)
+        super().save(*args, **kwargs)
 
 
 class SeatAssignment(TimestampedModel):

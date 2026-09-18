@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import operations_views as operations
 from . import trip_views as trips
+from . import reservation_views as reservations
 
 app_name = 'panel'
 
@@ -9,6 +10,10 @@ urlpatterns = [
     path('login/', views.panel_login, name='login'),
     path('logout/', views.panel_logout, name='logout'),
     path('', views.dashboard, name='dashboard'),
+    path('reservas/', reservations.booking_list, name='booking_list'),
+    path('reservas/nueva/', reservations.booking_create, name='booking_create'),
+    path('reservas/<uuid:public_id>/', reservations.booking_detail, name='booking_detail'),
+    path('reservas/<uuid:public_id>/liberar/', reservations.booking_release, name='booking_release'),
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),
     path('operaciones/viajes/nuevo/', trips.trip_select, name='trip_create'),

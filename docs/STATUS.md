@@ -5,11 +5,11 @@
 - `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
 - Panel personalizado, seguridad, health check, roles y estáticos locales: completados.
 - Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `fbe3585`.
-- Rama activa de desarrollo: `feature/sales-foundation-20260917`.
-- Etapa actual: fundación de reservas y disponibilidad de butacas implementada.
+- Rama activa de desarrollo: `feature/manual-reservations-panel-20260918`.
+- Etapa actual: panel personalizado de reservas manuales implementado y verificado.
 - Documentación creada/actualizada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
-- Próxima etapa: panel de ventas interno, flujo comercial de reservas/pasajes y migración de datos desde Google Sheets (previa a la activación de pasarelas).
-- Ventas comerciales finales, pasarelas de pago (Mercado Pago, Payway), vistas públicas, checkout, panel de ventas, caja, comprobantes, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
+- Próxima etapa: pagos, confirmación económica, checkout público, emisión de pasajes (PDF, QR) y migración desde Sheets (previa a la activación de pasarelas).
+- Ventas comerciales finales, pasarelas de pago (Mercado Pago, Payway), vistas públicas, checkout, caja, comprobantes, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
 - Decisiones pendientes: consultar [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
 ## Fundación de operaciones
@@ -78,6 +78,43 @@
 - Migración inicial `sales/migrations/0001_initial.py` creada y probada únicamente en bases temporales de tests; no aplicada a base local ni a bases reales.
 - Se incorporaron 79 pruebas en `sales/tests.py`: sales descubrió 79, ejecutó 76 en SQLite, OK con skipped=1 (la clase PostgreSQL contiene tres métodos no ejecutados en SQLite); suite completa descubrió 228, ejecutó 225 en SQLite, OK con skipped=1. Las pruebas PostgreSQL verifican terminación de hilos tras `join()`, diferenciación de errores de sincronización en barrera frente a colisiones de butaca, serialización real bajo `Trip` lock, y provocación directa de la restricción condicional única (`sales_active_trip_seat_unique`) con verificación de `diag.constraint_name` y traducción selectiva de `IntegrityError` a `SeatUnavailableError`.
 - Quedan explícitamente fuera de alcance en esta entrega: ventas finales, pasarelas de pago (Mercado Pago, Payway), vistas públicas, checkout, panel de ventas, caja, comprobantes, PDF, QR, correo transaccional, migración desde Google Sheets/AppSheet, Celery y Redis.
+
+## Panel personalizado de reservas manuales
+
+- Acceso y permisos:
+  - Exclusivo para usuarios autenticados pertenecientes a los grupos `Administrador`, `Vendedor` o superusuarios (`can_manage_reservations`).
+  - Usuarios comunes o `is_staff` sin grupo reciben HTTP 403 Forbidden. Usuarios anónimos son redirigidos a la pantalla de inicio de sesión (`panel:login`).
+  - Navegación lateral integrada en el panel con enlaces a "Reservas" y "Nueva reserva", además de indicador de reservas pendientes en el panel principal (`dashboard`).
+- Modelo de datos y migración:
+  - Extensión de `BookingPassenger` con campos de datos personales aprobados de identidad: `first_name`, `last_name`, `document_type`, `document_number`, `normalized_document`, `birth_date`, `nationality` y `gender` (opcional). Los datos de contacto (`email` y `phone`) residen exclusivamente en `Booking`.
+  - Normalización de documentos mediante `normalize_document()` con índice de base de datos (`db_index=True`) sin unicidad global, permitiendo reservas reiteradas del mismo pasajero.
+  - Generación de una única migración: `sales/migrations/0002_bookingpassenger_birth_date_and_more.py`. Verificada con `makemigrations --check --dry-run` y probada únicamente en bases temporales de tests.
+- Listado de reservas:
+  - Tabla completa con identificador público (`public_id`), fecha y hora local, canal, estado con distintivos visuales (`HELD`, `CONFIRMED`, `EXPIRED`, `RELEASED`), correo de contacto, resumen de tramos/viajes, cantidad de pasajeros, vencimiento y vendedor.
+  - Filtros por estado, fecha de reserva, viaje y vendedor.
+  - Búsqueda unificada por identificador público, correo de contacto o documento normalizado de cualquier pasajero de la reserva.
+  - Paginación de 20 registros por página manteniendo los parámetros de filtrado.
+- Detalle y liberación segura:
+  - Ficha de reserva con datos de contacto, vendedor, tramos, paradas, pasajeros, butacas por planta y categoría, precios unitarios históricos y total en `Decimal`.
+  - Historial de eventos de auditoría integrado reutilizando `panel.AuditEvent`.
+  - Acción de liberación (`release`) exclusiva para reservas en estado `HELD`, protegida por POST con CSRF mediante `panel.reservation_services.release_panel_booking`.
+  - No se ofrece confirmación económica ni cancelación comercial de reservas `CONFIRMED`.
+- Creación de reserva manual:
+  - Flujo guiado para solo ida o ida y vuelta; búsqueda de viajes activos excluyendo viajes iniciados (`STARTED`) o finalizados (`COMPLETED`, `CANCELLED`).
+  - Mapa interactivo de butacas generado dinámicamente por plantas (`Seat.Deck`) y coordenadas relativas sin planos rígidos hardcodeados, reflejando disponibilidad en tiempo real (`AVAILABLE`, `HELD`, `CONFIRMED`, `INACTIVE`) y categorías (cama/semicama).
+  - Formularios de pasajeros (hasta `SALES_MAX_PASSENGERS_PER_BOOKING`) y contacto.
+  - Validación estricta en servidor de paradas, horarios cronológicos, inversión de recorrido y salida posterior en viajes de vuelta, colisiones y tarifas vigentes.
+  - Invocación estricta de `sales.services.create_manual_booking` (nunca insertando `SeatAssignment` directamente).
+  - Las reservas se crean en estado `HELD` con vencimiento a 24 horas (`SALES_MANUAL_HOLD_HOURS`), a la espera de pagos y confirmación en etapas posteriores.
+- Auditoría transaccional:
+  - Registro de eventos en `panel.AuditEvent` para la creación y la liberación dentro de la misma transacción atómica (`transaction.atomic`). Si la auditoría falla, la operación se revierte.
+- Pruebas y cobertura:
+  - Se incorporaron 31 pruebas en `panel/test_reservations.py` cubriendo control de acceso (admin, vendedor, anónimo, usuario común, staff sin rol), listado, filtros, búsqueda por documento normalizado, detalle, creación solo ida e ida y vuelta, colisiones concurrentes, butacas ajenas, cálculo de tarifas en servidor, exclusión de viajes iniciados, liberación HELD, CSRF, IDOR y ausencia de recursos externos o CDNs.
+  - La suite completa de Django ejecuta 256 pruebas en SQLite: `OK (skipped=1)` (259 descubiertas).
+  - El módulo `sales` ejecuta 76 pruebas: `OK (skipped=1)` (79 descubiertas).
+  - El módulo `panel` ejecuta 128 pruebas: `OK`.
+  - El workflow CI de PostgreSQL (`.github/workflows/sales-postgres.yml`) fue actualizado para incluir la rama `feature/manual-reservations-panel-20260918`.
+- Quedan explícitamente fuera de alcance en esta entrega: pagos, confirmación económica, checkout público, emisión de pasajes (PDF, QR), cancelaciones comerciales, migración desde Google Sheets/AppSheet, Celery y Redis.
 
 ## Retiro del prototipo y pendientes
 

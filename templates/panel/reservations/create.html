@@ -1,0 +1,347 @@
+{% extends 'panel/base.html' %}
+{% load l10n %}
+
+{% block content %}
+<div class="container operations">
+    <header class="ops-header">
+        <div>
+            <p class="ops-eyebrow"><a href="{% url 'panel:booking_list' %}">← Volver a Reservas</a></p>
+            <h1>Nueva reserva manual</h1>
+            <p class="ops-intro">
+                Las reservas manuales se generan en estado Retenida (HELD) con vencimiento configurable de {{ manual_hold_hours }} horas.
+            </p>
+        </div>
+    </header>
+
+    <!-- Formulario principal -->
+    <form method="post" action="{% url 'panel:booking_create' %}" class="ops-form-full" id="manual-booking-form">
+        {% csrf_token %}
+
+        <!-- Paso 1: Configuración del viaje y pasajeros -->
+        <section class="ops-card">
+            <h2>1. Itinerario y Pasajeros</h2>
+
+            <div class="form-row-grid">
+                <div class="form-group">
+                    <label class="form-label" for="id_trip_type">Tipo de viaje</label>
+                    <select name="trip_type" id="id_trip_type" class="form-input" onchange="this.form.submit()">
+                        <option value="oneway" {% if trip_type == 'oneway' %}selected{% endif %}>Solo ida</option>
+                        <option value="roundtrip" {% if trip_type == 'roundtrip' %}selected{% endif %}>Ida y vuelta</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="id_passengers_count">Cantidad de pasajeros</label>
+                    <select name="passengers_count" id="id_passengers_count" class="form-input" onchange="this.form.submit()">
+                        {% for num in "12345678910"|make_list %}
+                            {% if forloop.counter <= max_passengers %}
+                                <option value="{{ forloop.counter }}" {% if passenger_count == forloop.counter %}selected{% endif %}>
+                                    {{ forloop.counter }} pasajero{{ forloop.counter|pluralize:"s" }} (máx. {{ max_passengers }})
+                                </option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Selección de Viaje de Ida -->
+            <div class="trip-selection-box mt-4">
+                <h3>Viaje de ida</h3>
+                <div class="form-row-grid">
+                    <div class="form-group full-width">
+                        <label class="form-label" for="id_outbound_trip">Viaje programado</label>
+                        <select name="outbound_trip" id="id_outbound_trip" class="form-input" onchange="this.form.submit()">
+                            <option value="">-- Seleccioná un viaje de ida --</option>
+                            {% for t in eligible_trips %}
+                                <option value="{{ t.pk }}" {% if outbound_trip and outbound_trip.pk == t.pk %}selected{% endif %}>
+                                    Viaje {{ t.pk }} · {{ t.route.name }} (Salida: {{ t.departure_at|date:"d/m/Y H:i" }}) · Colectivo {{ t.bus.code }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    {% if outbound_trip %}
+                    <div class="form-group">
+                        <label class="form-label" for="id_outbound_origin">Parada de subida (Origen)</label>
+                        <select name="outbound_origin" id="id_outbound_origin" class="form-input" onchange="this.form.submit()">
+                            <option value="">-- Subida --</option>
+                            {% for stop in outbound_stops %}
+                                {% if stop.allows_boarding %}
+                                    <option value="{{ stop.pk }}" {% if outbound_orig and outbound_orig.pk == stop.pk %}selected{% endif %}>
+                                        {{ stop.stop.name }} ({{ stop.scheduled_at|date:"d/m H:i" }})
+                                    </option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="id_outbound_destination">Parada de bajada (Destino)</label>
+                        <select name="outbound_destination" id="id_outbound_destination" class="form-input" onchange="this.form.submit()">
+                            <option value="">-- Bajada --</option>
+                            {% for stop in outbound_stops %}
+                                {% if stop.allows_alighting %}
+                                    {% if not outbound_orig or stop.sequence > outbound_orig.sequence %}
+                                        <option value="{{ stop.pk }}" {% if outbound_dest and outbound_dest.pk == stop.pk %}selected{% endif %}>
+                                            {{ stop.stop.name }} ({{ stop.scheduled_at|date:"d/m H:i" }})
+                                        </option>
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if outbound_orig and outbound_dest and outbound_fares %}
+                <div class="fares-banner mt-2">
+                    <strong>Tarifas vigentes para este tramo:</strong>
+                    {% for cat, amount in outbound_fares.items %}
+                        <span class="badge badge-fare">
+                            {{ cat }}: ${{ amount|unlocalize }}
+                        </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Selección de Viaje de Vuelta (si aplica) -->
+            {% if is_roundtrip %}
+            <div class="trip-selection-box mt-4">
+                <h3>Viaje de vuelta</h3>
+                {% if outbound_orig and outbound_dest %}
+                <div class="form-row-grid">
+                    <div class="form-group full-width">
+                        <label class="form-label" for="id_return_trip">Viaje programado de regreso</label>
+                        <select name="return_trip" id="id_return_trip" class="form-input" onchange="this.form.submit()">
+                            <option value="">-- Seleccioná un viaje de regreso --</option>
+                            {% for t in eligible_return_trips %}
+                                <option value="{{ t.pk }}" {% if return_trip and return_trip.pk == t.pk %}selected{% endif %}>
+                                    Viaje {{ t.pk }} · {{ t.route.name }} (Salida: {{ t.departure_at|date:"d/m/Y H:i" }}) · Colectivo {{ t.bus.code }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    {% if return_trip and return_orig and return_dest %}
+                    <div class="form-group">
+                        <label class="form-label">Subida de regreso</label>
+                        <input type="text" class="form-input" value="{{ return_orig.stop.name }} ({{ return_orig.scheduled_at|date:'d/m H:i' }})" disabled>
+                        <input type="hidden" name="return_origin" value="{{ return_orig.pk }}">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Bajada de regreso</label>
+                        <input type="text" class="form-input" value="{{ return_dest.stop.name }} ({{ return_dest.scheduled_at|date:'d/m H:i' }})" disabled>
+                        <input type="hidden" name="return_destination" value="{{ return_dest.pk }}">
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if return_orig and return_dest and return_fares %}
+                <div class="fares-banner mt-2">
+                    <strong>Tarifas vigentes para el regreso:</strong>
+                    {% for cat, amount in return_fares.items %}
+                        <span class="badge badge-fare">
+                            {{ cat }}: ${{ amount|unlocalize }}
+                        </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% else %}
+                <p class="muted">Primero seleccioná el origen y destino de ida para buscar viajes de regreso que inviertan el recorrido.</p>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="form-actions mt-4">
+                <button type="submit" class="ops-button secondary small">Actualizar itinerario y verificar disponibilidad</button>
+            </div>
+        </section>
+
+        <!-- Paso 2: Selección de butacas (si tramos configurados) -->
+        {% if outbound_orig and outbound_dest %}
+        <section class="ops-card">
+            <h2>2. Selección de Butacas</h2>
+
+            <!-- Leyenda de Butacas -->
+            <div class="seat-legend" role="region" aria-label="Leyenda de butacas">
+                <span class="legend-item"><span class="legend-swatch swatch-available"></span> Disponible</span>
+                <span class="legend-item"><span class="legend-swatch swatch-selected"></span> Seleccionada</span>
+                <span class="legend-item"><span class="legend-swatch swatch-occupied"></span> Ocupada / Retenida</span>
+                <span class="legend-item"><span class="legend-swatch swatch-cama"></span> Cama</span>
+                <span class="legend-item"><span class="legend-swatch swatch-semicama"></span> Semicama</span>
+            </div>
+
+            <!-- Mapa de Ida -->
+            <div class="deck-map-wrapper mt-4">
+                <h3>Butacas para la ida · Colectivo {{ outbound_trip.bus.code }}</h3>
+                <p class="muted">Seleccioná exactamente {{ passenger_count }} butaca{{ passenger_count|pluralize:"s" }} para el viaje de ida.</p>
+
+                {% for deck in outbound_decks %}
+                <div class="deck-section mt-2">
+                    <h4>{{ deck.label }}</h4>
+                    <div class="seat-scroll" tabindex="0" role="region" aria-label="Mapa {{ deck.label }}">
+                        <div class="seat-map">
+                            {% for item in deck.items %}
+                            {% with seat=item.seat %}
+                            <label class="seat-card-interactive {% if item.is_occupied %}occupied{% elif not item.has_fare %}no-fare{% else %}available{% endif %}"
+                                   style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
+                                {% if item.is_available %}
+                                    <input type="checkbox" name="outbound_seats" value="{{ seat.pk }}" {% if item.is_selected %}checked{% endif %} class="seat-checkbox">
+                                {% else %}
+                                    <input type="checkbox" disabled class="seat-checkbox">
+                                {% endif %}
+                                <div class="seat-content">
+                                    <span class="seat-number">Butaca {{ seat.number }}</span>
+                                    <span class="seat-cat badge-category badge-{{ seat.category|lower }}">{{ seat.get_category_display }}</span>
+                                    {% if item.is_occupied %}
+                                        <span class="seat-status-tag occupied-tag">Ocupada</span>
+                                    {% elif item.fare_amount %}
+                                        <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
+                                    {% else %}
+                                        <span class="seat-status-tag">Sin tarifa</span>
+                                    {% endif %}
+                                </div>
+                            </label>
+                            {% endwith %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="empty-state">No hay butacas activas configuradas para este colectivo.</p>
+                {% endfor %}
+            </div>
+
+            <!-- Mapa de Vuelta si aplica -->
+            {% if is_roundtrip and return_orig and return_dest %}
+            <div class="deck-map-wrapper mt-4">
+                <h3>Butacas para el regreso · Colectivo {{ return_trip.bus.code }}</h3>
+                <p class="muted">Seleccioná exactamente {{ passenger_count }} butaca{{ passenger_count|pluralize:"s" }} para el viaje de regreso.</p>
+
+                {% for deck in return_decks %}
+                <div class="deck-section mt-2">
+                    <h4>{{ deck.label }}</h4>
+                    <div class="seat-scroll" tabindex="0" role="region" aria-label="Mapa {{ deck.label }}">
+                        <div class="seat-map">
+                            {% for item in deck.items %}
+                            {% with seat=item.seat %}
+                            <label class="seat-card-interactive {% if item.is_occupied %}occupied{% elif not item.has_fare %}no-fare{% else %}available{% endif %}"
+                                   style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
+                                {% if item.is_available %}
+                                    <input type="checkbox" name="return_seats" value="{{ seat.pk }}" {% if item.is_selected %}checked{% endif %} class="seat-checkbox">
+                                {% else %}
+                                    <input type="checkbox" disabled class="seat-checkbox">
+                                {% endif %}
+                                <div class="seat-content">
+                                    <span class="seat-number">Butaca {{ seat.number }}</span>
+                                    <span class="seat-cat badge-category badge-{{ seat.category|lower }}">{{ seat.get_category_display }}</span>
+                                    {% if item.is_occupied %}
+                                        <span class="seat-status-tag occupied-tag">Ocupada</span>
+                                    {% elif item.fare_amount %}
+                                        <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
+                                    {% else %}
+                                        <span class="seat-status-tag">Sin tarifa</span>
+                                    {% endif %}
+                                </div>
+                            </label>
+                            {% endwith %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="empty-state">No hay butacas activas configuradas para este colectivo.</p>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        <!-- Paso 3: Datos de Pasajeros y Contacto -->
+        <section class="ops-card">
+            <h2>3. Datos de los Pasajeros y Contacto</h2>
+
+            <div class="contact-box">
+                <h3>Contacto principal de la reserva</h3>
+                <div class="form-row-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="id_contact_email">Correo electrónico de contacto *</label>
+                        <input type="email" name="contact_email" id="id_contact_email" class="form-input" required value="{{ contact_email }}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="id_contact_phone">Teléfono de contacto (opcional)</label>
+                        <input type="text" name="contact_phone" id="id_contact_phone" class="form-input" value="{{ contact_phone }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="passengers-box mt-4">
+                <h3>Información de cada pasajero</h3>
+                <p class="muted">Completá los datos personales obligatorios de cada pasajero. El número de documento se normalizará automáticamente para búsquedas.</p>
+
+                {% for p_num in passengers_range %}
+                <fieldset class="passenger-fieldset mt-3">
+                    <legend>Pasajero {{ p_num }}</legend>
+                    <div class="form-row-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_first_name">Nombre *</label>
+                            <input type="text" name="p_{{ p_num }}_first_name" id="id_p_{{ p_num }}_first_name" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_last_name">Apellido *</label>
+                            <input type="text" name="p_{{ p_num }}_last_name" id="id_p_{{ p_num }}_last_name" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_document_type">Tipo de documento *</label>
+                            <select name="p_{{ p_num }}_document_type" id="id_p_{{ p_num }}_document_type" class="form-input" required>
+                                <option value="DNI" selected>DNI</option>
+                                <option value="PASAPORTE">Pasaporte</option>
+                                <option value="CI">Cédula de Identidad</option>
+                                <option value="OTRO">Otro</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_document_number">Número de documento *</label>
+                            <input type="text" name="p_{{ p_num }}_document_number" id="id_p_{{ p_num }}_document_number" class="form-input" required placeholder="Ej: 40.123.456">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_birth_date">Fecha de nacimiento *</label>
+                            <input type="date" name="p_{{ p_num }}_birth_date" id="id_p_{{ p_num }}_birth_date" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_nationality">Nacionalidad *</label>
+                            <input type="text" name="p_{{ p_num }}_nationality" id="id_p_{{ p_num }}_nationality" class="form-input" required value="Argentina">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_gender">Género (opcional)</label>
+                            <select name="p_{{ p_num }}_gender" id="id_p_{{ p_num }}_gender" class="form-input">
+                                <option value="">Sin informar</option>
+                                <option value="Femenino">Femenino</option>
+                                <option value="Masculino">Masculino</option>
+                                <option value="No binario">No binario</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                        </div>
+                    </div>
+                </fieldset>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Confirmación y Botón Final -->
+        <section class="ops-card form-submit-box">
+            <p class="muted">
+                El precio por pasajero, subtotales y total final son calculados estrictamente por el servidor a partir de las tarifas vigentes cargadas en el sistema.
+            </p>
+            <input type="hidden" name="action" value="create_booking">
+            <div class="form-actions">
+                <button type="submit" class="ops-button">Confirmar y crear reserva manual</button>
+                <a href="{% url 'panel:booking_list' %}" class="ops-button secondary">Cancelar</a>
+            </div>
+        </section>
+    </form>
+</div>
+{% endblock %}

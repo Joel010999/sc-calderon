@@ -1,0 +1,167 @@
+{% extends 'panel/base.html' %}
+{% load l10n %}
+
+{% block content %}
+<div class="container operations">
+    <header class="ops-header">
+        <div>
+            <p class="ops-eyebrow">Gestión comercial</p>
+            <h1>Reservas</h1>
+        </div>
+        <a class="ops-button" href="{% url 'panel:booking_create' %}">Nueva reserva manual</a>
+    </header>
+
+    <!-- Filtros y Búsqueda -->
+    <section class="ops-card" aria-label="Filtros y búsqueda de reservas">
+        <form method="get" action="{% url 'panel:booking_list' %}" class="reservations-filter-form">
+            <div class="filters-grid">
+                <div class="form-group">
+                    <label for="id_q" class="form-label">Búsqueda rápida</label>
+                    <input type="text" name="q" id="id_q" class="form-input" placeholder="ID, correo o documento" value="{{ search_q }}">
+                </div>
+                <div class="form-group">
+                    <label for="id_status" class="form-label">Estado</label>
+                    <select name="status" id="id_status" class="form-input">
+                        <option value="">Todos los estados</option>
+                        {% for val, label in statuses %}
+                            <option value="{{ val }}" {% if selected_status == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="id_date" class="form-label">Fecha de creación</label>
+                    <input type="date" name="date" id="id_date" class="form-input" value="{{ selected_date }}">
+                </div>
+                <div class="form-group">
+                    <label for="id_trip" class="form-label">Viaje</label>
+                    <select name="trip" id="id_trip" class="form-input">
+                        <option value="">Todos los viajes</option>
+                        {% for trip in all_trips %}
+                            <option value="{{ trip.pk }}" {% if selected_trip == trip.pk|stringformat:"i" %}selected{% endif %}>
+                                Viaje {{ trip.pk }} · {{ trip.route.name }} ({{ trip.departure_at|date:"d/m/Y H:i" }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="id_seller" class="form-label">Vendedor</label>
+                    <select name="seller" id="id_seller" class="form-input">
+                        <option value="">Todos los vendedores</option>
+                        {% for seller in all_sellers %}
+                            <option value="{{ seller.seller_id }}" {% if selected_seller == seller.seller_id|stringformat:"i" %}selected{% endif %}>
+                                {{ seller.seller__username }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions" style="margin-top: 1rem;">
+                <button type="submit" class="ops-button small">Filtrar</button>
+                <a href="{% url 'panel:booking_list' %}" class="ops-button secondary small">Limpiar filtros</a>
+            </div>
+        </form>
+    </section>
+
+    <!-- Tabla de reservas -->
+    <section class="ops-card" aria-label="Listado de reservas">
+        {% if page_obj %}
+        <div class="table-scroll">
+            <table class="table-reservations">
+                <caption>Listado de reservas registradas en el sistema</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Identificador</th>
+                        <th scope="col">Fecha</th>
+                        <th scope="col">Canal</th>
+                        <th scope="col">Estado</th>
+                        <th scope="col">Contacto</th>
+                        <th scope="col">Viajes</th>
+                        <th scope="col">Pasajeros</th>
+                        <th scope="col">Vencimiento</th>
+                        <th scope="col">Vendedor</th>
+                        <th scope="col"><span class="sr-only">Acciones</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for booking in page_obj %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'panel:booking_detail' booking.public_id %}" class="booking-link font-mono">
+                                {{ booking.public_id|stringformat:"s"|slice:":8" }}…
+                            </a>
+                        </td>
+                        <td>
+                            {{ booking.created_at|date:"d/m/Y H:i" }}
+                        </td>
+                        <td>
+                            {{ booking.get_channel_display }}
+                        </td>
+                        <td>
+                            <span class="badge badge-status-{{ booking.status|lower }}">
+                                {{ booking.get_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="contact-email">{{ booking.email }}</div>
+                            {% if booking.phone %}<small class="muted">{{ booking.phone }}</small>{% endif %}
+                        </td>
+                        <td>
+                            {% for leg in booking.legs.all %}
+                                <div>{{ leg.origin_stop_name }} → {{ leg.destination_stop_name }}</div>
+                            {% empty %}
+                                <span class="muted">Sin tramos</span>
+                            {% endfor %}
+                        </td>
+                        <td style="text-align: center;">
+                            {{ booking.passengers.count }}
+                        </td>
+                        <td>
+                            {% if booking.status == 'CONFIRMED' %}
+                                <span class="muted">Confirmada</span>
+                            {% elif booking.status == 'RELEASED' %}
+                                <span class="muted">Liberada</span>
+                            {% else %}
+                                {{ booking.expires_at|date:"d/m/Y H:i" }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ booking.seller.username|default:"—" }}
+                        </td>
+                        <td>
+                            <a href="{% url 'panel:booking_detail' booking.public_id %}" class="ops-button secondary small">Ver detalle</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Paginación -->
+        {% if page_obj.has_other_pages %}
+        <nav class="pagination-nav" aria-label="Navegación de páginas">
+            <div class="pagination-container">
+                {% if page_obj.has_previous %}
+                    <a href="?page=1{% if search_q %}&q={{ search_q }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_date %}&date={{ selected_date }}{% endif %}{% if selected_trip %}&trip={{ selected_trip }}{% endif %}{% if selected_seller %}&seller={{ selected_seller }}{% endif %}" class="ops-button secondary small">« Primera</a>
+                    <a href="?page={{ page_obj.previous_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_date %}&date={{ selected_date }}{% endif %}{% if selected_trip %}&trip={{ selected_trip }}{% endif %}{% if selected_seller %}&seller={{ selected_seller }}{% endif %}" class="ops-button secondary small">Anterior</a>
+                {% endif %}
+
+                <span class="pagination-info">
+                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} reservas en total)
+                </span>
+
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_date %}&date={{ selected_date }}{% endif %}{% if selected_trip %}&trip={{ selected_trip }}{% endif %}{% if selected_seller %}&seller={{ selected_seller }}{% endif %}" class="ops-button secondary small">Siguiente</a>
+                    <a href="?page={{ page_obj.paginator.num_pages }}{% if search_q %}&q={{ search_q }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_date %}&date={{ selected_date }}{% endif %}{% if selected_trip %}&trip={{ selected_trip }}{% endif %}{% if selected_seller %}&seller={{ selected_seller }}{% endif %}" class="ops-button secondary small">Última »</a>
+                {% endif %}
+            </div>
+        </nav>
+        {% endif %}
+
+        {% else %}
+        <div class="empty-state">
+            <p>No se encontraron reservas que coincidan con los criterios seleccionados.</p>
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
