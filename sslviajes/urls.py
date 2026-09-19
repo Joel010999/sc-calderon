@@ -21,5 +21,6 @@ urlpatterns = [
     path('health/', health_check, name='health_check'),
     path('panel/', include('panel.urls')),
     path('payments/', include('payments.urls')),
+    path('tickets/', include('tickets.urls')),
     path('', include('core.urls')),
 ]

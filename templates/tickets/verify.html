@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificación de Pasaje · SC Viajes</title>
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <style>
+        :root {
+            --slate-900: #0f172a;
+            --slate-800: #1e293b;
+            --slate-700: #334155;
+            --slate-600: #475569;
+            --slate-500: #64748b;
+            --slate-200: #e2e8f0;
+            --slate-100: #f1f5f9;
+            --slate-50: #f8fafc;
+            --emerald-600: #059669;
+            --emerald-50: #ecfdf5;
+            --rose-600: #e11d48;
+            --rose-50: #fff1f2;
+            --amber-600: #d97706;
+            --amber-50: #fffbeb;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--slate-100);
+            color: var(--slate-800);
+            line-height: 1.5;
+            padding: 1.5rem 1rem;
+        }
+        .container {
+            max-width: 540px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            border: 1px solid var(--slate-200);
+        }
+        .header {
+            background-color: var(--slate-900);
+            color: #ffffff;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+        .header span {
+            font-size: 0.8125rem;
+            color: var(--slate-200);
+            font-weight: 500;
+        }
+        .content {
+            padding: 1.5rem;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 1.25rem;
+        }
+        .status-valid {
+            background-color: var(--emerald-50);
+            color: var(--emerald-600);
+            border: 1px solid #a7f3d0;
+        }
+        .status-void {
+            background-color: var(--rose-50);
+            color: var(--rose-600);
+            border: 1px solid #fecdd3;
+        }
+        .status-not-found {
+            background-color: var(--amber-50);
+            color: var(--amber-600);
+            border: 1px solid #fde68a;
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .detail-item.full-width {
+            grid-column: span 2;
+        }
+        .detail-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--slate-500);
+            margin-bottom: 0.25rem;
+        }
+        .detail-value {
+            font-size: 0.9375rem;
+            font-weight: 600;
+            color: var(--slate-900);
+        }
+        .detail-value.highlight {
+            font-size: 1.125rem;
+            color: var(--slate-900);
+        }
+        .notice-card {
+            background-color: var(--slate-50);
+            border: 1px solid var(--slate-200);
+            border-radius: 8px;
+            padding: 0.875rem 1rem;
+            font-size: 0.8125rem;
+            color: var(--slate-600);
+        }
+        .footer {
+            padding: 1rem 1.5rem;
+            background-color: var(--slate-50);
+            border-top: 1px solid var(--slate-200);
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--slate-500);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>SC VIAJES</h1>
+            <span>Control de Pasajes</span>
+        </header>
+
+        <main class="content">
+            {% if verification_status == "VALID" and ticket %}
+                <div class="status-badge status-valid">
+                    ● Pasaje Válido
+                </div>
+
+                <div class="details-grid">
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Código de Pasaje</span>
+                        <span class="detail-value highlight">{{ ticket.ticket_code }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Pasajero / a</span>
+                        <span class="detail-value">{{ ticket.passenger_name }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Documento</span>
+                        <span class="detail-value">{{ ticket.passenger_document_masked }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Origen</span>
+                        <span class="detail-value">{{ ticket.origin_stop_name }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Destino</span>
+                        <span class="detail-value">{{ ticket.destination_stop_name }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Fecha</span>
+                        <span class="detail-value">{{ ticket.departure_at|date:"d/m/Y H:i" }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Butaca</span>
+                        <span class="detail-value highlight">{{ ticket.seat_number }}</span>
+                    </div>
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Categoría</span>
+                        <span class="detail-value">{{ ticket.seat_category_display }}</span>
+                    </div>
+                </div>
+
+                <div class="notice-card">
+                    <strong>Requisito obligatorio:</strong> El pasajero debe presentar su documento de identidad físico al momento de abordar la unidad.
+                </div>
+
+            {% elif verification_status == "VOID" and ticket %}
+                <div class="status-badge status-void">
+                    ✕ Pasaje Anulado
+                </div>
+
+                <div class="details-grid">
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Código de Pasaje</span>
+                        <span class="detail-value highlight">{{ ticket.ticket_code }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Pasajero / a</span>
+                        <span class="detail-value">{{ ticket.passenger_name }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Documento</span>
+                        <span class="detail-value">{{ ticket.passenger_document_masked }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Origen</span>
+                        <span class="detail-value">{{ ticket.origin_stop_name }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Destino</span>
+                        <span class="detail-value">{{ ticket.destination_stop_name }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Fecha</span>
+                        <span class="detail-value">{{ ticket.departure_at|date:"d/m/Y H:i" }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Butaca</span>
+                        <span class="detail-value highlight">{{ ticket.seat_number }}</span>
+                    </div>
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Categoría</span>
+                        <span class="detail-value">{{ ticket.seat_category_display }}</span>
+                    </div>
+                </div>
+
+                <div class="notice-card" style="border-color: #fecdd3; color: #9f1239;">
+                    <strong>Atención:</strong> Este pasaje se encuentra anulado y no autoriza el ascenso ni embarque a la unidad.
+                </div>
+
+            {% else %}
+                <div class="status-badge status-not-found">
+                    ⚠ Pasaje No Encontrado
+                </div>
+
+                <div class="notice-card" style="border-color: #fde68a; color: #92400e; margin-bottom: 1rem;">
+                    No se encontró ningún pasaje registrado para el enlace proporcionado o el código de verificación es inválido.
+                </div>
+                <p style="font-size: 0.875rem; color: var(--slate-600);">
+                    Por favor, verificá que estés utilizando el código QR impreso en tu pasaje oficial emitido por SC Viajes.
+                </p>
+            {% endif %}
+        </main>
+
+        <footer class="footer">
+            SC Viajes · Córdoba ⇄ Jujuy
+        </footer>
+    </div>
+</body>
+</html>

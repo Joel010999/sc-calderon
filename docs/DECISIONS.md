@@ -158,6 +158,38 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - Temporizador regresivo en cliente basado en `expires_at` (15 minutos para retención online `HELD`), con expiración mediante los servicios de dominio existentes (`sales.services.expire_booking`) al vencer el plazo.
 - Botón de pago en el resumen que únicamente informa que las pasarelas públicas online se encuentran en proceso de integración técnica.
 
+## Fundación de pasajes, generación de PDF y verificación QR (2026-09-19)
+
+- Se adopta ReportLab y `qrcode` puro Python por máxima portabilidad y estabilidad entre Windows, Linux y Railway, evitando motores de renderizado HTML nativos o dependencias de navegadores headless.
+- Se excluye `pyzbar` y cualquier dependencia nativa/C de requirements, CI y tests; la validación de QR en tests se realiza de forma estructural sobre la imagen extraída con Pillow (`PIL.Image`, `ImageChops`) y `qrcode` puro Python.
+- Arquitectura desacoplada en tres capas para pasajes: estructura de datos inmutable (`TicketData`), generador PDF (`build_ticket_pdf`) y plantilla provisional reemplazable (`draw_provisional_ticket`). La plantilla visual provisional incluye la leyenda obligatoria y puede sustituirse en el futuro sin modificar el modelo de datos ni la lógica de dominio.
+- `Booking` actúa como agregado transaccional bloqueado. Los pasajes congelan instantáneas inmutables: pasajero, documento enmascarado, tramos, horarios, butacas, categorías y el importe histórico pagado en `Decimal` proveniente directamente de `SeatAssignment.price` (sin consultar `TripFare`).
+- Emisión atómica top-level: `issue_tickets_for_booking` rechaza anidamiento en bloques atómicos previos para evitar inconsistencias de archivos en caso de rollback exterior. Si ocurre cualquier fallo durante la emisión (PDF, almacenamiento, base de datos o auditoría), se revierte la transacción de base de datos y se eliminan físicamente todos los archivos creados.
+- No se permite la reemisión de pasajes anulados (`VOID`) ni la reemisión parcial silenciosa. Si todos los pasajes ya están emitidos, el servicio opera de forma idempotente retornando las instancias existentes.
+- Seguridad de tokens:
+  - Generación de tokens opacos de alta entropía (>= 256 bits mediante `secrets.token_urlsafe(32)`).
+  - Separación de tokens: el token de verificación QR (`verification_token_hash`) solo permite consultar el estado básico de validez y datos de viaje, sin dar acceso a la descarga del PDF ni exponer precios ni datos de contacto.
+  - La descarga pública exige un token de descarga diferenciado (`download_token_hash`).
+  - La base de datos almacena exclusivamente hashes SHA-256; los tokens en texto plano nunca se guardan en la base ni en registros de auditoría o logs.
+- Control de acceso a descargas:
+  - Descarga interna habilitada para usuarios activos con roles `Administrador`, `Vendedor` o superusuarios.
+  - Usuarios comunes autenticados o miembros de staff sin esos roles reciben HTTP 403 Forbidden.
+  - Descargas públicas con tokens inválidos o inexistentes devuelven HTTP 404 genérico para evitar enumeración.
+  - Archivo físico ausente en almacenamiento devuelve HTTP 404 genérico (nunca 500).
+- Verificación estricta de solo lectura:
+  - La vista `/tickets/verify/` no realiza mutaciones de estado ni operaciones de embarque.
+  - Privacidad total: jamás expone motivo de anulación ni ningún dato fuera de estado, código, pasajero, documento oculto, origen, destino, fecha, butaca y categoría. No expone precio, email, teléfono, documento completo, identificadores internos de base de datos ni datos de pago.
+  - Rate limiting defensivo implementado mediante el cache de Django indexado por el hash SHA-256 de la IP remota (sin incluir tokens en las claves).
+  - Cabeceras HTTP obligatorias: `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`, `Referrer-Policy: no-referrer` y `X-Robots-Tag: noindex, nofollow`.
+- Entrega de correos agrupada:
+  - `send_booking_tickets` envía exactamente un correo electrónico a `Booking.email` con todos los pasajes PDF de la reserva adjuntos.
+  - Registro de intentos en `TicketEmailAttempt` (estados `PENDING`, `SENT`, `FAILED`).
+  - El estado `PENDING` se persiste atómicamente antes de iniciar cualquier operación I/O de red, evitando duplicaciones concurrentes. Los estados ambiguos no se auto-reintentan.
+  - Reintentos permitidos exclusivamente tras un estado `FAILED` mediante el parámetro explícito `retry=True`.
+  - El historial de intentos no almacena el cuerpo del correo y los mensajes de error se sanitizan de forma genérica (sin volcar excepciones del sistema).
+  - El envío se ejecuta fuera de transacciones activas para no generar correos si hay un rollback posterior.
+- Auditoría propia: `TicketAuditEvent` registra las acciones sensibles (`ISSUE`, `DOWNLOAD`, `VOID`, `EMAIL`, `VERIFY`) sin acoplarse a la aplicación `panel` y sin almacenar información personal identificable (PII).
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.

@@ -30,6 +30,20 @@ Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y rein
 - El alcance termina en `Booking` `ONLINE` `HELD`. No se exponen `payments`, checkout economico, pasajes, PDF, QR, correo ni cuentas de clientes.
 - La proteccion inicial contra abuso combina CSRF, honeypot y limite de holds por sesion. Una politica distribuida de rate limiting y almacenamiento persistente quedan pendientes de infraestructura aprobada.
 
+## Fundación de pasajes (PDF, QR y entrega agrupada)
+
+- `tickets` es un módulo independiente que depende únicamente de `sales` para consultar agregados confirmados (`Booking`, `BookingLeg`, `BookingPassenger`, `SeatAssignment`). `sales`, `operations`, `payments`, `panel` y `core` no dependen de `tickets`.
+- `Booking` actúa como raíz transaccional bloqueada (`select_for_update()`). Los pasajes capturan instantáneas inmutables de pasajero, documento enmascarado, tramo, horarios, butaca, categoría, moneda, código de reserva e importe histórico en `Decimal` (obtenido directamente de `SeatAssignment.price`, nunca recalculado desde `TripFare`).
+- Emisión atómica y durabilidad: `issue_tickets_for_booking` opera como servicio top-level que rechaza anidamiento en bloques atómicos previos para evitar archivos huérfanos. En caso de fallo en cualquier etapa (PDF, almacenamiento, base de datos o auditoría), revierte la transacción de base de datos y elimina físicamente del almacenamiento cada archivo PDF generado.
+- Generación portátil de PDF y QR: arquitectura desacoplada en datos (`TicketData`), generador (`build_ticket_pdf`) y plantilla provisional reemplazable (`draw_provisional_ticket`), basada en ReportLab y `qrcode` puro Python sin dependencias de motores HTML nativos, navegadores headless ni dependencias nativas/C (como `pyzbar` / `libzbar`).
+- Seguridad de tokens y privacidad:
+  - Generación de tokens opacos de alta entropía (>= 256 bits).
+  - Separación estricta de alcances: el token de verificación QR (`verification_token_hash`) solo permite consultar validez básica en modo lectura sin exponer motivo de anulación ni ningún dato fuera de estado, código, pasajero, documento oculto, origen, destino, fecha, butaca y categoría. No expone precio, email, teléfono, documento completo, pagos ni otros pasajeros. La descarga del archivo PDF requiere un token de descarga diferenciado (`download_token_hash`) o autenticación interna de rol autorizado (`Administrador`, `Vendedor`, superusuario).
+  - La base de datos almacena exclusivamente hashes SHA-256; los tokens en texto plano solo existen temporalmente en memoria o impresos en el pasaje.
+- Almacenamiento privado: `PrivateTicketFileSystemStorage` independiente de `payments`, con `base_url=None` y rutas impredecibles por UUID para impedir acceso público directo o indexación.
+- Entrega de correos agrupada: `send_booking_tickets` envía exactamente un correo al email de la reserva con todos los pasajes PDF adjuntos. Registra intentos en `TicketEmailAttempt` persistiendo el estado `PENDING` antes de la comunicación I/O de red, impidiendo envíos duplicados concurrentes y exigiendo reintento explícito (`retry=True`) únicamente tras fallos registrados.
+- Pendientes antes de producción: definición de almacenamiento persistente en Railway y proveedor SMTP definitivo. La emisión automática ligada a la aprobación de pagos se integrará en una rama posterior.
+
 ## Módulos conceptuales
 
 | Módulo | Responsabilidad |
