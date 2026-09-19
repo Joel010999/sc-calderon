@@ -27,7 +27,7 @@ Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y rein
 - `core` coordina la interfaz publica de busqueda, seleccion de viajes, butacas, pasajeros y resumen. La home institucional se conserva y las reglas de negocio no se implementan en JavaScript.
 - Las consultas parten de `operations` y usan la fecha y permisos de `TripStop` de la subida concreta. La creacion delega en `sales.services.create_online_booking` y `create_booking`, que mantienen la atomicidad, el cierre online y los snapshots de precio.
 - El estado previo a la creacion se limita a identificadores y criterios no sensibles en la sesion Django. Despues de crear `Booking`, el resumen requiere un token aleatorio asociado al `public_id` en esa sesion.
-- El alcance termina en `Booking` `ONLINE` `HELD`. No se exponen `payments`, checkout economico, pasajes, PDF, QR, correo ni cuentas de clientes.
+- El alcance publico incluye una superficie limitada de `core` para seleccionar transferencia y cargar comprobantes de un `Booking` `ONLINE` `HELD`, protegida por sesion, token y CSRF. Los endpoints internos de `payments`, comprobantes y datos del panel no se exponen publicamente; pasajes, PDF, QR, correo y cuentas de clientes siguen fuera de alcance.
 - La proteccion inicial contra abuso combina CSRF, honeypot y limite de holds por sesion. Una politica distribuida de rate limiting y almacenamiento persistente quedan pendientes de infraestructura aprobada.
 
 ## Módulos conceptuales

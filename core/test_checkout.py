@@ -645,7 +645,7 @@ class ArchitectureBoundaryTests(TestCase):
         self.assertNotIn("from panel", urls_source)
         self.assertNotIn("import panel", urls_source)
 
-    def test_core_does_not_expose_payments_publicly(self):
+    def test_core_only_exposes_protected_public_transfer_surface(self):
         import core.views
         import core.urls
 
@@ -655,10 +655,12 @@ class ArchitectureBoundaryTests(TestCase):
         with open(core.urls.__file__, "r", encoding="utf-8") as f:
             urls_source = f.read()
 
-        self.assertNotIn("from payments", views_source)
-        self.assertNotIn("import payments", views_source)
-        self.assertNotIn("from payments", urls_source)
-        self.assertNotIn("import payments", urls_source)
+        self.assertNotIn("from panel", views_source)
+        self.assertNotIn("import panel", views_source)
+        self.assertNotIn("from panel", urls_source)
+        self.assertNotIn("import panel", urls_source)
+        self.assertIn("iniciar_transferencia", urls_source)
+        self.assertIn("subir_comprobante", urls_source)
 
 
 class SalesOnlineBookingServiceTests(CheckoutBaseTestCase):

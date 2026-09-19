@@ -15,6 +15,8 @@ from django.http import FileResponse, Http404, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
+from django.utils import timezone
+
 from payments.exceptions import (
     InvalidPaymentStatusError,
     PaymentDuplicateError,
@@ -24,6 +26,7 @@ from payments.exceptions import (
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import (
     calculate_booking_total,
+    expire_public_transfer_if_expired,
     register_cash_payment,
     register_transfer_payment,
     review_transfer_payment,
@@ -123,6 +126,16 @@ def payment_list(request):
 @require_GET
 def pending_transfers(request):
     """Listado de transferencias bancarias pendientes de revisión."""
+    now = timezone.now()
+    # Expiración oportunista de transferencias pendientes cuya reserva haya vencido
+    pending_to_check = Payment.objects.filter(
+        method=PaymentMethod.BANK_TRANSFER,
+        status=PaymentStatus.UNDER_REVIEW,
+    ).select_related("booking")
+    for p in pending_to_check:
+        if p.booking.expires_at <= now or p.booking.status == BookingStatus.EXPIRED:
+            expire_public_transfer_if_expired(p.booking, now=now)
+
     transfers = Payment.objects.filter(
         method=PaymentMethod.BANK_TRANSFER,
         status=PaymentStatus.UNDER_REVIEW,
@@ -152,6 +165,13 @@ def payment_detail(request, public_id):
         ),
         public_id=public_id,
     )
+
+    # Expiración oportunista si está en revisión y venció la reserva
+    now = timezone.now()
+    if payment.status == PaymentStatus.UNDER_REVIEW:
+        if payment.booking.expires_at <= now or payment.booking.status == BookingStatus.EXPIRED:
+            expire_public_transfer_if_expired(payment.booking, now=now)
+            payment.refresh_from_db()
 
     audit_events = AuditEvent.objects.filter(
         entity_type=payment._meta.label,

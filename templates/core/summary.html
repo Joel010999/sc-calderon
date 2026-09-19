@@ -24,6 +24,41 @@
     </div>
   {% endif %}
 
+  {% if active_payment %}
+    {% if active_payment.status == 'AWAITING_VOUCHER' and is_held %}
+      <div class="alert alert--warning summary-banner mt-3" style="background: #fefce8; border: 1px solid #facc15;">
+        <h3 style="color: #854d0e;">Transferencia bancaria iniciada</h3>
+        <p>Disponés de 5 minutos para transferir y subir el comprobante. Una vez cargado, la reserva se extenderá por 24 horas.</p>
+        <div class="mt-2">
+          <a href="{% url 'pantalla_transferencia' public_id=booking.public_id %}" class="button button--primary">
+            Subir comprobante de pago →
+          </a>
+        </div>
+      </div>
+    {% elif active_payment.status == 'UNDER_REVIEW' and is_held %}
+      <div class="alert alert--info summary-banner mt-3" style="background: #eff6ff; border: 1px solid #93c5fd;">
+        <h3 style="color: #1e40af;">Comprobante de transferencia en revisión</h3>
+        <p>Hemos recibido tu comprobante por <strong>${{ active_payment.amount|unlocalize }} ARS</strong>. Nuestro equipo se encuentra verificando la acreditación (plazo de hasta 24 horas). Tus butacas permanecen retenidas.</p>
+        <div class="mt-2">
+          <a href="{% url 'pantalla_transferencia' public_id=booking.public_id %}" class="button button--ghost">
+            Ver estado de la transferencia
+          </a>
+        </div>
+      </div>
+    {% elif active_payment.status == 'REJECTED' and is_held %}
+      <div class="alert alert--danger summary-banner mt-3" style="background: #fef2f2; border: 1px solid #f87171;">
+        <h3 style="color: #991b1b;">Comprobante de transferencia rechazado</h3>
+        <p>Motivo: <strong>{{ active_payment.rejection_reason }}</strong>. Tu reserva aún permanece retenida; podés reintentar el pago.</p>
+        <div class="mt-2">
+          <a href="{% url 'pago_pendiente' public_id=booking.public_id %}" class="button button--primary">
+            Reintentar pago
+          </a>
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+
+
   <!-- TIMER OR EXPIRED NOTICE -->
   {% if is_held %}
     <div class="timer-box" id="timer-box" data-remaining="{{ remaining_seconds }}">
@@ -142,9 +177,19 @@
     <p class="muted">Las reservas online se abonan para confirmar los pasajes antes de su vencimiento.</p>
 
     <div class="payment-button-wrapper">
-      <a class="button button--primary" id="btn-payment-pending" href="{% url 'pago_pendiente' public_id=booking.public_id %}">
-        Continuar al pago
-      </a>
+      {% if active_payment and active_payment.status == 'UNDER_REVIEW' %}
+        <a class="button button--primary" id="btn-payment-pending" href="{% url 'pantalla_transferencia' public_id=booking.public_id %}">
+          Ver estado de transferencia (En revisión)
+        </a>
+      {% elif active_payment and active_payment.status == 'AWAITING_VOUCHER' %}
+        <a class="button button--primary" id="btn-payment-pending" href="{% url 'pantalla_transferencia' public_id=booking.public_id %}">
+          Subir comprobante de transferencia
+        </a>
+      {% else %}
+        <a class="button button--primary" id="btn-payment-pending" href="{% url 'pago_pendiente' public_id=booking.public_id %}">
+          Continuar al pago
+        </a>
+      {% endif %}
     </div>
 
     <!-- Concrete pending payments notice -->
