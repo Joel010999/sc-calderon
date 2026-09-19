@@ -1,6 +1,16 @@
 from django.apps import apps
 from django.test import SimpleTestCase
 
+from .test_checkout import (
+    ArchitectureBoundaryTests,
+    BookingSummaryViewTests,
+    CheckoutViewTests,
+    CreatePublicBookingViewTests,
+    HomeViewTests,
+    SalesOnlineBookingServiceTests,
+    SearchTripsViewTests,
+)
+
 
 class DomainRegistryTests(SimpleTestCase):
     def test_legacy_core_models_are_not_registered(self):

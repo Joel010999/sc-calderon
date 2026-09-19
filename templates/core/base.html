@@ -12,11 +12,13 @@
   <link rel="preload" href="{% static 'assets/hero-bg.jpg' %}" as="image">
   <link rel="preload" href="{% static 'assets/hero-interior.jpg' %}" as="image">
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'css/checkout.css' %}">
+  {% block extra_css %}{% endblock %}
 </head>
 <body>
   <!-- ═══════════════════ HEADER ═══════════════════ -->
   <header class="site-header">
-    <a href="#inicio" class="brand-mark" aria-label="Éxodo Viajes y Turismo">
+    <a href="/" class="brand-mark" aria-label="Éxodo Viajes y Turismo">
       <span class="brand-mark__flag"></span>
       <div>
         <p class="brand-mark__name">ÉXODO</p>
@@ -30,12 +32,13 @@
     </button>
 
     <nav class="site-nav" id="nav-links">
-      <a href="#viajes">Viajes</a>
-      <a href="#como-funciona">Cómo funciona</a>
-      <a href="#preguntas">Preguntas frecuentes</a>
-      <button class="button button--primary nav-cta" type="button" data-scroll-search="true">
+      <a href="/#viajes">Viajes</a>
+      <a href="{% url 'buscar_viajes' %}">Buscador</a>
+      <a href="/#como-funciona">Cómo funciona</a>
+      <a href="/#preguntas">Preguntas frecuentes</a>
+      <a href="{% url 'buscar_viajes' %}" class="button button--primary nav-cta">
         Reservar
-      </button>
+      </a>
     </nav>
   </header>
 
@@ -67,7 +70,7 @@
 
   <div class="page-shell">
     <main>
-
+      {% block content %}
       <!-- ═══════════════════ HERO ═══════════════════ -->
       <section class="hero" id="inicio">
         <div class="hero__copy">
@@ -108,13 +111,27 @@
             <h2 id="search-title">¿A dónde viajás?</h2>
           </div>
 
-          <form id="search-form" class="search-form">
+          <form id="search-form" class="search-form" method="GET" action="{% url 'buscar_viajes' %}">
+            <div class="search-form__trip-type" style="display: flex; gap: 1rem; margin-bottom: 0.75rem; font-size: 0.9rem; font-weight: 600;">
+              <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                <input type="radio" name="trip_type" value="oneway" checked id="hero-type-oneway">
+                <span>Solo ida</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                <input type="radio" name="trip_type" value="roundtrip" id="hero-type-roundtrip">
+                <span>Ida y vuelta</span>
+              </label>
+            </div>
+
             <div class="search-form__route">
               <label>
                 <span>Origen</span>
-                <select id="origin" name="origin">
-                  <option value="Jujuy">Jujuy</option>
-                  <option value="Córdoba">Córdoba</option>
+                <select id="origin" name="origin" required>
+                  {% if stops %}
+                    {% for stop in stops %}
+                      <option value="{{ stop.pk }}" {% if forloop.first %}selected{% endif %}>{{ stop.name }}</option>
+                    {% endfor %}
+                  {% endif %}
                 </select>
               </label>
 
@@ -126,17 +143,25 @@
 
               <label>
                 <span>Destino</span>
-                <select id="destination" name="destination">
-                  <option value="Córdoba">Córdoba</option>
-                  <option value="Jujuy">Jujuy</option>
+                <select id="destination" name="destination" required>
+                  {% if stops %}
+                    {% for stop in stops %}
+                      <option value="{{ stop.pk }}" {% if forloop.last %}selected{% endif %}>{{ stop.name }}</option>
+                    {% endfor %}
+                  {% endif %}
                 </select>
               </label>
             </div>
 
             <div class="search-form__details">
               <label>
-                <span>Fecha</span>
-                <input id="travel-date" name="date" type="date">
+                <span>Fecha ida</span>
+                <input id="travel-date" name="date" type="date" value="{{ today_str }}" min="{{ today_str }}" required>
+              </label>
+
+              <label id="hero-return-date-container" style="display: none;">
+                <span>Fecha vuelta</span>
+                <input id="hero-return-date" name="return_date" type="date" min="{{ today_str }}">
               </label>
 
               <label>
@@ -490,6 +515,7 @@
         </div>
       </section>
 
+      {% endblock content %}
     </main>
 
     <!-- ═══════════════════ FOOTER ═══════════════════ -->
@@ -516,6 +542,8 @@
     </button>
   </div>
 
+  <script src="{% static 'js/checkout.js' %}" defer></script>
   <script src="{% static 'js/script.js' %}" defer></script>
+  {% block extra_js %}{% endblock %}
 </body>
 </html>

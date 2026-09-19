@@ -5,11 +5,11 @@
 - `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
 - Panel personalizado, seguridad, health check, roles y estáticos locales: completados.
 - Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `fbe3585`.
-- Rama activa de desarrollo: `feature/manual-reservations-panel-20260918`.
-- Etapa actual: panel personalizado de reservas manuales implementado y verificado.
+- Rama activa de desarrollo: `feature/public-checkout-foundation-20260919`.
+- Etapa actual: checkout público implementado y verificado.
 - Documentación creada/actualizada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
-- Próxima etapa: pagos, confirmación económica, checkout público, emisión de pasajes (PDF, QR) y migración desde Sheets (previa a la activación de pasarelas).
-- Ventas comerciales finales, pasarelas de pago (Mercado Pago, Payway), vistas públicas, checkout, caja, comprobantes, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
+- Próxima etapa: pasarelas de pago (Mercado Pago, Payway), emisión de pasajes (PDF, QR) y migración desde Sheets (previa a la activación de pasarelas).
+- Ventas comerciales finales, pasarelas de pago (Mercado Pago, Payway), caja, comprobantes, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
 - Decisiones pendientes: consultar [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
 ## Fundación de operaciones
@@ -133,5 +133,42 @@ Estado: implementado en `feature/manual-payments-20260918`, pendiente de revisi�
 - La restricción condicional de pagos activos, los bloqueos ordenados y las transacciones tienen cobertura SQLite y PostgreSQL.
 - No están terminados caja, pagos parciales, Mercado Pago, Payway, tarjetas, checkout público, reembolsos, PDF, QR, correo ni pasarelas externas.
 - Antes de producción se debe configurar almacenamiento persistente para comprobantes. La política de vencimiento de transferencias del checkout público sigue pendiente con Sandro.
+
+## Fundación de checkout público
+
+Estado: implementado en `feature/public-checkout-foundation-20260919`.
+
+- **Frontend público y arquitectura**:
+  - `core` gestiona las rutas y vistas públicas (`home`, `buscar_viajes`, `checkout`, `crear_reserva`, `resumen_reserva`, `expirar_reserva`) sin romper la home institucional ni sus secciones visuales.
+  - `operations` permanece como única fuente de verdad para recorridos, viajes, paradas, colectivos, butacas y tarifas.
+  - `sales` gestiona el agregado transaccional `Booking`, `BookingLeg`, `BookingPassenger` y `SeatAssignment`.
+  - `payments` no se expone al público; el resumen muestra un aviso claro de que los pagos públicos online se encuentran en proceso de integración.
+  - No se importa `panel` en `core`.
+  - No se agregaron modelos nuevos ni migraciones (0 migraciones pendientes).
+
+- **Búsqueda y disponibilidad**:
+  - Búsqueda por origen, destino, fechas de ida y vuelta y cantidad de pasajeros (1 a `SALES_MAX_PASSENGERS_PER_BOOKING`).
+  - Consulta de viajes vigentes (`SCHEDULED`, `BOARDING`) con fechas locales en `America/Argentina/Buenos_Aires`.
+  - Aplicación del corte de venta online concreto (`SALES_ONLINE_CUTOFF_MINUTES` = 60 minutos antes de la subida).
+  - Cálculo de disponibilidad real y tarifas activas por categoría (`TripFare`).
+
+- **Selección de butacas dinámica y formulario**:
+  - Distribución por planta (`Seat.Deck`) y coordenadas de grilla (`position_x`, `position_y`) construida dinámicamente con CSS Grid local.
+  - Soporte para ambos tramos (ida y regreso) en compras de ida y vuelta.
+  - Formulario de pasajeros con campos de identidad completos (`first_name`, `last_name`, `document_type`, `document_number`, `birth_date`, `nationality`, `gender`) y datos de contacto en la reserva (`email`, `phone`).
+  - `create_online_booking` ampliado para recibir `passengers_data` opcional preservando compatibilidad.
+
+- **Seguridad, atomicidad y protección de sesión**:
+  - POST de creación protegido con CSRF, honeypot (`website`) y limitación razonable de holds en sesión (máximo 3 en 15 minutos) sin Redis ni Celery.
+  - Revalidación estricta de todos los parámetros en servidor sin confiar en datos enviados por el navegador.
+  - Privacidad: no se almacenan datos personales en cookies ni logs.
+  - Resumen protegido mediante token seguro de sesión asociado al `public_id`, previniendo vulnerabilidades IDOR.
+  - Temporizador regresivo en cliente basado en `expires_at` (15 minutos para retención `HELD`). Al expirar el tiempo, se transiciona automáticamente la reserva a `EXPIRED` y se liberan las butacas mediante `expire_booking`.
+  - Acción para cancelar y liberar el hold voluntariamente antes del vencimiento.
+
+- **Pruebas y verificación**:
+  - Se añadieron pruebas exhaustivas en `core/test_checkout.py` y `core/tests.py` cubriendo: renderizado institucional, validaciones de búsqueda, corte online, selección dinámica de butacas, honeypot, limitación de tasa, atomicidad y rollback ante colisiones, protección IDOR de sesión, temporizador, expiración automática y límites arquitectónicos.
+  - El workflow `.github/workflows/sales-postgres.yml` fue actualizado para incluir la rama `feature/public-checkout-foundation-20260919`.
+  - Pruebas ejecutadas con SQLite y verificaciones de Django (`check`, `makemigrations --check --dry-run`).
 
 Actualizar este documento cuando finalice cada módulo.

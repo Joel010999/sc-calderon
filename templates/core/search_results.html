@@ -1,0 +1,323 @@
+{% extends 'core/base.html' %}
+{% load static l10n %}
+
+{% block content %}
+<div class="checkout-page-container">
+  <!-- SEARCH BAR MODIFIER -->
+  <section class="search-section-header">
+    <div class="search-card search-card--full">
+      <div class="search-card__top">
+        <p class="search-card__eyebrow">Buscador de viajes</p>
+        <h2>Modificá tu búsqueda</h2>
+      </div>
+
+      <form id="results-search-form" class="search-form" method="GET" action="{% url 'buscar_viajes' %}">
+        <div class="search-form__trip-type">
+          <label class="trip-type-label">
+            <input type="radio" name="trip_type" value="oneway" {% if trip_type != 'roundtrip' %}checked{% endif %} id="type-oneway">
+            <span>Solo ida</span>
+          </label>
+          <label class="trip-type-label">
+            <input type="radio" name="trip_type" value="roundtrip" {% if trip_type == 'roundtrip' %}checked{% endif %} id="type-roundtrip">
+            <span>Ida y vuelta</span>
+          </label>
+        </div>
+
+        <div class="search-form__route">
+          <label>
+            <span>Origen</span>
+            <select id="origin" name="origin" required>
+              {% for stop in stops %}
+                <option value="{{ stop.pk }}" {% if origin_stop and origin_stop.pk == stop.pk %}selected{% endif %}>
+                  {{ stop.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <button class="swap-button" type="button" id="swap-route" aria-label="Invertir origen y destino">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 3v14M5 17l-3-3M5 17l3-3M15 17V3M15 3l-3 3M15 3l3 3"/>
+            </svg>
+          </button>
+
+          <label>
+            <span>Destino</span>
+            <select id="destination" name="destination" required>
+              {% for stop in stops %}
+                <option value="{{ stop.pk }}" {% if dest_stop and dest_stop.pk == stop.pk %}selected{% endif %}>
+                  {{ stop.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+
+        <div class="search-form__details">
+          <label>
+            <span>Fecha ida</span>
+            <input id="travel-date" name="date" type="date" value="{{ date_str|default:today_str }}" min="{{ today_str }}" required>
+          </label>
+
+          <label id="return-date-container" style="{% if trip_type != 'roundtrip' %}display: none;{% endif %}">
+            <span>Fecha vuelta</span>
+            <input id="return-date" name="return_date" type="date" value="{{ return_date_str }}" min="{{ today_str }}">
+          </label>
+
+          <label>
+            <span>Pasajeros</span>
+            <select id="passengers" name="passengers">
+              {% for i in "1234"|make_list %}
+                {% if forloop.counter <= max_passengers %}
+                  <option value="{{ forloop.counter }}" {% if passengers_count == forloop.counter %}selected{% endif %}>
+                    {{ forloop.counter }} pasajero{{ forloop.counter|pluralize:"s" }}
+                  </option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+
+        <button class="button button--primary button--block" type="submit">
+          Actualizar resultados
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- NOTICES AND ERRORS -->
+  {% if errors %}
+    <div class="alert alert--error" role="alert">
+      <strong>No se pudo completar la búsqueda:</strong>
+      <ul>
+        {% for err in errors %}
+          <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if messages %}
+    <div class="messages-list">
+      {% for msg in messages %}
+        <div class="alert alert--{{ msg.tags }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if performed_search and not errors and nearby_searches %}
+    <nav class="nearby-search-links" aria-label="Fechas cercanas">
+      {% for nearby in nearby_searches %}
+        <a class="button button--ghost" href="{{ nearby.url }}">{{ nearby.label }} · {{ nearby.date|date:"d/m" }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  <!-- RESULTS SECTION -->
+  {% if performed_search and not errors %}
+    <section class="search-results-container">
+      {% if is_roundtrip %}
+        <!-- ROUNDTRIP FORM SELECTION -->
+        <form method="GET" action="{% url 'checkout' %}" class="roundtrip-selection-flow">
+          <input type="hidden" name="trip_type" value="roundtrip">
+          <input type="hidden" name="passengers" value="{{ passengers_count }}">
+
+          <!-- STEP 1: OUTBOUND -->
+          <div class="results-group">
+            <div class="results-group__header">
+              <span class="step-badge">Paso 1</span>
+              <div>
+                <h3>Viaje de ida: {{ origin_stop.name }} → {{ dest_stop.name }}</h3>
+                <p class="muted">Fecha de subida: {{ outbound_date|date:"d/m/Y" }} · {{ passengers_count }} pasajero{{ passengers_count|pluralize:"s" }}</p>
+              </div>
+            </div>
+
+            {% if outbound_trips %}
+              <div class="trip-cards-list">
+                {% for item in outbound_trips %}
+                  <label class="trip-card-interactive">
+                    <input type="radio" name="outbound_trip_radio" value="{{ item.trip.pk }}:{{ item.origin_stop.pk }}:{{ item.destination_stop.pk }}" {% if forloop.first %}checked{% endif %} class="trip-radio">
+                    <div class="trip-card-body">
+                      <div class="trip-time-row">
+                        <div class="time-block">
+                          <strong class="time-display">{{ item.origin_local_dt|date:"H:i" }} hs</strong>
+                          <span class="station-name">{{ item.origin_stop.stop.name }}</span>
+                        </div>
+                        <div class="duration-arrow">
+                          <span class="duration-text">{{ item.duration_str }}</span>
+                          <span class="arrow-icon">→</span>
+                        </div>
+                        <div class="time-block">
+                          <strong class="time-display">{{ item.dest_local_dt|date:"H:i" }} hs</strong>
+                          <span class="station-name">{{ item.destination_stop.stop.name }}</span>
+                        </div>
+                      </div>
+
+                      <div class="trip-meta-row">
+                        <span class="bus-badge">Colectivo: {{ item.bus.display_name }} ({{ item.bus.code }})</span>
+                        <span class="avail-badge">{{ item.available_seat_count }} butacas disponibles</span>
+                      </div>
+
+                      <div class="trip-fares-row">
+                        <div class="fares-chips">
+                          {% for option in item.fare_options %}
+                            <span class="fare-tag fare-tag--{{ option.category|lower }}">
+                              {{ option.category }}: ${{ option.amount|unlocalize }} · {{ option.available_count }} disponibles
+                            </span>
+                          {% endfor %}
+                        </div>
+                        <span class="price-from">Desde <strong>${{ item.min_fare|unlocalize }}</strong></span>
+                      </div>
+                    </div>
+                  </label>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="empty-state-box">
+                <p>No hay viajes de ida disponibles para la fecha {{ outbound_date|date:"d/m/Y" }}.</p>
+                <p class="muted">La venta online cierra {{ cutoff_minutes }} minutos antes del horario de subida.</p>
+              </div>
+            {% endif %}
+          </div>
+
+          <!-- STEP 2: RETURN -->
+          <div class="results-group mt-4">
+            <div class="results-group__header">
+              <span class="step-badge">Paso 2</span>
+              <div>
+                <h3>Viaje de regreso: {{ dest_stop.name }} → {{ origin_stop.name }}</h3>
+                <p class="muted">Fecha de regreso: {{ return_date|date:"d/m/Y" }} · {{ passengers_count }} pasajero{{ passengers_count|pluralize:"s" }}</p>
+              </div>
+            </div>
+
+            {% if return_trips %}
+              <div class="trip-cards-list">
+                {% for item in return_trips %}
+                  <label class="trip-card-interactive">
+                    <input type="radio" name="return_trip_radio" value="{{ item.trip.pk }}:{{ item.origin_stop.pk }}:{{ item.destination_stop.pk }}" {% if forloop.first %}checked{% endif %} class="trip-radio">
+                    <div class="trip-card-body">
+                      <div class="trip-time-row">
+                        <div class="time-block">
+                          <strong class="time-display">{{ item.origin_local_dt|date:"H:i" }} hs</strong>
+                          <span class="station-name">{{ item.origin_stop.stop.name }}</span>
+                        </div>
+                        <div class="duration-arrow">
+                          <span class="duration-text">{{ item.duration_str }}</span>
+                          <span class="arrow-icon">→</span>
+                        </div>
+                        <div class="time-block">
+                          <strong class="time-display">{{ item.dest_local_dt|date:"H:i" }} hs</strong>
+                          <span class="station-name">{{ item.destination_stop.stop.name }}</span>
+                        </div>
+                      </div>
+
+                      <div class="trip-meta-row">
+                        <span class="bus-badge">Colectivo: {{ item.bus.display_name }} ({{ item.bus.code }})</span>
+                        <span class="avail-badge">{{ item.available_seat_count }} butacas disponibles</span>
+                      </div>
+
+                      <div class="trip-fares-row">
+                        <div class="fares-chips">
+                          {% for option in item.fare_options %}
+                            <span class="fare-tag fare-tag--{{ option.category|lower }}">
+                              {{ option.category }}: ${{ option.amount|unlocalize }} · {{ option.available_count }} disponibles
+                            </span>
+                          {% endfor %}
+                        </div>
+                        <span class="price-from">Desde <strong>${{ item.min_fare|unlocalize }}</strong></span>
+                      </div>
+                    </div>
+                  </label>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="empty-state-box">
+                <p>No hay viajes de regreso disponibles para la fecha {{ return_date|date:"d/m/Y" }}.</p>
+                <p class="muted">Probá seleccionando otra fecha de regreso en el buscador superior.</p>
+              </div>
+            {% endif %}
+          </div>
+
+          {% if outbound_trips and return_trips %}
+            <div class="results-actions mt-4">
+              <button type="submit" class="button button--primary button--large" id="continue-roundtrip-btn">
+                Continuar a la selección de butacas →
+              </button>
+            </div>
+          {% endif %}
+        </form>
+
+      {% else %}
+        <!-- ONE WAY LIST -->
+        <div class="results-group">
+          <div class="results-group__header">
+            <div>
+              <h3>Viajes de ida disponibles</h3>
+              <p class="muted">{{ origin_stop.name }} → {{ dest_stop.name }} · {{ outbound_date|date:"d/m/Y" }} · {{ passengers_count }} pasajero{{ passengers_count|pluralize:"s" }}</p>
+            </div>
+          </div>
+
+          {% if outbound_trips %}
+            <div class="trip-cards-list">
+              {% for item in outbound_trips %}
+                <div class="trip-card">
+                  <div class="trip-card-body">
+                    <div class="trip-time-row">
+                      <div class="time-block">
+                        <strong class="time-display">{{ item.origin_local_dt|date:"H:i" }} hs</strong>
+                        <span class="station-name">{{ item.origin_stop.stop.name }}</span>
+                      </div>
+                      <div class="duration-arrow">
+                        <span class="duration-text">{{ item.duration_str }}</span>
+                        <span class="arrow-icon">→</span>
+                      </div>
+                      <div class="time-block">
+                        <strong class="time-display">{{ item.dest_local_dt|date:"H:i" }} hs</strong>
+                        <span class="station-name">{{ item.destination_stop.stop.name }}</span>
+                      </div>
+                    </div>
+
+                    <div class="trip-meta-row">
+                      <span class="bus-badge">Colectivo {{ item.bus.display_name }} ({{ item.bus.code }})</span>
+                      <span class="avail-badge">{{ item.available_seat_count }} butacas disponibles</span>
+                    </div>
+
+                    <div class="trip-fares-row">
+                      <div class="fares-chips">
+                        {% for option in item.fare_options %}
+                          <span class="fare-tag fare-tag--{{ option.category|lower }}">
+                            {{ option.category }}: ${{ option.amount|unlocalize }} · {{ option.available_count }} disponibles
+                          </span>
+                        {% endfor %}
+                      </div>
+                      <div class="price-action-box">
+                        <span class="price-from">Desde <strong>${{ item.min_fare|unlocalize }}</strong></span>
+                        <form method="GET" action="{% url 'checkout' %}">
+                          <input type="hidden" name="trip_type" value="oneway">
+                          <input type="hidden" name="passengers" value="{{ passengers_count }}">
+                          <input type="hidden" name="outbound_trip" value="{{ item.trip.pk }}">
+                          <input type="hidden" name="outbound_origin" value="{{ item.origin_stop.pk }}">
+                          <input type="hidden" name="outbound_destination" value="{{ item.destination_stop.pk }}">
+                          <button type="submit" class="button button--primary">
+                            Elegir butacas →
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-state-box">
+              <p>No encontramos salidas disponibles para {{ origin_stop.name }} → {{ dest_stop.name }} el día {{ outbound_date|date:"d/m/Y" }}.</p>
+              <p class="muted">Recordá que la venta online cierra {{ cutoff_minutes }} minutos antes del horario de subida.</p>
+              <a href="{% url 'home' %}" class="button button--ghost mt-2">Volver al inicio</a>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -504,7 +504,7 @@ def create_booking(*, channel, email, phone="", seller=None, legs, passengers_da
     return booking
 
 
-def create_online_booking(*, email, phone="", legs, now=None):
+def create_online_booking(*, email, phone="", legs, passengers_data=None, now=None):
     """Crea una reserva canal ONLINE."""
     return create_booking(
         channel=BookingChannel.ONLINE,
@@ -512,6 +512,7 @@ def create_online_booking(*, email, phone="", legs, now=None):
         phone=phone,
         seller=None,
         legs=legs,
+        passengers_data=passengers_data,
         now=now,
     )
 

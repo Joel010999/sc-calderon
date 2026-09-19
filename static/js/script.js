@@ -361,6 +361,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Search form
   if (form) {
     form.addEventListener('submit', (e) => {
+      if (form.getAttribute('action')) {
+        return; // Allow native form submission to /buscar/
+      }
       e.preventDefault();
       syncStateFromSearch();
       renderResults();

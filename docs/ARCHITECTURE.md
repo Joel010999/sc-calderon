@@ -22,6 +22,14 @@ Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y rein
 - El panel ofrece registro de efectivo, presentaciÃ³n y revisiÃ³n de transferencias, auditorÃ­a y mÃ©tricas de pagos aprobados. No se habilitan pasarelas, pagos parciales ni caja.
 - Antes de producciÃ³n debe definirse almacenamiento persistente para comprobantes en Railway.
 
+## Checkout publico hasta reserva HELD
+
+- `core` coordina la interfaz publica de busqueda, seleccion de viajes, butacas, pasajeros y resumen. La home institucional se conserva y las reglas de negocio no se implementan en JavaScript.
+- Las consultas parten de `operations` y usan la fecha y permisos de `TripStop` de la subida concreta. La creacion delega en `sales.services.create_online_booking` y `create_booking`, que mantienen la atomicidad, el cierre online y los snapshots de precio.
+- El estado previo a la creacion se limita a identificadores y criterios no sensibles en la sesion Django. Despues de crear `Booking`, el resumen requiere un token aleatorio asociado al `public_id` en esa sesion.
+- El alcance termina en `Booking` `ONLINE` `HELD`. No se exponen `payments`, checkout economico, pasajes, PDF, QR, correo ni cuentas de clientes.
+- La proteccion inicial contra abuso combina CSRF, honeypot y limite de holds por sesion. Una politica distribuida de rate limiting y almacenamiento persistente quedan pendientes de infraestructura aprobada.
+
 ## Módulos conceptuales
 
 | Módulo | Responsabilidad |
