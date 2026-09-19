@@ -6,6 +6,7 @@ on:
       - feature/sales-foundation-20260917
       - feature/manual-reservations-panel-20260918
       - feature/manual-payments-20260918
+      - feature/public-checkout-foundation-20260919
   pull_request:
 
 permissions:
@@ -49,5 +50,7 @@ jobs:
         run: python manage.py test payments.tests.PaymentsPostgresConcurrencyTests --verbosity 2
       - name: Sales tests on PostgreSQL
         run: python manage.py test sales
+      - name: Public checkout tests on PostgreSQL
+        run: python manage.py test core.test_checkout
       - name: Complete suite on PostgreSQL
         run: python manage.py test

@@ -1,0 +1,12 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<main class="checkout-page-container summary-container">
+  <section class="summary-details-card">
+    <h1>Pago pendiente de activación</h1>
+    <p>Tu reserva <strong>{{ booking.public_id }}</strong> está retenida, pero todavía no hay un medio de pago público habilitado.</p>
+    <p>La reserva no fue confirmada económicamente. Podés volver al resumen mientras el plazo de retención siga vigente.</p>
+    <a class="button button--primary" href="{% url 'resumen_reserva' public_id=booking.public_id %}">Volver al resumen</a>
+  </section>
+</main>
+{% endblock %}

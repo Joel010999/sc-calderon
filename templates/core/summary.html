@@ -1,0 +1,176 @@
+{% extends 'core/base.html' %}
+{% load static l10n %}
+
+{% block content %}
+<div class="checkout-page-container summary-container">
+  <!-- SUMMARY HEADER -->
+  <div class="summary-header">
+    <div class="summary-title-col">
+      <span class="eyebrow-ref">Reserva online #{{ booking.public_id }}</span>
+      <h1>Resumen de tu reserva</h1>
+      <p class="muted">Guardá tu código de reserva para cualquier consulta sobre tu viaje.</p>
+    </div>
+
+    <div class="summary-status-badge status-badge--{{ booking.status|lower }}">
+      {{ booking.get_status_display }}
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="messages-list mt-3">
+      {% for msg in messages %}
+        <div class="alert alert--{{ msg.tags }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- TIMER OR EXPIRED NOTICE -->
+  {% if is_held %}
+    <div class="timer-box" id="timer-box" data-remaining="{{ remaining_seconds }}">
+      <div class="timer-inner">
+        <span class="timer-label">Tiempo de retención restante</span>
+        <div class="timer-display" id="timer-display">--:--</div>
+        <p class="timer-note">
+          Tus butacas permanecerán retenidas hasta las <strong>{{ expires_at_local|date:"H:i" }} hs</strong>
+          ({{ expires_at_local|date:"d/m/Y" }}). Si el tiempo expira, las butacas serán liberadas automáticamente.
+        </p>
+      </div>
+    </div>
+  {% elif is_expired %}
+    <div class="alert alert--warning summary-banner">
+      <h3>El plazo de retención ha expirado</h3>
+      <p>La reserva venció y las butacas asociadas fueron liberadas automáticamente para otros pasajeros.</p>
+      <div class="mt-2">
+        <a href="{% url 'buscar_viajes' %}" class="button button--primary">Buscar un nuevo viaje</a>
+      </div>
+    </div>
+  {% elif is_released %}
+    <div class="alert alert--info summary-banner">
+      <h3>Reserva cancelada y liberada</h3>
+      <p>Esta reserva fue liberada y sus butacas ya no se encuentran retenidas.</p>
+      <div class="mt-2">
+        <a href="{% url 'buscar_viajes' %}" class="button button--primary">Buscar un nuevo viaje</a>
+      </div>
+    </div>
+  {% elif is_confirmed %}
+    <div class="alert alert--success summary-banner">
+      <h3>¡Reserva confirmada con éxito!</h3>
+      <p>Tu pasaje ha sido confirmado.</p>
+    </div>
+  {% endif %}
+
+  <!-- DETAILS CARD -->
+  <div class="summary-details-card mt-4">
+    <!-- LEGS -->
+    {% for ldata in legs_data %}
+      <div class="summary-leg-block {% if not forloop.first %}mt-4 pt-4 border-top{% endif %}">
+        <div class="leg-title-row">
+          <span class="step-badge">Tramo {{ ldata.leg.sequence }}</span>
+          <h2>{{ ldata.leg.origin_stop_name }} → {{ ldata.leg.destination_stop_name }}</h2>
+        </div>
+
+        <div class="leg-schedule-grid">
+          <div class="schedule-item">
+            <span class="label">Subida</span>
+            <strong>{{ ldata.origin_local|date:"d/m/Y H:i" }} hs</strong>
+            <span class="muted">{{ ldata.leg.origin_stop_name }}</span>
+          </div>
+
+          <div class="schedule-item">
+            <span class="label">Bajada</span>
+            <strong>{{ ldata.dest_local|date:"d/m/Y H:i" }} hs</strong>
+            <span class="muted">{{ ldata.leg.destination_stop_name }}</span>
+          </div>
+
+          <div class="schedule-item">
+            <span class="label">Unidad</span>
+            <strong>{{ ldata.leg.trip.bus.display_name }}</strong>
+            <span class="muted">Interno {{ ldata.leg.trip.bus.code }}</span>
+          </div>
+        </div>
+
+        <!-- SEAT ASSIGNMENTS -->
+        <div class="assignments-table-wrapper mt-3">
+          <h4>Butacas y pasajeros asignados</h4>
+          <table class="summary-table">
+            <thead>
+              <tr>
+                <th>Pasajero</th>
+                <th>Documento</th>
+                <th>Butaca</th>
+                <th>Planta / Categoría</th>
+                <th class="text-right">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sa in ldata.assignments %}
+                <tr>
+                  <td>
+                    <strong>{{ sa.passenger.first_name }} {{ sa.passenger.last_name }}</strong>
+                  </td>
+                  <td>{{ sa.passenger.document_type }} {{ sa.passenger.document_number }}</td>
+                  <td><span class="seat-badge-pill">N° {{ sa.seat_number }}</span></td>
+                  <td>{{ sa.seat.get_deck_display }} · {{ sa.get_category_display }}</td>
+                  <td class="text-right"><strong>${{ sa.price|unlocalize }}</strong></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+
+    <!-- TOTAL PRICE -->
+    <div class="summary-total-bar mt-4">
+      <div class="total-label">Total de la reserva:</div>
+      <div class="total-amount">${{ total|unlocalize }} ARS</div>
+    </div>
+
+    <!-- CONTACT INFO -->
+    <div class="summary-contact-info mt-4">
+      <h4>Datos de contacto registrados</h4>
+      <p>Correo electrónico: <strong>{{ booking.email }}</strong></p>
+      {% if booking.phone %}
+        <p>Teléfono: <strong>{{ booking.phone }}</strong></p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- PAYMENT BUTTON & NOTICE (PUBLIC PAYMENTS PENDING) -->
+  <div class="payment-action-card mt-4">
+    <h3>Medio de pago</h3>
+    <p class="muted">Las reservas online se abonan para confirmar los pasajes antes de su vencimiento.</p>
+
+    <div class="payment-button-wrapper">
+      <a class="button button--primary" id="btn-payment-pending" href="{% url 'pago_pendiente' public_id=booking.public_id %}">
+        Continuar al pago
+      </a>
+    </div>
+
+    <!-- Concrete pending payments notice -->
+    <div class="payment-pending-alert mt-3">
+      <div class="alert-icon">ℹ</div>
+      <div class="alert-body">
+        <strong>Pagos online pendientes de activación</strong>
+        <p>
+          Las pasarelas automáticas de pago público (Mercado Pago y Payway) se encuentran actualmente en proceso de integración técnica.
+          Para confirmar tu reserva o coordinar una transferencia bancaria, comunicate con el equipo de SC Viajes informando tu código de reserva:
+          <strong>{{ booking.public_id }}</strong>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- RELEASE ACTION IF HELD -->
+  {% if is_held %}
+    <div class="summary-actions-row mt-4">
+      <form method="POST" action="{% url 'expirar_reserva' public_id=booking.public_id %}" onsubmit="return confirm('¿Estás seguro de que querés cancelar esta reserva y liberar las butacas?');">
+        {% csrf_token %}
+        <button type="submit" class="button button--ghost text-danger">
+          Cancelar reserva y liberar butacas
+        </button>
+      </form>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,274 @@
+{% extends 'core/base.html' %}
+{% load static l10n %}
+
+{% block content %}
+<div class="checkout-page-container">
+  <!-- BREADCRUMB & HEADER -->
+  <div class="checkout-header">
+    <a href="{% url 'buscar_viajes' %}" class="back-link">← Volver a resultados</a>
+    <h1>Completá tu reserva</h1>
+    <p class="muted">Seleccioná tus butacas y completá los datos de los pasajeros para retener tus pasajes durante 15 minutos.</p>
+  </div>
+
+  <!-- ITINERARY RECAP -->
+  <section class="itinerary-summary-card">
+    <div class="itinerary-leg">
+      <div class="leg-tag">Viaje de ida</div>
+      <div class="leg-info">
+        <h3>{{ outbound_orig.stop.name }} → {{ outbound_dest.stop.name }}</h3>
+        <p>Salida: <strong>{{ outbound_orig_local|date:"d/m/Y H:i" }} hs</strong> · Llegada: <strong>{{ outbound_dest_local|date:"d/m/Y H:i" }} hs</strong></p>
+        <span class="bus-badge">Colectivo: {{ outbound_trip.bus.display_name }} ({{ outbound_trip.bus.code }})</span>
+      </div>
+      <div class="leg-fares-summary">
+        <span class="muted">Tarifas disponibles:</span>
+        {% for cat, amt in outbound_fares.items %}
+          <span class="fare-tag fare-tag--{{ cat|lower }}">{{ cat }}: ${{ amt|unlocalize }}</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if is_roundtrip and return_trip %}
+      <div class="itinerary-divider"></div>
+      <div class="itinerary-leg">
+        <div class="leg-tag leg-tag--return">Viaje de regreso</div>
+        <div class="leg-info">
+          <h3>{{ return_orig.stop.name }} → {{ return_dest.stop.name }}</h3>
+          <p>Salida: <strong>{{ return_orig_local|date:"d/m/Y H:i" }} hs</strong> · Llegada: <strong>{{ return_dest_local|date:"d/m/Y H:i" }} hs</strong></p>
+          <span class="bus-badge">Colectivo: {{ return_trip.bus.display_name }} ({{ return_trip.bus.code }})</span>
+        </div>
+        <div class="leg-fares-summary">
+          <span class="muted">Tarifas disponibles:</span>
+          {% for cat, amt in return_fares.items %}
+            <span class="fare-tag fare-tag--{{ cat|lower }}">{{ cat }}: ${{ amt|unlocalize }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if messages %}
+    <div class="messages-list mt-3">
+      {% for msg in messages %}
+        <div class="alert alert--{{ msg.tags }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- MAIN BOOKING FORM -->
+  <form method="POST" action="{% url 'crear_reserva' %}" class="checkout-main-form" id="checkout-main-form">
+    {% csrf_token %}
+
+    <!-- Hidden Fields -->
+    <input type="hidden" name="trip_type" value="{{ trip_type }}">
+    <input type="hidden" name="passengers_count" id="id_passengers_count" value="{{ passengers_count }}">
+    <input type="hidden" name="outbound_trip" value="{{ outbound_trip.pk }}">
+    <input type="hidden" name="outbound_origin" value="{{ outbound_orig.pk }}">
+    <input type="hidden" name="outbound_destination" value="{{ outbound_dest.pk }}">
+
+    {% if is_roundtrip %}
+      <input type="hidden" name="return_trip" value="{{ return_trip.pk }}">
+      <input type="hidden" name="return_origin" value="{{ return_orig.pk }}">
+      <input type="hidden" name="return_destination" value="{{ return_dest.pk }}">
+    {% endif %}
+
+    <!-- Honeypot field (anti-spam / anti-bot) -->
+    <div class="hp-input" aria-hidden="true" style="display:none !important; position: absolute; left: -9999px;">
+      <label for="id_website">Sitio web</label>
+      <input type="text" name="website" id="id_website" tabindex="-1" autocomplete="off">
+    </div>
+
+    <!-- SEAT SELECTION SECTION -->
+    <section class="checkout-section">
+      <div class="section-title-row">
+        <h2>1. Selección de Butacas</h2>
+        <div class="seat-legend" role="region" aria-label="Leyenda de butacas">
+          <span class="legend-item"><span class="swatch swatch-available"></span> Disponible</span>
+          <span class="legend-item"><span class="swatch swatch-selected"></span> Seleccionada</span>
+          <span class="legend-item"><span class="swatch swatch-occupied"></span> Ocupada</span>
+          <span class="legend-item"><span class="swatch swatch-cama"></span> Cama</span>
+          <span class="legend-item"><span class="swatch swatch-semicama"></span> Semicama</span>
+        </div>
+      </div>
+
+      <!-- OUTBOUND SEATS -->
+      <div class="seat-map-wrapper">
+        <div class="seat-map-header">
+          <h3>Butacas viaje de ida · Colectivo {{ outbound_trip.bus.display_name }} ({{ outbound_trip.bus.code }})</h3>
+          <div class="seat-counter-pill" id="outbound-counter-pill">
+            Seleccionadas: <strong id="outbound-count-display">0</strong> de <strong>{{ passengers_count }}</strong>
+          </div>
+        </div>
+
+        {% for deck in outbound_decks %}
+          <div class="deck-container">
+            <h4>{{ deck.label }}</h4>
+            <div class="seat-scroll-container" tabindex="0">
+              <div class="seat-grid">
+                {% for item in deck.items %}
+                  <label class="seat-card {% if item.is_occupied %}is-occupied{% elif not item.has_fare %}is-no-fare{% else %}is-available{% endif %}"
+                         style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
+                    {% if item.is_available %}
+                      <input type="checkbox" name="outbound_seats" value="{{ item.seat.pk }}"
+                             class="seat-checkbox outbound-seat-cb" data-seat-number="{{ item.seat.number }}"
+                             data-category="{{ item.seat.category }}" data-price="{{ item.fare_amount }}">
+                    {% else %}
+                      <input type="checkbox" disabled class="seat-checkbox">
+                    {% endif %}
+                    <div class="seat-card-inner">
+                      <span class="seat-number">Butaca {{ item.seat.number }}</span>
+                      <span class="seat-category badge-{{ item.seat.category|lower }}">{{ item.seat.get_category_display }}</span>
+                      {% if item.is_occupied %}
+                        <span class="seat-status occupied-label">Ocupada</span>
+                      {% elif item.fare_amount %}
+                        <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
+                      {% else %}
+                        <span class="seat-status">Sin tarifa</span>
+                      {% endif %}
+                    </div>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- RETURN SEATS (IF ROUNDTRIP) -->
+      {% if is_roundtrip and return_trip %}
+        <div class="seat-map-wrapper mt-4">
+          <div class="seat-map-header">
+            <h3>Butacas viaje de regreso · Colectivo {{ return_trip.bus.display_name }} ({{ return_trip.bus.code }})</h3>
+            <div class="seat-counter-pill" id="return-counter-pill">
+              Seleccionadas: <strong id="return-count-display">0</strong> de <strong>{{ passengers_count }}</strong>
+            </div>
+          </div>
+
+          {% for deck in return_decks %}
+            <div class="deck-container">
+              <h4>{{ deck.label }}</h4>
+              <div class="seat-scroll-container" tabindex="0">
+                <div class="seat-grid">
+                  {% for item in deck.items %}
+                    <label class="seat-card {% if item.is_occupied %}is-occupied{% elif not item.has_fare %}is-no-fare{% else %}is-available{% endif %}"
+                           style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
+                      {% if item.is_available %}
+                        <input type="checkbox" name="return_seats" value="{{ item.seat.pk }}"
+                               class="seat-checkbox return-seat-cb" data-seat-number="{{ item.seat.number }}"
+                               data-category="{{ item.seat.category }}" data-price="{{ item.fare_amount }}">
+                      {% else %}
+                        <input type="checkbox" disabled class="seat-checkbox">
+                      {% endif %}
+                      <div class="seat-card-inner">
+                        <span class="seat-number">Butaca {{ item.seat.number }}</span>
+                        <span class="seat-category badge-{{ item.seat.category|lower }}">{{ item.seat.get_category_display }}</span>
+                        {% if item.is_occupied %}
+                          <span class="seat-status occupied-label">Ocupada</span>
+                        {% elif item.fare_amount %}
+                          <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
+                        {% else %}
+                          <span class="seat-status">Sin tarifa</span>
+                        {% endif %}
+                      </div>
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
+    <!-- PASSENGERS DETAILS SECTION -->
+    <section class="checkout-section mt-4">
+      <h2>2. Datos de los Pasajeros</h2>
+      <p class="muted">Ingresá los datos identificatorios requeridos para la emisión de pasajes y seguro de viaje.</p>
+
+      <div class="passengers-form-grid">
+        {% for pos in passenger_range %}
+          <div class="passenger-card">
+            <div class="passenger-card__header">
+              <span class="passenger-num-badge">Pasajero {{ pos }}</span>
+            </div>
+
+            <div class="passenger-fields-grid">
+              <div class="form-group">
+                <label for="p_{{ pos }}_first_name">Nombre *</label>
+                <input type="text" id="p_{{ pos }}_first_name" name="passenger_{{ pos }}_first_name" class="form-control" placeholder="Ej: Juan" required>
+              </div>
+
+              <div class="form-group">
+                <label for="p_{{ pos }}_last_name">Apellido *</label>
+                <input type="text" id="p_{{ pos }}_last_name" name="passenger_{{ pos }}_last_name" class="form-control" placeholder="Ej: Pérez" required>
+              </div>
+
+              <div class="form-group">
+                <label for="p_{{ pos }}_document_type">Tipo de documento *</label>
+                <select id="p_{{ pos }}_document_type" name="passenger_{{ pos }}_document_type" class="form-control" required>
+                  <option value="DNI" selected>DNI</option>
+                  <option value="Pasaporte">Pasaporte</option>
+                  <option value="CI">Cédula de Identidad</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="p_{{ pos }}_document_number">Número de documento *</label>
+                <input type="text" id="p_{{ pos }}_document_number" name="passenger_{{ pos }}_document_number" class="form-control" placeholder="Ej: 34123456" required>
+              </div>
+
+              <div class="form-group">
+                <label for="p_{{ pos }}_birth_date">Fecha de nacimiento *</label>
+                <input type="date" id="p_{{ pos }}_birth_date" name="passenger_{{ pos }}_birth_date" class="form-control" max="{{ today_str }}" required>
+              </div>
+
+              <div class="form-group">
+                <label for="p_{{ pos }}_nationality">Nacionalidad *</label>
+                <input type="text" id="p_{{ pos }}_nationality" name="passenger_{{ pos }}_nationality" class="form-control" value="Argentina" required>
+              </div>
+
+              <div class="form-group">
+                <label for="p_{{ pos }}_gender">Género</label>
+                <select id="p_{{ pos }}_gender" name="passenger_{{ pos }}_gender" class="form-control">
+                  <option value="">-- Seleccionar --</option>
+                  <option value="Femenino">Femenino</option>
+                  <option value="Masculino">Masculino</option>
+                  <option value="No binario">No binario</option>
+                  <option value="Otro">Otro / Prefiero no decir</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- CONTACT INFORMATION SECTION -->
+    <section class="checkout-section mt-4">
+      <h2>3. Datos de Contacto</h2>
+      <p class="muted">El correo electrónico es indispensable para enviarte el comprobante de retención y la confirmación.</p>
+
+      <div class="contact-fields-grid">
+        <div class="form-group">
+          <label for="id_email">Correo electrónico de contacto *</label>
+          <input type="email" id="id_email" name="email" class="form-control" placeholder="nombre@correo.com" required>
+        </div>
+
+        <div class="form-group">
+          <label for="id_phone">Teléfono de contacto *</label>
+          <input type="tel" id="id_phone" name="phone" class="form-control" placeholder="Ej: 388 4123456" required>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBMIT ACTION BAR -->
+    <div class="checkout-actions-bar mt-4">
+      <div class="checkout-terms-note">
+        Al hacer clic en "Confirmar reserva", tus butacas quedarán retenidas durante <strong>15 minutos</strong> para coordinar el pago.
+      </div>
+      <button type="submit" class="button button--primary button--large" id="submit-booking-btn">
+        Confirmar reserva y retener butacas →
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

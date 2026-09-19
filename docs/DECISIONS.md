@@ -140,6 +140,24 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - Quedan fuera de alcance caja, reembolsos, Mercado Pago, Payway, tarjetas, checkout pÃºblico y pagos parciales.
 - Pendientes con Sandro: polÃ­tica de vencimiento de transferencias durante revisiÃ³n en checkout pÃºblico. Antes de Railway debe definirse almacenamiento persistente para comprobantes.
 
+## Fundación de checkout público (2026-09-19)
+
+- `core` actúa como frontend público sin alterar la home institucional ni sus estilos locales.
+- `operations` es la fuente única de verdad para recorridos, viajes, paradas, colectivos, butacas y tarifas.
+- `sales` es la fuente transaccional para `Booking`, `BookingLeg`, `BookingPassenger`, `SeatAssignment` y `create_booking`.
+- `payments` permanece como módulo de panel interno y no se expone públicamente.
+- `core` no importa componentes ni vistas de `panel`.
+- Búsqueda pública por origen, destino, fechas (ida y vuelta), pasajeros (1 a `SALES_MAX_PASSENGERS_PER_BOOKING`) evaluando horarios programados en `America/Argentina/Buenos_Aires` y corte online estricto (`SALES_ONLINE_CUTOFF_MINUTES`).
+- Mapa de butacas construido dinámicamente según `Seat.Deck` y coordenadas `position_x` / `position_y` sin planos rígidos hardcodeados, para viajes de ida y vuelta.
+- Formulario de pasajeros que captura datos requeridos de identidad (`first_name`, `last_name`, `document_type`, `document_number`, `birth_date`, `nationality`, `gender`) y contacto en la reserva (`email`, `phone`).
+- `create_online_booking` corregido para aceptar `passengers_data` opcional manteniendo retrocompatibilidad.
+- Revalidación estricta de todos los parámetros en el servidor: no se confía en identificadores, precios, categorías ni paradas enviadas por el navegador.
+- Protección integral contra bots y abusos: CSRF obligatorio en todos los POST, honeypot invisible (`website`) y limitación razonable de holds en sesión (máximo 3 por cada 15 minutos) sin dependencias externas de Redis o Celery.
+- Privacidad estricta: prohibido almacenar datos personales de pasajeros en cookies, sesiones o registros de logs.
+- Resumen público protegido por token de sesión y `public_id` para prevenir accesos no autorizados (IDOR).
+- Temporizador regresivo en cliente basado en `expires_at` (15 minutos para retención online `HELD`), con expiración mediante los servicios de dominio existentes (`sales.services.expire_booking`) al vencer el plazo.
+- Botón de pago en el resumen que únicamente informa que las pasarelas públicas online se encuentran en proceso de integración técnica.
+
 ## Pendiente de consultar con Sandro
 
 - Datos obligatorios definitivos de cada pasajero.
