@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     'panel',
     'operations.apps.OperationsConfig',
     'sales.apps.SalesConfig',
+    'payments.apps.PaymentsConfig',
 ]
 
 MIDDLEWARE = [
@@ -187,3 +188,10 @@ SALES_MAX_PASSENGERS_PER_BOOKING = int(os.getenv('SALES_MAX_PASSENGERS_PER_BOOKI
 SALES_ONLINE_HOLD_MINUTES = int(os.getenv('SALES_ONLINE_HOLD_MINUTES', 15))
 SALES_ONLINE_CUTOFF_MINUTES = int(os.getenv('SALES_ONLINE_CUTOFF_MINUTES', 60))
 SALES_MANUAL_HOLD_HOURS = int(os.getenv('SALES_MANUAL_HOLD_HOURS', 24))
+
+# Payments configuration & Protected Media
+MEDIA_ROOT = Path(os.getenv('MEDIA_ROOT', str(BASE_DIR / 'media')))
+MEDIA_URL = '/media/'
+PROTECTED_MEDIA_ROOT = Path(os.getenv('PROTECTED_MEDIA_ROOT', str(BASE_DIR / 'protected_media')))
+PAYMENTS_MAX_VOUCHER_SIZE_BYTES = int(os.getenv('PAYMENTS_MAX_VOUCHER_SIZE_BYTES', 10 * 1024 * 1024))  # 10 MB
+PAYMENTS_ALLOWED_VOUCHER_EXTENSIONS = ('.pdf', '.jpg', '.jpeg', '.png')

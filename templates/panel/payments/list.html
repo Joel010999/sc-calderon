@@ -1,0 +1,144 @@
+{% extends 'panel/base.html' %}
+{% load l10n %}
+
+{% block content %}
+<div class="container operations">
+    <header class="ops-header">
+        <div>
+            <p class="ops-eyebrow">Gestión financiera</p>
+            <h1>Pagos</h1>
+        </div>
+        <div>
+            <a class="ops-button secondary" href="{% url 'panel:pending_transfers' %}">Ver transferencias pendientes</a>
+        </div>
+    </header>
+
+    <!-- Filtros y Búsqueda -->
+    <section class="ops-card" aria-label="Filtros y búsqueda de pagos">
+        <form method="get" action="{% url 'panel:payment_list' %}" class="reservations-filter-form">
+            <div class="filters-grid">
+                <div class="form-group">
+                    <label for="id_q" class="form-label">Búsqueda rápida</label>
+                    <input type="text" name="q" id="id_q" class="form-input" placeholder="ID pago, reserva, correo o doc." value="{{ search_q }}">
+                </div>
+                <div class="form-group">
+                    <label for="id_method" class="form-label">Método</label>
+                    <select name="method" id="id_method" class="form-input">
+                        <option value="">Todos los métodos</option>
+                        {% for val, label in payment_methods %}
+                            <option value="{{ val }}" {% if selected_method == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="id_status" class="form-label">Estado</label>
+                    <select name="status" id="id_status" class="form-input">
+                        <option value="">Todos los estados</option>
+                        {% for val, label in payment_statuses %}
+                            <option value="{{ val }}" {% if selected_status == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="id_date" class="form-label">Fecha de registro</label>
+                    <input type="date" name="date" id="id_date" class="form-input" value="{{ selected_date }}">
+                </div>
+                <div class="form-group">
+                    <label for="id_seller" class="form-label">Registrado por</label>
+                    <select name="seller" id="id_seller" class="form-input">
+                        <option value="">Todos los usuarios</option>
+                        {% for seller in all_sellers %}
+                            <option value="{{ seller.username }}" {% if selected_seller == seller.username %}selected{% endif %}>
+                                {{ seller.username }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions" style="margin-top: 1rem;">
+                <button type="submit" class="ops-button small">Filtrar</button>
+                <a href="{% url 'panel:payment_list' %}" class="ops-button secondary small">Limpiar filtros</a>
+            </div>
+        </form>
+    </section>
+
+    <!-- Tabla de Pagos -->
+    <section class="ops-card" aria-label="Listado de pagos">
+        <div class="table-scroll">
+            <table class="table-audit" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th scope="col">Identificador</th>
+                        <th scope="col">Reserva</th>
+                        <th scope="col">Fecha</th>
+                        <th scope="col">Método</th>
+                        <th scope="col">Estado</th>
+                        <th scope="col">Importe</th>
+                        <th scope="col">Registrado por</th>
+                        <th scope="col">Comprobante</th>
+                        <th scope="col">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in page_obj %}
+                    <tr>
+                        <td class="font-mono">
+                            <a href="{% url 'panel:payment_detail' payment.public_id %}" class="font-bold">
+                                {{ payment.public_id|stringformat:"s"|slice:":8" }}...
+                            </a>
+                        </td>
+                        <td class="font-mono">
+                            <a href="{% url 'panel:booking_detail' payment.booking.public_id %}" title="Ver reserva">
+                                {{ payment.booking.public_id|stringformat:"s"|slice:":8" }}...
+                            </a>
+                        </td>
+                        <td>{{ payment.created_at|date:"d/m/Y H:i" }}</td>
+                        <td>{{ payment.get_method_display }}</td>
+                        <td>
+                            <span class="badge badge-status-{{ payment.status|lower }}">
+                                {{ payment.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="font-mono font-bold">$ {{ payment.amount|unlocalize }}</td>
+                        <td>{{ payment.registered_by.username }}</td>
+                        <td>
+                            {% if payment.voucher %}
+                                <a href="{% url 'panel:payment_voucher' payment.public_id %}" class="btn-sm" download>Descargar</a>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'panel:payment_detail' payment.public_id %}" class="stat-link">Ver detalle</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="empty-state" style="text-align: center; padding: 2rem;">No se encontraron pagos registrados con los filtros seleccionados.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Paginación -->
+        {% if page_obj.has_other_pages %}
+        <nav class="pagination" aria-label="Navegación de páginas de pagos" style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <span class="muted" style="font-size: 0.875rem;">
+                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} (Total: {{ page_obj.paginator.count }} pagos)
+                </span>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}{% if preserved_query %}&{{ preserved_query }}{% endif %}" class="ops-button secondary small">Anterior</a>
+                {% endif %}
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}{% if preserved_query %}&{{ preserved_query }}{% endif %}" class="ops-button secondary small">Siguiente</a>
+                {% endif %}
+            </div>
+        </nav>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

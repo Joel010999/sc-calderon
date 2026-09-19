@@ -13,13 +13,22 @@
 
 Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y reintentos. La tecnología queda diferida: no instalar Celery ni Redis ahora, ni introducir infraestructura sin una decisión aprobada.
 
+## FundaciÃ³n de pagos manuales
+
+- `payments` depende de `sales` para reservas y snapshots de importe; `sales` y `operations` no dependen de `payments`.
+- `Payment` representa un cobro manual completo: efectivo aprobado inmediatamente o transferencia bancaria bajo revisiÃ³n. El importe se calcula desde `SeatAssignment.price` y se conserva como `Decimal`.
+- Las transiciones bloquean `Booking` y luego `Payment` dentro de `transaction.atomic`; la confirmaciÃ³n actualiza pago, reserva y butacas atÃ³micamente.
+- Los comprobantes usan almacenamiento privado compatible con `default_storage`, nombres UUID no predecibles, extensiones PDF/JPG/JPEG/PNG y lÃ­mite configurable de 10 MB. La descarga requiere autenticaciÃ³n y permisos.
+- El panel ofrece registro de efectivo, presentaciÃ³n y revisiÃ³n de transferencias, auditorÃ­a y mÃ©tricas de pagos aprobados. No se habilitan pasarelas, pagos parciales ni caja.
+- Antes de producciÃ³n debe definirse almacenamiento persistente para comprobantes en Railway.
+
 ## Módulos conceptuales
 
 | Módulo | Responsabilidad |
 | --- | --- |
 | `operations` | Paradas, recorridos, colectivos, butacas, viajes y tarifas. |
 | `sales` | Reservas, ventas, pasajeros y asignación de butacas. |
-| `payments` | Efectivo, transferencias, Mercado Pago y Payway. |
+| `payments` | Pagos manuales en efectivo y transferencias bancarias; las pasarelas quedan para una etapa posterior. |
 | `tickets` | Generación de PDF, QR y embarque. |
 | `customers` | Cuentas, compra como invitado, Google y consentimiento comercial. |
 | `notifications` | Correos transaccionales y comunicaciones autorizadas. |

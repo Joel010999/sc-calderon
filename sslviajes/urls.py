@@ -20,5 +20,6 @@ from core.views import health_check
 urlpatterns = [
     path('health/', health_check, name='health_check'),
     path('panel/', include('panel.urls')),
+    path('payments/', include('payments.urls')),
     path('', include('core.urls')),
 ]

@@ -1,0 +1,193 @@
+{% extends 'panel/base.html' %}
+{% load l10n %}
+
+{% block content %}
+<div class="container operations">
+    <header class="ops-header">
+        <div>
+            <p class="ops-eyebrow"><a href="{% url 'panel:payment_list' %}">← Volver a Pagos</a></p>
+            <h1>Pago <span class="font-mono">{{ payment.public_id }}</span></h1>
+        </div>
+        <div>
+            <span class="badge badge-status-{{ payment.status|lower }}" style="font-size: 1rem; padding: 0.5rem 1rem;">
+                {{ payment.get_status_display }}
+            </span>
+        </div>
+    </header>
+
+    <!-- Información del Pago -->
+    <section class="ops-card" aria-label="Información del pago">
+        <h2>Detalle del pago</h2>
+        <dl class="bus-data">
+            <div>
+                <dt>Método de pago</dt>
+                <dd>{{ payment.get_method_display }}</dd>
+            </div>
+            <div>
+                <dt>Estado</dt>
+                <dd>
+                    <span class="badge badge-status-{{ payment.status|lower }}">
+                        {{ payment.get_status_display }}
+                    </span>
+                </dd>
+            </div>
+            <div>
+                <dt>Importe</dt>
+                <dd class="text-xl font-bold font-mono" style="color: #047857;">
+                    {{ payment.currency }} {{ payment.amount|unlocalize }}
+                </dd>
+            </div>
+            <div>
+                <dt>Fecha de registro</dt>
+                <dd>{{ payment.created_at|date:"d/m/Y H:i:s" }}</dd>
+            </div>
+            <div>
+                <dt>Registrado por</dt>
+                <dd>{{ payment.registered_by.username }}</dd>
+            </div>
+            <div>
+                <dt>Referencia / Notas</dt>
+                <dd>{{ payment.reference|default:"Sin notas" }}</dd>
+            </div>
+            {% if payment.reviewed_by %}
+            <div>
+                <dt>Revisado por</dt>
+                <dd>{{ payment.reviewed_by.username }}</dd>
+            </div>
+            <div>
+                <dt>Fecha de revisión</dt>
+                <dd>{{ payment.reviewed_at|date:"d/m/Y H:i:s" }}</dd>
+            </div>
+            {% endif %}
+            {% if payment.status == 'REJECTED' %}
+            <div style="grid-column: 1 / -1;">
+                <dt style="color: #b91c1c;">Motivo de rechazo</dt>
+                <dd style="color: #b91c1c; font-weight: 500;">{{ payment.rejection_reason }}</dd>
+            </div>
+            {% endif %}
+            <div>
+                <dt>Comprobante adjunto</dt>
+                <dd>
+                    {% if payment.voucher %}
+                        <a href="{% url 'panel:payment_voucher' payment.public_id %}" class="ops-button secondary small" download>
+                            📄 Descargar comprobante
+                        </a>
+                    {% else %}
+                        <span class="muted">Sin comprobante</span>
+                    {% endif %}
+                </dd>
+            </div>
+        </dl>
+    </section>
+
+    <!-- Acciones si está en revisión -->
+    {% if payment.status == 'UNDER_REVIEW' %}
+    <section class="ops-card" aria-label="Revisión de comprobante">
+        <h2>Resolución de transferencia</h2>
+        <p class="muted" style="margin-bottom: 1.25rem;">
+            Esta transferencia requiere verificación antes de confirmar la reserva asociada.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+            <!-- Aprobar -->
+            <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.25rem; background: #fafafa;">
+                <h3 style="margin-top: 0; color: #065f46;">Aprobar transferencia</h3>
+                <p class="muted" style="font-size: 0.875rem;">Confirma económicamente la reserva y emite la confirmación de butacas.</p>
+                <form method="post" action="{% url 'panel:transfer_review' payment.public_id %}" onsubmit="return confirm('¿Confirmás la aprobación de la transferencia por ${{ payment.amount|unlocalize }}?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="approve">
+                    <button type="submit" class="ops-button primary" style="width: 100%;">
+                        ✓ Aprobar transferencia ($ {{ payment.amount|unlocalize }})
+                    </button>
+                </form>
+            </div>
+
+            <!-- Rechazar -->
+            <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.25rem; background: #fafafa;">
+                <h3 style="margin-top: 0; color: #991b1b;">Rechazar transferencia</h3>
+                <p class="muted" style="font-size: 0.875rem;">Exige motivo obligatorio. La reserva permanece HELD si sigue vigente (no extiende vencimiento).</p>
+                <form method="post" action="{% url 'panel:transfer_review' payment.public_id %}" onsubmit="return confirm('¿Confirmás el rechazo de la transferencia?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="reject">
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <label for="rejection_reason" class="form-label" style="display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem;">Motivo del rechazo (obligatorio):</label>
+                        <input type="text" id="rejection_reason" name="rejection_reason" class="form-input" placeholder="Ej. Comprobante ilegible o importe erróneo" required style="width: 100%; box-sizing: border-box;">
+                    </div>
+                    <button type="submit" class="ops-button danger" style="width: 100%;">
+                        ✕ Rechazar transferencia
+                    </button>
+                </form>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Información de la Reserva Asociada -->
+    <section class="ops-card" aria-label="Información de la reserva vinculada">
+        <h2>Reserva vinculada</h2>
+        <dl class="bus-data">
+            <div>
+                <dt>Identificador de reserva</dt>
+                <dd class="font-mono font-bold">
+                    <a href="{% url 'panel:booking_detail' payment.booking.public_id %}" style="text-decoration: underline;">
+                        {{ payment.booking.public_id }}
+                    </a>
+                </dd>
+            </div>
+            <div>
+                <dt>Estado de reserva</dt>
+                <dd>
+                    <span class="badge badge-status-{{ payment.booking.status|lower }}">
+                        {{ payment.booking.get_status_display }}
+                    </span>
+                </dd>
+            </div>
+            <div>
+                <dt>Correo de contacto</dt>
+                <dd>{{ payment.booking.email }}</dd>
+            </div>
+            <div>
+                <dt>Vencimiento de retención</dt>
+                <dd>{{ payment.booking.expires_at|date:"d/m/Y H:i" }}</dd>
+            </div>
+        </dl>
+
+        <div style="margin-top: 1rem;">
+            <a href="{% url 'panel:booking_detail' payment.booking.public_id %}" class="ops-button secondary small">
+                Ir a la ficha completa de la reserva →
+            </a>
+        </div>
+    </section>
+
+    <!-- Historial de Auditoría del Pago -->
+    <section class="ops-card" aria-label="Historial de auditoría del pago">
+        <h2>Historial de auditoría</h2>
+        {% if audit_events %}
+        <div class="table-scroll">
+            <table class="table-audit" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Fecha y hora</th>
+                        <th>Acción</th>
+                        <th>Usuario actor</th>
+                        <th>Descripción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in audit_events %}
+                    <tr>
+                        <td>{{ event.created_at|date:"d/m/Y H:i:s" }}</td>
+                        <td><span class="badge">{{ event.get_action_display }}</span></td>
+                        <td>{{ event.actor.username|default:"Sistema" }}</td>
+                        <td>{{ event.description }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="empty-state">No hay eventos de auditoría registrados para este pago.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

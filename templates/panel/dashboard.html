@@ -1,4 +1,5 @@
 {% extends 'panel/base.html' %}
+{% load l10n %}
 
 {% block content %}
 <div class="container">
@@ -13,12 +14,61 @@
                     </svg>
                 </div>
                 <div class="stat-info">
-                    <div class="stat-label">Ventas Hoy</div>
-                    <div class="stat-value">0</div>
+                    <div class="stat-label">Ventas Confirmadas</div>
+                    <div class="stat-value">{{ confirmed_sales_count|default:0 }}</div>
                 </div>
             </div>
             <div class="stat-footer">
+                {% if can_manage_payments %}
+                <a class="stat-link" href="{% url 'panel:payment_list' %}?status=APPROVED">Ver pagos aprobados</a>
+                {% else %}
                 <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-body">
+                <div class="stat-icon stat-icon-green">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Ingresos Confirmados (ARS)</div>
+                    <div class="stat-value font-mono">$ {{ confirmed_revenue_total|floatformat:"2u" }}</div>
+                    <div class="stat-subtext" style="font-size: 0.8rem; color: #6b7280; margin-top: 0.25rem;">
+                        Efectivo: ${{ cash_revenue|floatformat:"2u" }} ({{ cash_sales_count }}) · Transferencias: ${{ transfer_revenue|floatformat:"2u" }} ({{ transfer_sales_count }})
+                    </div>
+                </div>
+            </div>
+            <div class="stat-footer">
+                {% if can_manage_payments %}
+                <a class="stat-link" href="{% url 'panel:payment_list' %}?status=APPROVED">Ver detalle de ingresos</a>
+                {% else %}
+                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-body">
+                <div class="stat-icon stat-icon-yellow">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Transferencias en Revisión</div>
+                    <div class="stat-value">{{ pending_transfers_count|default:0 }}</div>
+                </div>
+            </div>
+            <div class="stat-footer">
+                {% if can_manage_payments %}
+                <a class="stat-link" href="{% url 'panel:pending_transfers' %}">Revisar transferencias</a>
+                {% else %}
+                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                {% endif %}
             </div>
         </div>
 
@@ -40,23 +90,6 @@
                 {% else %}
                 <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
                 {% endif %}
-            </div>
-        </div>
-
-        <div class="stat-card">
-            <div class="stat-body">
-                <div class="stat-icon stat-icon-yellow">
-                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-label">Próximas Salidas</div>
-                    <div class="stat-value">0</div>
-                </div>
-            </div>
-            <div class="stat-footer">
-                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
             </div>
         </div>
     </div>
@@ -94,6 +127,15 @@
             <span class="module-name">Salidas</span>
             <span class="module-soon">Próximamente</span>
         </div>
+        {% if can_manage_payments %}
+        <a class="module-card" href="{% url 'panel:payment_list' %}">
+            <div class="module-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            </div>
+            <span class="module-name">Pagos</span>
+            <span class="module-soon">Gestión y revisión de pagos</span>
+        </a>
+        {% else %}
         <div class="module-card disabled">
             <div class="module-icon">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
@@ -101,6 +143,7 @@
             <span class="module-name">Pagos</span>
             <span class="module-soon">Próximamente</span>
         </div>
+        {% endif %}
         <a class="module-card" href="{% url 'panel:operations' %}"><span class="module-name">Operaciones</span><span class="module-soon">Recorridos, colectivos y butacas</span></a>
         <div class="module-card disabled">
             <div class="module-icon">
