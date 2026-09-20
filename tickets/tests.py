@@ -577,7 +577,7 @@ class TicketVerificationViewTests(TicketBaseMixin, TransactionTestCase):
         self.assertIn(ticket.passenger_document_masked, html)
         self.assertIn(ticket.origin_stop_name, html)
         self.assertIn(ticket.destination_stop_name, html)
-        self.assertIn(ticket.departure_at.strftime("%d/%m/%Y"), html)
+        self.assertIn(timezone.localtime(ticket.departure_at).strftime("%d/%m/%Y"), html)
         self.assertIn(str(ticket.seat_number), html)
         self.assertIn(ticket.seat_category_display, html)
 
@@ -611,7 +611,7 @@ class TicketVerificationViewTests(TicketBaseMixin, TransactionTestCase):
         self.assertIn(ticket.passenger_document_masked, html)
         self.assertIn(ticket.origin_stop_name, html)
         self.assertIn(ticket.destination_stop_name, html)
-        self.assertIn(ticket.departure_at.strftime("%d/%m/%Y"), html)
+        self.assertIn(timezone.localtime(ticket.departure_at).strftime("%d/%m/%Y"), html)
         self.assertIn(str(ticket.seat_number), html)
         self.assertIn(ticket.seat_category_display, html)
 
