@@ -42,9 +42,29 @@
                 <dd>{{ payment.created_at|date:"d/m/Y H:i:s" }}</dd>
             </div>
             <div>
-                <dt>Registrado por</dt>
-                <dd>{{ payment.registered_by.username }}</dd>
+                <dt>Canal de reserva</dt>
+                <dd>
+                    <span class="badge badge-status-{{ payment.booking.channel|lower }}">
+                        {{ payment.booking.get_channel_display }}
+                    </span>
+                </dd>
             </div>
+            <div>
+                <dt>Registrado por</dt>
+                <dd>{{ payment.registered_by.username|default:"Cliente online" }}</dd>
+            </div>
+            {% if payment.proof_deadline_at %}
+            <div>
+                <dt>Límite para comprobante</dt>
+                <dd>{{ payment.proof_deadline_at|date:"d/m/Y H:i:s" }}</dd>
+            </div>
+            {% endif %}
+            {% if payment.review_deadline_at %}
+            <div>
+                <dt>Límite de revisión</dt>
+                <dd>{{ payment.review_deadline_at|date:"d/m/Y H:i:s" }}</dd>
+            </div>
+            {% endif %}
             <div>
                 <dt>Referencia / Notas</dt>
                 <dd>{{ payment.reference|default:"Sin notas" }}</dd>

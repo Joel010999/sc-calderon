@@ -17,9 +17,11 @@ class PaymentMethod(models.TextChoices):
 
 
 class PaymentStatus(models.TextChoices):
+    AWAITING_VOUCHER = "AWAITING_VOUCHER", "Esperando comprobante"
     UNDER_REVIEW = "UNDER_REVIEW", "En revisión"
     APPROVED = "APPROVED", "Aprobado"
     REJECTED = "REJECTED", "Rechazado"
+    EXPIRED = "EXPIRED", "Expirado"
 
 
 class Payment(models.Model):
@@ -75,6 +77,8 @@ class Payment(models.Model):
         settings.AUTH_USER_MODEL,
         verbose_name="registrado por",
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="registered_payments",
     )
     reviewed_by = models.ForeignKey(
@@ -87,6 +91,18 @@ class Payment(models.Model):
     )
     reviewed_at = models.DateTimeField(
         "fecha de revisión",
+        null=True,
+        blank=True,
+        validators=[validate_aware_datetime],
+    )
+    proof_deadline_at = models.DateTimeField(
+        "límite para subir comprobante",
+        null=True,
+        blank=True,
+        validators=[validate_aware_datetime],
+    )
+    review_deadline_at = models.DateTimeField(
+        "límite de revisión",
         null=True,
         blank=True,
         validators=[validate_aware_datetime],
@@ -106,7 +122,13 @@ class Payment(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["booking"],
-                condition=Q(status__in=[PaymentStatus.UNDER_REVIEW, PaymentStatus.APPROVED]),
+                condition=Q(
+                    status__in=[
+                        PaymentStatus.AWAITING_VOUCHER,
+                        PaymentStatus.UNDER_REVIEW,
+                        PaymentStatus.APPROVED,
+                    ]
+                ),
                 name="payments_active_booking_unique",
                 violation_error_message="Ya existe un pago en revisión o aprobado para esta reserva.",
             ),
@@ -154,6 +176,9 @@ class Payment(models.Model):
                 errors["reviewed_at"] = "Los pagos aprobados deben registrar fecha de revisión."
             if not self.reviewed_by_id:
                 errors["reviewed_by"] = "Los pagos aprobados deben registrar el usuario revisor."
+
+        if self.status == PaymentStatus.AWAITING_VOUCHER and not self.proof_deadline_at:
+            errors["proof_deadline_at"] = "Los pagos en espera de comprobante deben registrar el límite de carga."
 
         if self.method == PaymentMethod.BANK_TRANSFER and self.status == PaymentStatus.UNDER_REVIEW:
             if not self.voucher:

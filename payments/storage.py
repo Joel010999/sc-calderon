@@ -63,11 +63,20 @@ def voucher_upload_path(instance, filename):
     return f"vouchers/{uuid.uuid4().hex}{ext}"
 
 
-def validate_voucher_file(file):
-    """Valida extensión y tamaño máximo permitido para un comprobante de transferencia.
+MAGIC_SIGNATURES = {
+    ".pdf": (b"%PDF",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+}
 
-    Solo se admiten extensiones PDF, JPG, JPEG y PNG (sin WebP).
+
+def validate_voucher_file(file):
+    """Valida extensión, tamaño máximo y contenido real de un comprobante de transferencia.
+
+    Solo se admiten extensiones y formatos PDF, JPG, JPEG y PNG (sin WebP).
     Tamaño máximo configurable mediante PAYMENTS_MAX_VOUCHER_SIZE_BYTES (10 MB por defecto).
+    Valida contenido inspeccionando los bytes iniciales (firmas mágicas).
     """
     if not file:
         raise ValidationError("El archivo de comprobante es obligatorio.")
@@ -95,4 +104,22 @@ def validate_voucher_file(file):
         max_mb = max_size_bytes // (1024 * 1024)
         raise ValidationError(
             f"El comprobante supera el tamaño máximo permitido de {max_mb} MB."
+        )
+
+    # Validar contenido inspeccionando los bytes mágicos iniciales
+    header = b""
+    try:
+        if hasattr(file, "seek"):
+            file.seek(0)
+        if hasattr(file, "read"):
+            header = file.read(16)
+        if hasattr(file, "seek"):
+            file.seek(0)
+    except Exception:
+        raise ValidationError("No se pudo leer el contenido del comprobante.")
+
+    expected_prefixes = MAGIC_SIGNATURES.get(ext, ())
+    if not any(header.startswith(prefix) for prefix in expected_prefixes):
+        raise ValidationError(
+            "El contenido del archivo no coincide con un formato válido de comprobante (PDF, JPG, JPEG o PNG)."
         )

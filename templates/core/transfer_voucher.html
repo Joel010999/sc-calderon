@@ -1,0 +1,233 @@
+{% extends 'core/base.html' %}
+{% load static l10n %}
+
+{% block content %}
+<div class="checkout-page-container summary-container">
+  <!-- HEADER -->
+  <div class="summary-header">
+    <div class="summary-title-col">
+      <span class="eyebrow-ref">Reserva online #{{ booking.public_id }}</span>
+      <h1>Pago por transferencia bancaria</h1>
+      <p class="muted">Seguimiento de pago y carga de comprobante para confirmar tus pasajes.</p>
+    </div>
+
+    <div class="summary-status-badge status-badge--{{ payment.status|lower }}">
+      {{ payment.get_status_display }}
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="messages-list mt-3">
+      {% for msg in messages %}
+        <div class="alert alert--{{ msg.tags }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- ESTADOS Y TEMPORIZADOR -->
+  {% if is_awaiting_voucher %}
+    <div class="timer-box" id="timer-box" data-remaining="{{ remaining_seconds }}">
+      <div class="timer-inner">
+        <span class="timer-label">Tiempo restante para transferir y subir comprobante</span>
+        <div class="timer-display" id="timer-display">--:--</div>
+        <p class="timer-note">
+          Disponés de <strong>5 minutos</strong> (hasta las <strong>{{ deadline_local|date:"H:i" }} hs</strong>) para transferir el importe exacto y adjuntar el comprobante. Al subirlo, tu reserva se extenderá por 24 horas en revisión. Si el tiempo expira, las butacas serán liberadas automáticamente.
+        </p>
+      </div>
+    </div>
+  {% elif is_under_review %}
+    <div class="alert alert--info summary-banner">
+      <h3>Comprobante en revisión manual</h3>
+      <p>
+        Hemos recibido tu comprobante de transferencia por <strong>${{ total|unlocalize }} ARS</strong>.
+        Tus butacas permanecerán retenidas mientras nuestro equipo verifica la acreditación.
+        Plazo máximo de revisión: <strong>{{ deadline_local|date:"d/m/Y H:i" }} hs</strong> (24 horas).
+      </p>
+      <p class="mt-2">
+        <small class="muted">Te notificaremos una vez que el pago haya sido aprobado por nuestros operadores.</small>
+      </p>
+    </div>
+  {% elif is_approved %}
+    <div class="alert alert--success summary-banner">
+      <h3>¡Pago aprobado y reserva confirmada!</h3>
+      <p>La transferencia bancaria fue verificada y aprobada. Tu viaje se encuentra confirmado.</p>
+      <div class="mt-3">
+        <a href="{% url 'resumen_reserva' public_id=booking.public_id %}" class="button button--primary">
+          Ver resumen de viaje
+        </a>
+      </div>
+    </div>
+  {% elif is_rejected %}
+    <div class="alert alert--danger summary-banner">
+      <h3>Comprobante de transferencia rechazado</h3>
+      <p>
+        Tu comprobante no pudo ser aprobado.
+        {% if payment.rejection_reason %}
+          Motivo informado: <strong>{{ payment.rejection_reason }}</strong>
+        {% endif %}
+      </p>
+      {% if booking.status == 'HELD' %}
+        <p class="mt-2">Tu reserva aún se encuentra retenida. Podés volver a intentar el pago.</p>
+        <div class="mt-3">
+          <a href="{% url 'pago_pendiente' public_id=booking.public_id %}" class="button button--primary">
+            Reintentar pago
+          </a>
+        </div>
+      {% else %}
+        <p class="mt-2">El plazo de la reserva ha expirado y las butacas fueron liberadas.</p>
+        <div class="mt-3">
+          <a href="{% url 'buscar_viajes' %}" class="button button--primary">Buscar nuevo viaje</a>
+        </div>
+      {% endif %}
+    </div>
+  {% elif is_expired %}
+    <div class="alert alert--warning summary-banner">
+      <h3>Plazo de transferencia expirado</h3>
+      <p>El plazo de 5 minutos para subir el comprobante ha vencido y las butacas asociadas fueron liberadas automáticamente.</p>
+      <div class="mt-3">
+        <a href="{% url 'buscar_viajes' %}" class="button button--primary">Buscar un nuevo viaje</a>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- DATOS BANCARIOS E INSTRUCCIONES (SI ESTÁ ESPERANDO COMPROBANTE) -->
+  {% if is_awaiting_voucher %}
+    <div class="summary-details-card mt-4" style="background: #f8fafc; border: 1px solid #cbd5e1;">
+      <h2>Datos para la transferencia bancaria</h2>
+      <p class="muted">Transferí el importe total exacto desde tu cuenta bancaria o billetera virtual.</p>
+
+      <div class="summary-total-bar mt-3" style="background: #e2e8f0;">
+        <div class="total-label">Importe exacto a transferir:</div>
+        <div class="total-amount" style="color: #0f172a;">${{ total|unlocalize }} ARS</div>
+      </div>
+
+      <div class="schedule-grid mt-3" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+        <div style="background: #fff; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+          <span style="display: block; font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Entidad / Billetera</span>
+          <strong style="font-size: 1rem; color: #1e293b;">{{ bank_config.entity }}</strong>
+        </div>
+        <div style="background: #fff; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+          <span style="display: block; font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Titular de la cuenta</span>
+          <strong style="font-size: 1rem; color: #1e293b;">{{ bank_config.holder }}</strong>
+        </div>
+        {% if bank_config.cuit %}
+        <div style="background: #fff; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+          <span style="display: block; font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">CUIT</span>
+          <strong style="font-size: 1rem; color: #1e293b;" class="font-mono">{{ bank_config.cuit }}</strong>
+        </div>
+        {% endif %}
+        <div style="background: #fff; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+          <span style="display: block; font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Alias</span>
+          <strong style="font-size: 1.1rem; color: #047857;" class="font-mono">{{ bank_config.alias }}</strong>
+        </div>
+        <div style="background: #fff; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+          <span style="display: block; font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">CVU / CBU</span>
+          <strong style="font-size: 0.95rem; color: #1e293b;" class="font-mono">{{ bank_config.cvu }}</strong>
+        </div>
+        <div style="background: #fff; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+          <span style="display: block; font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Referencia sugerida</span>
+          <strong style="font-size: 0.95rem; color: #1e293b;" class="font-mono">{{ booking.public_id }}</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- FORMULARIO DE CARGA DE COMPROBANTE -->
+    <div class="summary-details-card mt-4" style="border: 2px solid #047857;">
+      <h2>Adjuntar comprobante de transferencia</h2>
+      <p class="muted">
+        Subí la constancia o captura del pago emitido por tu banco o billetera virtual.
+        Formatos admitidos: <strong>PDF, JPG, JPEG o PNG</strong> (tamaño máximo: <strong>10 MB</strong>).
+      </p>
+
+      <form method="POST" action="{% url 'subir_comprobante' public_id=booking.public_id %}" enctype="multipart/form-data" class="mt-3">
+        {% csrf_token %}
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <div>
+            <label for="voucher-input" style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b;">
+              Archivo del comprobante *
+            </label>
+            <input
+              type="file"
+              id="voucher-input"
+              name="voucher"
+              accept=".pdf,.jpg,.jpeg,.png"
+              required
+              style="display: block; width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;"
+            >
+            <small class="muted" style="display: block; margin-top: 0.25rem;">
+              Solo archivos PDF, JPG, JPEG o PNG de hasta 10 MB. No se admiten otros formatos.
+            </small>
+          </div>
+
+          <div>
+            <button type="submit" class="button button--primary" id="btn-upload-voucher" style="padding: 0.75rem 1.5rem; font-size: 1rem;">
+              Enviar comprobante para revisión →
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  {% endif %}
+
+  <!-- DETALLE DEL VIAJE Y PASAJES -->
+  <div class="summary-details-card mt-4">
+    <h3>Detalle de la reserva</h3>
+    {% for ldata in legs_data %}
+      <div class="summary-leg-block {% if not forloop.first %}mt-4 pt-4 border-top{% endif %}">
+        <div class="leg-title-row">
+          <span class="step-badge">Tramo {{ ldata.leg.sequence }}</span>
+          <h2>{{ ldata.leg.origin_stop_name }} → {{ ldata.leg.destination_stop_name }}</h2>
+        </div>
+        <div class="leg-schedule-grid">
+          <div class="schedule-item">
+            <span class="label">Subida</span>
+            <strong>{{ ldata.origin_local|date:"d/m/Y H:i" }} hs</strong>
+            <span class="muted">{{ ldata.leg.origin_stop_name }}</span>
+          </div>
+          <div class="schedule-item">
+            <span class="label">Bajada</span>
+            <strong>{{ ldata.dest_local|date:"d/m/Y H:i" }} hs</strong>
+            <span class="muted">{{ ldata.leg.destination_stop_name }}</span>
+          </div>
+          <div class="schedule-item">
+            <span class="label">Unidad</span>
+            <strong>{{ ldata.leg.trip.bus.display_name }}</strong>
+            <span class="muted">Interno {{ ldata.leg.trip.bus.code }}</span>
+          </div>
+        </div>
+
+        <div class="assignments-table-wrapper mt-3">
+          <table class="summary-table">
+            <thead>
+              <tr>
+                <th>Pasajero</th>
+                <th>Documento</th>
+                <th>Butaca</th>
+                <th>Categoría</th>
+                <th class="text-right">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sa in ldata.assignments %}
+                <tr>
+                  <td><strong>{{ sa.passenger.first_name }} {{ sa.passenger.last_name }}</strong></td>
+                  <td>{{ sa.passenger.document_type }} {{ sa.passenger.document_number }}</td>
+                  <td><span class="seat-badge-pill">N° {{ sa.seat_number }}</span></td>
+                  <td>{{ sa.get_category_display }}</td>
+                  <td class="text-right"><strong>${{ sa.price|unlocalize }}</strong></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-4" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <a href="{% url 'resumen_reserva' public_id=booking.public_id %}" class="button button--ghost">
+      ← Volver al resumen
+    </a>
+  </div>
+</div>
+{% endblock %}

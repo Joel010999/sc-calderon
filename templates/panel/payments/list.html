@@ -100,7 +100,7 @@
                             </span>
                         </td>
                         <td class="font-mono font-bold">$ {{ payment.amount|unlocalize }}</td>
-                        <td>{{ payment.registered_by.username }}</td>
+                        <td>{{ payment.registered_by.username|default:"Cliente online" }}</td>
                         <td>
                             {% if payment.voucher %}
                                 <a href="{% url 'panel:payment_voucher' payment.public_id %}" class="btn-sm" download>Descargar</a>

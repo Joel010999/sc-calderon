@@ -41,6 +41,18 @@ from sales.services import (
     release_booking,
     validate_passenger_data,
 )
+from payments.exceptions import (
+    InvalidPaymentStatusError,
+    PaymentDuplicateError,
+    PaymentError,
+)
+from payments.models import Payment, PaymentMethod, PaymentStatus
+from payments.services import (
+    calculate_booking_total,
+    expire_public_transfer_if_expired,
+    initiate_public_transfer_payment,
+    upload_public_transfer_voucher,
+)
 
 logger = logging.getLogger(__name__)
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -710,13 +722,20 @@ def booking_summary(request, public_id):
 
     now = timezone.now()
 
-    # Expiración automática si venció el plazo de retención HELD
-    if booking.status == BookingStatus.HELD and now >= booking.expires_at:
-        try:
-            expire_booking(booking, now=now)
-            booking.refresh_from_db()
-        except Exception:
-            logger.exception("Error al expirar reserva en resumen")
+    # Expiración oportunista si venció el plazo
+    expire_public_transfer_if_expired(booking, now=now)
+    booking.refresh_from_db()
+
+    # Buscar pago activo o último para vincular estado
+    active_payment = Payment.objects.filter(
+        booking=booking,
+        status__in=[
+            PaymentStatus.AWAITING_VOUCHER,
+            PaymentStatus.UNDER_REVIEW,
+            PaymentStatus.APPROVED,
+            PaymentStatus.REJECTED,
+        ],
+    ).order_by("-created_at", "-pk").first()
 
     # Cálculo de segundos restantes para el temporizador regresivo
     remaining_seconds = 0
@@ -745,6 +764,7 @@ def booking_summary(request, public_id):
 
     return render(request, "core/summary.html", {
         "booking": booking,
+        "active_payment": active_payment,
         "legs_data": legs_data,
         "total": total,
         "remaining_seconds": remaining_seconds,
@@ -777,16 +797,232 @@ def expire_public_booking(request, public_id):
 
 @require_GET
 def payment_pending(request, public_id):
-    """Pantalla honesta del siguiente paso, sin crear ni confirmar pagos públicos."""
+    """Pantalla protegida de selección de métodos de pago para reserva ONLINE HELD.
+
+    Muestra:
+    - Transferencia bancaria (activo, inicia POST).
+    - Mercado Pago QR (próximamente disponible, sin botón).
+    - Payway (próximamente disponible, sin botón).
+    - Efectivo no aparece.
+    """
     session_token = request.session.get(f"booking_access_{public_id}")
     if not session_token:
         return HttpResponseForbidden("No tenés permiso para acceder a esta reserva.")
+
     booking = get_object_or_404(
-        Booking,
+        Booking.objects.prefetch_related(
+            "legs__trip__bus",
+            "legs__trip__route",
+            "legs__origin_stop__stop",
+            "legs__destination_stop__stop",
+            "legs__seat_assignments__seat",
+            "passengers",
+        ),
         public_id=public_id,
         channel=BookingChannel.ONLINE,
     )
-    return render(request, "core/payment_pending.html", {"booking": booking})
+
+    now = timezone.now()
+    if expire_public_transfer_if_expired(booking, now=now) or booking.status != BookingStatus.HELD:
+        return redirect("resumen_reserva", public_id=booking.public_id)
+
+    # Si ya tiene una transferencia en curso, redirigir a la pantalla de transferencia
+    active_payment = Payment.objects.filter(
+        booking=booking,
+        status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW],
+    ).order_by("-created_at", "-pk").first()
+    if active_payment:
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+
+    total = calculate_booking_total(booking)
+    remaining_seconds = max(0, int((booking.expires_at - now).total_seconds()))
+
+    return render(request, "core/payment_pending.html", {
+        "booking": booking,
+        "total": total,
+        "remaining_seconds": remaining_seconds,
+        "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ),
+        "is_held": True,
+    })
+
+
+@require_POST
+def iniciar_transferencia(request, public_id):
+    """POST + CSRF para iniciar o reutilizar la transferencia bancaria de una reserva ONLINE HELD."""
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    now = timezone.now()
+    now_ts = now.timestamp()
+
+    # Limitación razonable en sesión (máximo 5 inicios por 15 minutos)
+    recent_starts = request.session.get("recent_transfer_starts", [])
+    recent_starts = [ts for ts in recent_starts if now_ts - ts < 900]
+    if len(recent_starts) >= 5:
+        messages.error(
+            request,
+            "Has superado el límite de solicitudes de transferencia. Por favor aguardá unos minutos."
+        )
+        return redirect("pago_pendiente", public_id=public_id)
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+
+    try:
+        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+        recent_starts.append(now_ts)
+        request.session["recent_transfer_starts"] = recent_starts
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except PaymentDuplicateError as pde:
+        messages.info(request, str(pde))
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+    except (InvalidBookingError, PaymentError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("pago_pendiente", public_id=booking.public_id)
+    except Exception:
+        logger.exception("Error inesperado al iniciar transferencia bancaria")
+        messages.error(request, "Ocurrió un error al iniciar la transferencia. Por favor intentá nuevamente.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+
+@require_GET
+def pantalla_transferencia(request, public_id):
+    """Pantalla protegida para carga de comprobante y seguimiento del estado de la transferencia.
+
+    Muestra:
+    - Datos bancarios configurados (titular, alias, CVU, CUIT opcional, entidad Mercado Pago).
+    - Importe exacto a transferir calculado server-side desde snapshots.
+    - Resumen de tramos, pasajeros y butacas asignadas.
+    - Plazo y contador regresivo (5 minutos para subir comprobante, 24 horas para revisión).
+    - Formulario de subida de comprobante (solo en AWAITING_VOUCHER).
+    - Aviso explícito de que no es un pasaje emitido.
+    """
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para acceder a esta reserva.")
+
+    booking = get_object_or_404(
+        Booking.objects.prefetch_related(
+            "legs__trip__bus",
+            "legs__trip__route",
+            "legs__origin_stop__stop",
+            "legs__destination_stop__stop",
+            "legs__seat_assignments__seat",
+            "passengers",
+        ),
+        public_id=public_id,
+        channel=BookingChannel.ONLINE,
+    )
+
+    now = timezone.now()
+    expire_public_transfer_if_expired(booking, now=now)
+
+    payment = Payment.objects.filter(
+        booking=booking,
+        method=PaymentMethod.BANK_TRANSFER,
+    ).order_by("-created_at", "-pk").first()
+
+    if not payment:
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    total = payment.amount
+
+    # Tramos formateados
+    legs_data = []
+    for leg in booking.legs.all():
+        orig_local = timezone.localtime(leg.departure_at, AR_TZ)
+        dest_local = timezone.localtime(leg.arrival_at, AR_TZ)
+        assignments = list(leg.seat_assignments.select_related("passenger", "seat").order_by("seat_number"))
+        legs_data.append({
+            "leg": leg,
+            "origin_local": orig_local,
+            "dest_local": dest_local,
+            "assignments": assignments,
+        })
+
+    # Plazos y temporizador
+    remaining_seconds = 0
+    deadline_local = None
+    if payment.status == PaymentStatus.AWAITING_VOUCHER:
+        deadline = payment.proof_deadline_at or booking.expires_at
+        deadline_local = timezone.localtime(deadline, AR_TZ)
+        remaining_seconds = max(0, int((deadline - now).total_seconds()))
+    elif payment.status == PaymentStatus.UNDER_REVIEW:
+        deadline = payment.review_deadline_at or booking.expires_at
+        deadline_local = timezone.localtime(deadline, AR_TZ)
+        remaining_seconds = max(0, int((deadline - now).total_seconds()))
+
+    bank_config = {
+        "holder": getattr(settings, "BANK_TRANSFER_ACCOUNT_HOLDER", "SC Viajes S.R.L."),
+        "alias": getattr(settings, "BANK_TRANSFER_ALIAS", "scviajes.mp"),
+        "cvu": getattr(settings, "BANK_TRANSFER_CVU", "0000003100010000000000"),
+        "cuit": getattr(settings, "BANK_TRANSFER_CUIT", ""),
+        "entity": getattr(settings, "BANK_TRANSFER_ENTITY", "Mercado Pago"),
+    }
+
+    return render(request, "core/transfer_voucher.html", {
+        "booking": booking,
+        "payment": payment,
+        "total": total,
+        "legs_data": legs_data,
+        "bank_config": bank_config,
+        "remaining_seconds": remaining_seconds,
+        "deadline_local": deadline_local,
+        "is_awaiting_voucher": (payment.status == PaymentStatus.AWAITING_VOUCHER and booking.status == BookingStatus.HELD),
+        "is_under_review": (payment.status == PaymentStatus.UNDER_REVIEW),
+        "is_approved": (payment.status == PaymentStatus.APPROVED or booking.status == BookingStatus.CONFIRMED),
+        "is_rejected": (payment.status == PaymentStatus.REJECTED),
+        "is_expired": (payment.status == PaymentStatus.EXPIRED or booking.status == BookingStatus.EXPIRED),
+    })
+
+
+@require_POST
+def subir_comprobante(request, public_id):
+    """POST + CSRF para subir el comprobante de transferencia dentro de la ventana de 5 minutos."""
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    now = timezone.now()
+    now_ts = now.timestamp()
+
+    # Rate limiting en sesión para cargas de archivo (máximo 5 en 10 minutos)
+    recent_uploads = request.session.get("recent_voucher_uploads", [])
+    recent_uploads = [ts for ts in recent_uploads if now_ts - ts < 600]
+    if len(recent_uploads) >= 5:
+        messages.error(request, "Has superado el límite de intentos de carga de comprobantes. Por favor aguardá unos minutos.")
+        return redirect("pantalla_transferencia", public_id=public_id)
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+
+    voucher_file = request.FILES.get("voucher")
+    if not voucher_file:
+        messages.error(request, "Debés seleccionar un archivo de comprobante.")
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+
+    try:
+        payment = upload_public_transfer_voucher(booking_or_id=booking, voucher_file=voucher_file, now=now)
+        recent_uploads.append(now_ts)
+        request.session["recent_voucher_uploads"] = recent_uploads
+        messages.success(request, "Comprobante cargado correctamente. Tu pago se encuentra en revisión manual (plazo de 24 horas).")
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+    except ValidationError as ve:
+        err_msg = next(iter(ve.message_dict.values()))[0] if hasattr(ve, "message_dict") else str(ve)
+        messages.error(request, err_msg)
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+    except InvalidPaymentStatusError as ipse:
+        messages.error(request, str(ipse))
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
+    except Exception:
+        logger.exception("Error inesperado al subir comprobante de transferencia")
+        messages.error(request, "Ocurrió un error al procesar el comprobante. Por favor intentá nuevamente.")
+        return redirect("pantalla_transferencia", public_id=booking.public_id)
 
 
 def login_cliente(request):
