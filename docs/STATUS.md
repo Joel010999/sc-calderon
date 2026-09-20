@@ -171,4 +171,37 @@ Estado: implementado en `feature/public-checkout-foundation-20260919`.
   - El workflow `.github/workflows/sales-postgres.yml` fue actualizado para incluir la rama `feature/public-checkout-foundation-20260919`.
   - Pruebas ejecutadas con SQLite y verificaciones de Django (`check`, `makemigrations --check --dry-run`).
 
+## Fundación de pasajes y PDF (tickets)
+
+Estado: implementado en `feature/ticket-pdf-foundation-20260919`.
+
+- **Arquitectura y desacoplamiento**:
+  - Aplicación independiente `tickets` registrada en Django (`tickets.apps.TicketsConfig`).
+  - Depende únicamente de `sales` en modo lectura transaccional para consultar `Booking` confirmado y sus asignaciones históricas. `sales`, `operations`, `payments`, `panel` y `core` no dependen de `tickets`.
+  - Motor de generación de PDF y QR 100 % desacoplado y portable: `tickets.rendering.data.TicketData` (dataclass de entrada), `tickets.rendering.template.draw_provisional_ticket` (canvas ReportLab provisional reemplazable) y `tickets.rendering.generator.build_ticket_pdf` (orquestador que genera `bytes`). No utiliza dependencias pesadas de navegador headless ni bindings C frágiles.
+- **Modelos y migración inicial**:
+  - `Ticket`: pasaje emitido con clave primaria interna `id`, identificador p?blico `public_id` (UUID4 indexado y ?nico), c?digo legible `ticket_code` (`TK-<reserva>-L<tramo>-P<pasajero>`), relaci?n `PROTECT` a `sales.Booking`, `sales.BookingLeg`, `sales.BookingPassenger` y `sales.SeatAssignment`, y estado (`PENDING`, `ISSUED`, `VOID`).
+  - Snapshots históricos inmutables en `Ticket`: `passenger_name`, `passenger_document_masked`, `origin_stop_name`, `destination_stop_name`, `departure_at`, `arrival_at`, `seat_number`, `seat_category`, `price` (en `Decimal`, snapshot directo de `SeatAssignment.price`, nunca recalculado desde `TripFare`), `currency` y `booking_public_id`.
+  - Tokens criptográficos de alta entropía (>= 256 bits, SHA-256): `verification_token_hash` y `download_token_hash`. Separación estricta de alcances; los tokens en plano nunca se persisten en base de datos.
+  - `TicketEmailAttempt`: registro de intentos de entrega agrupada por reserva (`Booking`), estado (`PENDING`, `SENT`, `FAILED`), marca temporal, correo destinatario y mensaje de error sanitizado (sin volcados internos de red o contraseñas).
+  - `TicketAuditEvent`: bit?cora transaccional para auditor?a de acciones sensibles (`ISSUE`, `DOWNLOAD`, `VOID`, `EMAIL`, `VERIFY`).
+  - Migración inicial generada: `tickets/migrations/0001_initial.py`. Probada únicamente en bases temporales de test runner; no ejecutada en bases locales ni reales.
+- **Almacenamiento seguro**:
+  - `PrivateTicketFileSystemStorage` independiente de comprobantes de pago, con `base_url=None`, directorio aislado `TICKETS_STORAGE_ROOT` y rutas UUIDv4 no predecibles (`tickets/<uuid4>.pdf`).
+- **Servicios de dominio**:
+  - `issue_tickets_for_booking(booking_id)`: servicio top-level con bloqueo `select_for_update()` sobre `Booking`. Exige que no exista una transacción externa activa (`in_atomic_block`) para garantizar limpieza física simétrica y evitar PDFs huérfanos. En caso de fallo transaccional o de E/S, revierte la base de datos y borra físicamente del disco todos los PDFs creados durante la ejecución. Valida estado `CONFIRMED`, genera tokens, renderiza PDFs, crea registros de pasaje y auditoría atómicamente.
+  - `send_booking_tickets(booking_id, retry=False)`: agrupa todos los pasajes emitidos de una reserva en exactamente un correo con múltiples adjuntos PDF. Registra el intento en `TicketEmailAttempt` en estado `PENDING` antes de la comunicación I/O de red, impidiendo envíos simultáneos o duplicados. Si ya existe un envío exitoso no reenvía; si hay un intento fallido exige `retry=True` explícito.
+  - `void_ticket(ticket_id, reason, user=None)`: anulación transaccional de pasaje con auditoría.
+- **Vistas y endpoints seguros**:
+  - `/tickets/verify/?token=...`: verificación pública de solo lectura para escaneo de QR. Busca por hash SHA-256 del token sobre `verification_token_hash`. Devuelve exclusivamente estado (`VÁLIDO`, `ANULADO`), código de pasaje, nombre del pasajero, documento oculto, origen, destino, fecha, butaca y categoría. No expone motivo de anulación ni ningún otro dato fuera de los permitidos. Protege estrictamente la privacidad: omite documento completo, precio, contacto, datos de pago y otros pasajeros. Respuestas con headers de seguridad (`Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex, nofollow`). Rate limiting defensivo por IP en caché (`TICKETS_RATE_LIMIT_PER_MINUTE = 30`). Template accesible local y responsive (`templates/tickets/verify.html`), sin CDNs.
+  - `/tickets/download/<uuid:public_id>/?token=...`: descarga protegida del archivo PDF con validación de existencia en storage (404 si fue eliminado físicamente). Acceso permitido mediante token de descarga válido (`download_token_hash`) o por rol interno autorizado (`Administrador`, `Vendedor`, superusuario). Usuarios staff sin rol o usuarios comunes sin token reciben HTTP 403 Forbidden.
+- **Flujo de Integración Continua**:
+  - `.github/workflows/tickets-postgres.yml`: workflow dedicado para la rama `feature/ticket-pdf-foundation-20260919` que levanta servicio PostgreSQL 16 y ejecuta la suite completa de pruebas unitarias y de concurrencia sin dependencias de paquetes de sistema C/nativos.
+- **Pruebas y verificación**:
+  - 30 pruebas unitarias y de integración exhaustivas en `tickets/tests.py`.
+  - Cobertura: matriz de reservas de 1, 3 y 6 pasajes (ida y vuelta), inmutabilidad de snapshots frente a cambios en `operations`, rechazo de reservas no confirmadas o expiradas, detección y limpieza física dual ante fallos de base de datos o almacenamiento, extracción de texto de PDF con `pypdf`, validación estructural de imagen QR puro Python (`Pillow` + `qrcode`) verificando payload URL y token SHA-256 sin dependencias nativas/C (`pyzbar` / `libzbar`), privacidad estricta de verificación QR sin motivo de anulación ni datos fuera de los autorizados, control de acceso y prevención IDOR en descargas, rate limiting de verificación, entrega agrupada en un solo correo, auditoría sin PII y concurrencia serializada con PostgreSQL.
+  - Resultados en SQLite: 357 pruebas ejecutadas con éxito (`OK, skipped=4`, correspondientes a tests específicos de PostgreSQL en `sales` y `tickets`).
+  - Resultados en PostgreSQL: 360 pruebas ejecutadas con éxito sin ninguna prueba omitida (`OK`, 0 skipped).
+  - Verificaciones de Django: `manage.py check` (0 errores), `manage.py makemigrations --check --dry-run` (sin cambios pendientes).
+
 Actualizar este documento cuando finalice cada módulo.

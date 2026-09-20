@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     'operations.apps.OperationsConfig',
     'sales.apps.SalesConfig',
     'payments.apps.PaymentsConfig',
+    'tickets.apps.TicketsConfig',
 ]
 
 MIDDLEWARE = [
@@ -196,6 +197,10 @@ PROTECTED_MEDIA_ROOT = Path(os.getenv('PROTECTED_MEDIA_ROOT', str(BASE_DIR / 'pr
 PAYMENTS_MAX_VOUCHER_SIZE_BYTES = int(os.getenv('PAYMENTS_MAX_VOUCHER_SIZE_BYTES', 10 * 1024 * 1024))  # 10 MB
 PAYMENTS_ALLOWED_VOUCHER_EXTENSIONS = ('.pdf', '.jpg', '.jpeg', '.png')
 
+# Tickets configuration & Private Storage
+TICKETS_STORAGE_ROOT = Path(os.getenv('TICKETS_STORAGE_ROOT', str(BASE_DIR / 'private_tickets')))
+TICKETS_VERIFICATION_BASE_URL = os.getenv('TICKETS_VERIFICATION_BASE_URL', 'https://scviajes.com.ar')
+TICKETS_RATE_LIMIT_PER_MINUTE = int(os.getenv('TICKETS_RATE_LIMIT_PER_MINUTE', 30))
 # Bank transfer configuration
 BANK_TRANSFER_ACCOUNT_HOLDER = os.getenv("BANK_TRANSFER_ACCOUNT_HOLDER", "SC Viajes S.R.L.")
 BANK_TRANSFER_ALIAS = os.getenv("BANK_TRANSFER_ALIAS", "scviajes.mp")
