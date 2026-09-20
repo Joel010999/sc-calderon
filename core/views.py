@@ -773,6 +773,7 @@ def booking_summary(request, public_id):
         "is_released": (booking.status == BookingStatus.RELEASED),
         "is_confirmed": (booking.status == BookingStatus.CONFIRMED),
         "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ),
+        "issued_tickets": booking.tickets.filter(status="ISSUED").order_by("leg__sequence", "passenger__position"),
     })
 
 

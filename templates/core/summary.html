@@ -171,13 +171,34 @@
     </div>
   </div>
 
+  {% if is_confirmed %}
+    <section class="summary-card mt-4" aria-label="Pasajes emitidos">
+      <h3>Pasajes de tu reserva</h3>
+      {% if issued_tickets %}
+        <p class="muted">Descargá cada pasaje desde este resumen protegido.</p>
+        <ul>
+          {% for ticket in issued_tickets %}
+            <li>
+              {{ ticket.ticket_code }} · {{ ticket.passenger_name }} · tramo {{ ticket.leg.sequence }}
+              <a class="button button--secondary" href="{% url 'tickets:guest_download' booking_public_id=booking.public_id public_id=ticket.public_id %}">Descargar PDF</a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">La confirmación fue registrada. Tus pasajes están siendo preparados.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
   <!-- PAYMENT BUTTON & NOTICE (PUBLIC PAYMENTS PENDING) -->
   <div class="payment-action-card mt-4">
     <h3>Medio de pago</h3>
     <p class="muted">Las reservas online se abonan para confirmar los pasajes antes de su vencimiento.</p>
 
     <div class="payment-button-wrapper">
-      {% if active_payment and active_payment.status == 'UNDER_REVIEW' %}
+      {% if is_confirmed %}
+        <strong class="text-success">Pago confirmado</strong>
+      {% elif active_payment and active_payment.status == 'UNDER_REVIEW' %}
         <a class="button button--primary" id="btn-payment-pending" href="{% url 'pantalla_transferencia' public_id=booking.public_id %}">
           Ver estado de transferencia (En revisión)
         </a>

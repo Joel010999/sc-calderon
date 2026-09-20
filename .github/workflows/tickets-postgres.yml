@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - feature/ticket-pdf-foundation-20260919
+      - feature/ticket-fulfillment-integration-20260920
   pull_request:
     branches:
       - feature/ticket-pdf-foundation-20260919
+      - feature/ticket-fulfillment-integration-20260920
 
 permissions:
   contents: read

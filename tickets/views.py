@@ -173,3 +173,38 @@ def download_ticket_view(request, public_id=None):
     response["Referrer-Policy"] = "no-referrer"
     response["X-Robots-Tag"] = "noindex, nofollow"
     return response
+
+
+def download_guest_ticket_view(request, booking_public_id, public_id):
+    """Descarga para comprador invitado, limitada al token de sesión del resumen."""
+    if not request.session.get(f"booking_access_{booking_public_id}"):
+        raise Http404("Pasaje no encontrado.")
+    ticket = Ticket.objects.filter(
+        public_id=public_id,
+        booking__public_id=booking_public_id,
+        booking__channel="ONLINE",
+        booking__status="CONFIRMED",
+        status=TicketStatus.ISSUED,
+    ).first()
+    if not ticket:
+        raise Http404("Pasaje no encontrado.")
+    storage = get_ticket_storage()
+    if not storage.exists(ticket.pdf_path):
+        raise Http404("Archivo de pasaje no encontrado.")
+    TicketAuditEvent.objects.create(
+        actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+        action=TicketAuditEvent.Action.DOWNLOAD,
+        ticket=ticket,
+        booking=ticket.booking,
+        description=f"Descarga de pasaje {ticket.ticket_code} desde resumen protegido",
+        metadata={"is_guest_session": True},
+    )
+    response = FileResponse(
+        storage.open(ticket.pdf_path, "rb"),
+        as_attachment=True,
+        filename=f"pasaje-{ticket.ticket_code}.pdf",
+        content_type="application/pdf",
+    )
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Referrer-Policy"] = "no-referrer"
+    return response

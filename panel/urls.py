@@ -14,6 +14,7 @@ urlpatterns = [
     path('reservas/', reservations.booking_list, name='booking_list'),
     path('reservas/nueva/', reservations.booking_create, name='booking_create'),
     path('reservas/<uuid:public_id>/', reservations.booking_detail, name='booking_detail'),
+    path('reservas/<uuid:public_id>/reintentar-pasajes/', reservations.booking_fulfillment_retry, name='booking_fulfillment_retry'),
     path('reservas/<uuid:public_id>/liberar/', reservations.booking_release, name='booking_release'),
     path('reservas/<uuid:public_id>/pagar-efectivo/', payments.booking_pay_cash, name='booking_pay_cash'),
     path('reservas/<uuid:public_id>/pagar-transferencia/', payments.booking_pay_transfer, name='booking_pay_transfer'),

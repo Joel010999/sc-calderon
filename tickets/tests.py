@@ -65,6 +65,7 @@ class TicketBaseMixin:
         self.temp_storage_dir = tempfile.mkdtemp()
         self.storage_override = override_settings(
             TICKETS_STORAGE_ROOT=self.temp_storage_dir,
+            PROTECTED_MEDIA_ROOT=self.temp_storage_dir,
             TICKETS_VERIFICATION_BASE_URL="https://scviajes.com.ar",
             EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
         )
