@@ -205,3 +205,7 @@ Estado: implementado en `feature/ticket-pdf-foundation-20260919`.
   - Verificaciones de Django: `manage.py check` (0 errores), `manage.py makemigrations --check --dry-run` (sin cambios pendientes).
 
 Actualizar este documento cuando finalice cada módulo.
+
+## Integraci?n de fulfillment de tickets (2026-09-20)
+
+Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendiente de validaci?n final. Se agreg? trabajo durable de emisi?n/correo, reintentos protegidos en panel, descarga del invitado desde resumen de sesi?n y reconciliaci?n de reservas confirmadas.

@@ -220,3 +220,9 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - Proveedor definitivo para envío de correo.
 
 No resolver estas decisiones por suposición. Registrar la respuesta aprobada antes de implementar la regla correspondiente.
+
+## Fulfillment de pasajes despu?s de la confirmaci?n econ?mica (2026-09-20)
+
+- `payments` confirma pago, reserva y butacas en una transacci?n; una importaci?n perezosa crea el trabajo durable `TicketFulfillment` antes del commit para evitar perder la intenci?n si el proceso cae.
+- `transaction.on_commit` procesa el trabajo fuera de la transacci?n. Los fallos de PDF o correo se registran por separado, no revierten el pago y se recuperan mediante `process_booking_fulfillment(..., retry=True)` o `reconcile_confirmed_fulfillments`.
+- No se usan signals, Celery, Redis, Mercado Pago QR ni Payway.

@@ -74,3 +74,7 @@ Esta separación es conceptual. No crear todos estos módulos todavía: se imple
 - Toda regla de negocio debe tener pruebas. Los cambios de modelos deben acompañarse de sus migraciones, sin ejecutarlas contra bases reales.
 
 Las reglas del producto se encuentran en [PROJECT_SPEC.md](PROJECT_SPEC.md). Las definiciones abiertas se registran en [DECISIONS.md](DECISIONS.md); no deben resolverse por suposición.
+
+## Integraci?n de fulfillment econ?mico
+
+La confirmaci?n contin?a siendo responsabilidad de `payments`. Dentro de la misma transacci?n se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con `tickets.services.reconcile_confirmed_fulfillments`. La emisi?n y el correo permanecen en `tickets`, sin se?ales ocultas, Celery o Redis.

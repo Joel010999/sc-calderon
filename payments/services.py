@@ -64,6 +64,13 @@ def validate_payment_agent(user):
     raise ValidationError("No tenés permiso para operar con pagos.")
 
 
+def _enqueue_ticket_fulfillment(booking):
+    """Encola fulfillment dentro de la transacción de confirmación sin ciclo de imports."""
+    from tickets.services import enqueue_booking_fulfillment
+
+    return enqueue_booking_fulfillment(booking)
+
+
 def register_cash_payment(*, booking_or_id, seller, reference="", now=None):
     payment, expired_error = _register_cash_payment_atomic(
         booking_or_id=booking_or_id, seller=seller, reference=reference, now=now
@@ -207,6 +214,8 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
             "confirmed_at": effective_now.isoformat(),
         },
     )
+
+    _enqueue_ticket_fulfillment(booking)
 
     return payment, None
 
@@ -464,6 +473,8 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
                 "confirmed_at": effective_now.isoformat(),
             },
         )
+
+        _enqueue_ticket_fulfillment(booking)
 
     else:
         # Rechazar: motivo obligatorio

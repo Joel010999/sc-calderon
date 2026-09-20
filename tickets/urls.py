@@ -9,4 +9,5 @@ urlpatterns = [
     path("verify/", views.verify_ticket_view, name="verify"),
     path("download/<uuid:public_id>/", views.download_ticket_view, name="download"),
     path("download/", views.download_ticket_view, name="download_token"),
+    path("guest/<uuid:booking_public_id>/<uuid:public_id>/", views.download_guest_ticket_view, name="guest_download"),
 ]

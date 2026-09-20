@@ -7,7 +7,7 @@ import uuid
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from sales.models import AssignmentStatus, Booking, BookingStatus, SeatAssignment
@@ -22,9 +22,12 @@ from .exceptions import (
 )
 from .models import (
     EmailAttemptStatus,
+    FulfillmentEmailStatus,
+    FulfillmentIssueStatus,
     Ticket,
     TicketAuditEvent,
     TicketEmailAttempt,
+    TicketFulfillment,
     TicketStatus,
     mask_document,
 )
@@ -383,6 +386,105 @@ def send_booking_tickets(booking_or_id, retry=False, now=None) -> TicketEmailAtt
     )
 
     return attempt
+
+
+def enqueue_booking_fulfillment(booking_or_id, actor=None):
+    """Crea o reutiliza el trabajo durable de una reserva confirmada.
+
+    Debe llamarse dentro de la transacción que confirma el pago. El callback de
+    ``on_commit`` solo intenta procesar el trabajo ya persistido; si el proceso
+    cae antes, ``reconcile_confirmed_fulfillments`` puede recuperarlo.
+    """
+    booking_id = booking_or_id.pk if isinstance(booking_or_id, Booking) else booking_or_id
+    job, _ = TicketFulfillment.objects.get_or_create(booking_id=booking_id)
+    if job.issue_status == FulfillmentIssueStatus.SUCCEEDED and job.email_status == FulfillmentEmailStatus.SENT:
+        return job
+
+    from functools import partial
+    transaction.on_commit(partial(process_booking_fulfillment, job.pk))
+    return job
+
+
+def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
+    """Procesa emisión y correo fuera de la transacción de pago.
+
+    Cada etapa conserva su resultado. Un error queda en el trabajo y no vuelve
+    atrás el pago confirmado; el mismo trabajo puede reintentarse explícitamente.
+    """
+    job_id = job_or_id.pk if isinstance(job_or_id, TicketFulfillment) else job_or_id
+    effective_now = now or timezone.now()
+    with transaction.atomic():
+        job = TicketFulfillment.objects.select_for_update().select_related("booking").get(pk=job_id)
+        if job.booking.status != BookingStatus.CONFIRMED:
+            raise InvalidTicketError("Solo se pueden procesar reservas confirmadas.")
+        if job.issue_status == FulfillmentIssueStatus.SUCCEEDED and job.email_status == FulfillmentEmailStatus.SENT:
+            return job
+        if job.issue_status == FulfillmentIssueStatus.PROCESSING and not retry:
+            raise InvalidTicketError("El fulfillment ya se encuentra en proceso.")
+        job.issue_status = FulfillmentIssueStatus.PROCESSING
+        job.attempts += 1
+        job.last_attempt_at = effective_now
+        job.issue_error = ""
+        job.save(update_fields=["issue_status", "attempts", "last_attempt_at", "issue_error", "updated_at"])
+
+    try:
+        issue_tickets_for_booking(job.booking_id, now=effective_now)
+    except Exception:
+        with transaction.atomic():
+            job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
+            job.issue_status = FulfillmentIssueStatus.FAILED
+            job.issue_error = "No se pudieron generar los pasajes. Reintentá desde el panel."
+            job.save(update_fields=["issue_status", "issue_error", "updated_at"])
+        return job
+
+    with transaction.atomic():
+        job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
+        job.issue_status = FulfillmentIssueStatus.SUCCEEDED
+        job.email_status = FulfillmentEmailStatus.PENDING
+        job.issue_error = ""
+        job.save(update_fields=["issue_status", "email_status", "issue_error", "updated_at"])
+
+    try:
+        send_booking_tickets(job.booking_id, retry=retry, now=effective_now)
+    except TicketEmailPendingError:
+        return TicketFulfillment.objects.get(pk=job_id)
+    except Exception:
+        with transaction.atomic():
+            job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
+            job.email_status = FulfillmentEmailStatus.FAILED
+            job.email_error = "No se pudo enviar el correo. Reintentá desde el panel."
+            job.save(update_fields=["email_status", "email_error", "updated_at"])
+        return job
+
+    with transaction.atomic():
+        job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
+        job.email_status = FulfillmentEmailStatus.SENT
+        job.email_error = ""
+        job.completed_at = timezone.now()
+        job.save(update_fields=["email_status", "email_error", "completed_at", "updated_at"])
+        TicketAuditEvent.objects.create(
+            actor=actor,
+            action=TicketAuditEvent.Action.EMAIL,
+            ticket=None,
+            booking=job.booking,
+            description=f"Fulfillment completado para reserva {job.booking.public_id}",
+            metadata={"issue_status": job.issue_status, "email_status": job.email_status, "attempts": job.attempts},
+        )
+    return job
+
+
+def reconcile_confirmed_fulfillments(limit=None):
+    """Recupera trabajos pendientes/fallidos de reservas confirmadas."""
+    qs = TicketFulfillment.objects.filter(booking__status=BookingStatus.CONFIRMED).filter(
+        models.Q(issue_status__in=[FulfillmentIssueStatus.PENDING, FulfillmentIssueStatus.FAILED])
+        | models.Q(email_status=FulfillmentEmailStatus.FAILED)
+    ).order_by("updated_at", "pk")
+    if limit:
+        qs = qs[:limit]
+    results = []
+    for job in qs:
+        results.append(process_booking_fulfillment(job.pk, retry=True))
+    return results
 
 
 def void_ticket(ticket_or_id, reason: str, actor=None, now=None) -> Ticket:

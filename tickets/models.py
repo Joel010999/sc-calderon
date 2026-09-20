@@ -304,3 +304,64 @@ class TicketAuditEvent(models.Model):
 
     def __str__(self):
         return f"[{self.get_action_display()}] {self.description}"
+
+
+class FulfillmentIssueStatus(models.TextChoices):
+    PENDING = "PENDING", "Pendiente"
+    PROCESSING = "PROCESSING", "Procesando"
+    SUCCEEDED = "SUCCEEDED", "Emitido"
+    FAILED = "FAILED", "Fallido"
+
+
+class FulfillmentEmailStatus(models.TextChoices):
+    PENDING = "PENDING", "Pendiente"
+    SENT = "SENT", "Enviado"
+    FAILED = "FAILED", "Fallido"
+
+
+class TicketFulfillment(models.Model):
+    """Trabajo durable que desacopla la confirmación económica de la entrega."""
+
+    booking = models.OneToOneField(
+        "sales.Booking",
+        verbose_name="reserva",
+        on_delete=models.PROTECT,
+        related_name="ticket_fulfillment",
+    )
+    issue_status = models.CharField(
+        "estado de emisión", max_length=15,
+        choices=FulfillmentIssueStatus.choices,
+        default=FulfillmentIssueStatus.PENDING,
+    )
+    email_status = models.CharField(
+        "estado de correo", max_length=15,
+        choices=FulfillmentEmailStatus.choices,
+        default=FulfillmentEmailStatus.PENDING,
+    )
+    issue_error = models.CharField("error de emisión", max_length=255, blank=True, default="")
+    email_error = models.CharField("error de correo", max_length=255, blank=True, default="")
+    attempts = models.PositiveIntegerField("intentos", default=0)
+    last_attempt_at = models.DateTimeField("último intento", null=True, blank=True)
+    completed_at = models.DateTimeField("finalizado", null=True, blank=True)
+    created_at = models.DateTimeField("creado", auto_now_add=True)
+    updated_at = models.DateTimeField("actualizado", auto_now=True)
+
+    class Meta:
+        verbose_name = "trabajo de entrega de pasajes"
+        verbose_name_plural = "trabajos de entrega de pasajes"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(issue_status__in=FulfillmentIssueStatus.values),
+                name="tickets_fulfillment_issue_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(email_status__in=FulfillmentEmailStatus.values),
+                name="tickets_fulfillment_email_status_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["issue_status", "email_status"], name="tickets_fulfill_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"Fulfillment {self.booking.public_id} · {self.issue_status}/{self.email_status}"

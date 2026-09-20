@@ -27,6 +27,8 @@ from sales.models import (
     normalize_document,
 )
 from sales.services import get_trip_availability, validate_passenger_data
+from tickets.models import TicketFulfillment
+from tickets.services import process_booking_fulfillment
 from .models import AuditEvent
 from .permissions import reservations_access
 from .reservation_services import (
@@ -167,6 +169,7 @@ def booking_detail(request, public_id):
     payment_history = Payment.objects.filter(
         booking=booking
     ).select_related("registered_by", "reviewed_by").order_by("-created_at")
+    fulfillment = TicketFulfillment.objects.filter(booking=booking).first()
 
     return render(request, "panel/reservations/detail.html", {
         "booking": booking,
@@ -175,8 +178,26 @@ def booking_detail(request, public_id):
         "can_release": can_release,
         "active_payment": active_payment,
         "payment_history": payment_history,
+        "fulfillment": fulfillment,
     })
 
+
+@reservations_access()
+@require_POST
+def booking_fulfillment_retry(request, public_id):
+    booking = get_object_or_404(Booking, public_id=public_id)
+    if booking.status != BookingStatus.CONFIRMED:
+        messages.error(request, "Solo se pueden reintentar pasajes de reservas confirmadas.")
+        return redirect("panel:booking_detail", public_id=public_id)
+    try:
+        job = TicketFulfillment.objects.get(booking=booking)
+        process_booking_fulfillment(job.pk, retry=True, actor=request.user)
+        messages.success(request, "El fulfillment de pasajes fue reintentado.")
+    except TicketFulfillment.DoesNotExist:
+        messages.error(request, "La reserva todavía no tiene un trabajo de pasajes registrado.")
+    except Exception:
+        messages.error(request, "No se pudo reintentar el fulfillment. Revisá el estado y volvé a intentar.")
+    return redirect("panel:booking_detail", public_id=public_id)
 
 
 @reservations_access()
