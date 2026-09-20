@@ -457,3 +457,79 @@ class PanelPaymentsTestCase(TestCase):
         self.assertContains(resp, "$ 20000.00")
         self.assertContains(resp, "Efectivo: $12000.00 (1)")
         self.assertContains(resp, "Transferencias: $8000.00 (1)")
+
+    def test_panel_review_public_transfer_approval_atomic(self):
+        """El panel aprueba atómicamente una transferencia pública en revisión, confirmando reserva y butacas."""
+        from payments.services import initiate_public_transfer_payment, upload_public_transfer_voucher
+        from sales.models import BookingChannel
+
+        # 1. Crear reserva online
+        booking = self.create_booking(email="online_transf@correo.com")
+        booking.channel = BookingChannel.ONLINE
+        booking.seller = None
+        booking.save(update_fields=["channel", "seller"])
+
+        initiate_public_transfer_payment(booking_or_id=booking)
+        payment = upload_public_transfer_voucher(
+            booking_or_id=booking,
+            voucher_file=self.sample_voucher(),
+        )
+
+        self.assertEqual(payment.status, PaymentStatus.UNDER_REVIEW)
+        self.assertIsNone(payment.registered_by)
+
+        # 2. Panelista aprueba
+        self.client.force_login(self.admin_user)
+        review_url = reverse("panel:transfer_review", kwargs={"public_id": payment.public_id})
+        resp = self.client.post(review_url, {
+            "action": "approve",
+            "next": "pending",
+        })
+        self.assertEqual(resp.status_code, 302)
+
+        payment.refresh_from_db()
+        booking.refresh_from_db()
+        sa = booking.legs.first().seat_assignments.first()
+
+        self.assertEqual(payment.status, PaymentStatus.APPROVED)
+        self.assertEqual(payment.reviewed_by, self.admin_user)
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        self.assertEqual(sa.status, AssignmentStatus.CONFIRMED)
+
+        # Auditoría verificada
+        audits = AuditEvent.objects.filter(entity_id=str(payment.pk))
+        self.assertTrue(audits.exists())
+
+    def test_panel_review_public_transfer_rejection_atomic(self):
+        """El panel rechaza una transferencia pública con motivo obligatorio manteniendo la reserva HELD si está vigente."""
+        from payments.services import initiate_public_transfer_payment, upload_public_transfer_voucher
+        from sales.models import BookingChannel
+
+        booking = self.create_booking(email="online_rej@correo.com")
+        booking.channel = BookingChannel.ONLINE
+        booking.seller = None
+        booking.save(update_fields=["channel", "seller"])
+
+        initiate_public_transfer_payment(booking_or_id=booking)
+        payment = upload_public_transfer_voucher(
+            booking_or_id=booking,
+            voucher_file=self.sample_voucher(),
+        )
+
+        self.client.force_login(self.seller_user)
+        review_url = reverse("panel:transfer_review", kwargs={"public_id": payment.public_id})
+        resp = self.client.post(review_url, {
+            "action": "reject",
+            "rejection_reason": "Comprobante adulterado o no legible",
+            "next": "pending",
+        })
+        self.assertEqual(resp.status_code, 302)
+
+        payment.refresh_from_db()
+        booking.refresh_from_db()
+
+        self.assertEqual(payment.status, PaymentStatus.REJECTED)
+        self.assertEqual(payment.rejection_reason, "Comprobante adulterado o no legible")
+        self.assertEqual(payment.reviewed_by, self.seller_user)
+        # La reserva permanece HELD porque aún no venció el plazo
+        self.assertEqual(booking.status, BookingStatus.HELD)

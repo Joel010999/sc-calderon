@@ -4,12 +4,12 @@
 - Estado: fundación técnica aprobada.
 - `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
 - Panel personalizado, seguridad, health check, roles y estáticos locales: completados.
-- Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `fbe3585`.
-- Rama activa de desarrollo: `feature/public-checkout-foundation-20260919`.
-- Etapa actual: checkout público implementado y verificado.
+- Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `5cc0a78`.
+- Rama activa de desarrollo: `feature/public-transfer-payment-20260919`.
+- Etapa actual: flujo público de transferencia con comprobante implementado y verificado.
 - Documentación creada/actualizada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
-- Próxima etapa: pasarelas de pago (Mercado Pago, Payway), emisión de pasajes (PDF, QR) y migración desde Sheets (previa a la activación de pasarelas).
-- Ventas comerciales finales, pasarelas de pago (Mercado Pago, Payway), caja, comprobantes, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
+- Próxima etapa: pasarelas de pago automáticas (Mercado Pago QR, Payway), emisión de pasajes (PDF, QR) y migración desde Sheets (previa a la activación de pasarelas).
+- Ventas comerciales finales, pasarelas automáticas (Mercado Pago QR, Payway), caja, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
 - Decisiones pendientes: consultar [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
 
 ## Fundación de operaciones

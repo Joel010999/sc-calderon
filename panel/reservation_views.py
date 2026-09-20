@@ -157,7 +157,11 @@ def booking_detail(request, public_id):
     from payments.models import Payment, PaymentStatus
     active_payment = Payment.objects.filter(
         booking=booking,
-        status__in=[PaymentStatus.UNDER_REVIEW, PaymentStatus.APPROVED],
+        status__in=[
+            PaymentStatus.AWAITING_VOUCHER,
+            PaymentStatus.UNDER_REVIEW,
+            PaymentStatus.APPROVED,
+        ],
     ).select_related("registered_by", "reviewed_by").first()
 
     payment_history = Payment.objects.filter(

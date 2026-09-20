@@ -30,9 +30,12 @@ from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import (
     _is_payment_collision_integrity_error,
     calculate_booking_total,
+    expire_public_transfer_if_expired,
+    initiate_public_transfer_payment,
     register_cash_payment,
     register_transfer_payment,
     review_transfer_payment,
+    upload_public_transfer_voucher,
 )
 from payments.storage import (
     ProtectedFileSystemStorage,
@@ -169,6 +172,53 @@ class PaymentsBaseTestCase(TestCase):
     def sample_image_voucher(self, name="comprobante.jpg", content=b"\xff\xd8\xff test jpg"):
         return SimpleUploadedFile(name, content, content_type="image/jpeg")
 
+    def create_held_online_booking(self, email="online@correo.com", minutes_held=15, seats=None):
+        """Crea una reserva online HELD con asignaciones válidas."""
+        now = timezone.now()
+        booking = Booking.objects.create(
+            channel=BookingChannel.ONLINE,
+            status=BookingStatus.HELD,
+            email=email,
+            phone="3511234567",
+            seller=None,
+            expires_at=now + timedelta(minutes=minutes_held),
+        )
+        leg = BookingLeg.objects.create(
+            booking=booking,
+            sequence=1,
+            trip=self.trip,
+            origin_stop=self.ts_cba,
+            destination_stop=self.ts_ssj,
+            origin_stop_name=self.stop_cba.name,
+            destination_stop_name=self.stop_ssj.name,
+            departure_at=self.ts_cba.scheduled_at,
+            arrival_at=self.ts_ssj.scheduled_at,
+        )
+
+        selected_seats = seats or [self.seat_cama_1]
+        for idx, seat in enumerate(selected_seats, start=1):
+            passenger = BookingPassenger.objects.create(
+                booking=booking,
+                position=idx,
+                first_name=f"Pasajero {idx}",
+                last_name="Prueba",
+                document_type="DNI",
+                document_number=f"3000000{idx}",
+            )
+            fare_amount = self.fare_cama.amount if seat.category == SeatCategory.CAMA else self.fare_semi.amount
+            SeatAssignment.objects.create(
+                leg=leg,
+                passenger=passenger,
+                trip=self.trip,
+                seat=seat,
+                status=AssignmentStatus.HELD,
+                seat_number=seat.number,
+                category=seat.category,
+                price=fare_amount,
+                currency="ARS",
+            )
+        return booking
+
 
 class PaymentModelAndStorageTests(PaymentsBaseTestCase):
     """Pruebas del modelo Payment, constraints y almacenamiento desacoplado."""
@@ -293,12 +343,31 @@ class PaymentModelAndStorageTests(PaymentsBaseTestCase):
         self.assertEqual(len(base_name), 32)
 
     def test_voucher_validation_allowed_extensions(self):
+        sample_bytes = {
+            ".pdf": b"%PDF-1.4 mock pdf",
+            ".jpg": b"\xff\xd8\xff\xe0 mock jpeg",
+            ".jpeg": b"\xff\xd8\xff\xe0 mock jpeg",
+            ".png": b"\x89PNG\r\n\x1a\n mock png",
+            ".PDF": b"%PDF-1.4 mock pdf",
+            ".PNG": b"\x89PNG\r\n\x1a\n mock png",
+        }
         for ext in [".pdf", ".jpg", ".jpeg", ".png", ".PDF", ".PNG"]:
-            f = SimpleUploadedFile(f"test{ext}", b"data", content_type="application/octet-stream")
+            f = SimpleUploadedFile(f"test{ext}", sample_bytes[ext], content_type="application/octet-stream")
             try:
                 validate_voucher_file(f)
             except ValidationError:
                 self.fail(f"La extensión {ext} debería ser válida.")
+
+    def test_voucher_validation_rejects_invalid_content(self):
+        f_fake_pdf = SimpleUploadedFile("comprobante.pdf", b"esto no es un pdf", content_type="application/pdf")
+        with self.assertRaises(ValidationError) as ctx:
+            validate_voucher_file(f_fake_pdf)
+        self.assertIn("contenido", str(ctx.exception).lower())
+
+        f_fake_png = SimpleUploadedFile("comprobante.png", b"%PDF-1.4 no es png", content_type="image/png")
+        with self.assertRaises(ValidationError) as ctx:
+            validate_voucher_file(f_fake_png)
+        self.assertIn("contenido", str(ctx.exception).lower())
 
     def test_voucher_validation_rejects_webp_and_others(self):
         # WebP explícitamente prohibido por decisión de coordinación
@@ -477,8 +546,7 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         self.assertEqual(booking2.status, BookingStatus.CONFIRMED)
 
     def test_review_transfer_approval_when_booking_expired(self):
-        """Aprobar bloquea Booking luego Payment, rechaza si vencida sin modificar Payment,
-        y vence la reserva/butacas."""
+        """Aprobar una transferencia manual vencida expira reserva y butacas sin cambiar el pago."""
         booking = self.create_held_manual_booking()
         payment = register_transfer_payment(booking_or_id=booking, seller=self.seller_user, voucher=self.sample_pdf_voucher())
 
@@ -488,7 +556,8 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         with self.assertRaises(BookingExpiredError):
             review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True, now=future_now)
 
-        # Payment NO debe haber sido modificado a APPROVED
+        # El pago manual conserva el comprobante para auditoría; la política pública
+        # de expiración de pagos se cubre en PublicTransferPaymentTests.
         payment.refresh_from_db()
         self.assertEqual(payment.status, PaymentStatus.UNDER_REVIEW)
 
@@ -683,3 +752,213 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
         self.assertEqual(len(results), 1, "Solo un pago en efectivo debe concretarse")
         self.assertEqual(len(errors), 1, "El segundo hilo debe haber fallado")
         self.assertEqual(Payment.objects.filter(booking=self.booking, status=PaymentStatus.APPROVED).count(), 1)
+
+
+class PublicTransferPaymentTests(PaymentsBaseTestCase):
+    """Pruebas completas del flujo público de pago por transferencia bancaria."""
+
+    def test_initiate_public_transfer_success(self):
+        booking = self.create_held_online_booking()
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        self.assertIsNone(booking.seller)
+
+        now = timezone.now()
+        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+
+        self.assertIsNotNone(payment.pk)
+        self.assertEqual(payment.method, PaymentMethod.BANK_TRANSFER)
+        self.assertEqual(payment.status, PaymentStatus.AWAITING_VOUCHER)
+        self.assertIsNone(payment.registered_by)
+        self.assertIsNone(payment.voucher.name)
+        self.assertEqual(payment.amount, Decimal("15000.00"))
+        self.assertEqual(payment.currency, "ARS")
+
+        # Plazo de 5 minutos configurado
+        expected_deadline = now + timedelta(minutes=5)
+        self.assertEqual(payment.proof_deadline_at, expected_deadline)
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.expires_at, expected_deadline)
+        self.assertEqual(booking.status, BookingStatus.HELD)
+
+    def test_initiate_public_transfer_idempotency(self):
+        booking = self.create_held_online_booking()
+        now = timezone.now()
+
+        p1 = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+        p2 = initiate_public_transfer_payment(booking_or_id=booking, now=now + timedelta(seconds=30))
+
+        self.assertEqual(p1.pk, p2.pk)
+        self.assertEqual(p2.proof_deadline_at, p1.proof_deadline_at)
+        self.assertEqual(Payment.objects.filter(booking=booking).count(), 1)
+
+    def test_initiate_public_transfer_rejects_manual_channel(self):
+        booking = self.create_held_manual_booking()
+        with self.assertRaises(InvalidBookingError) as ctx:
+            initiate_public_transfer_payment(booking_or_id=booking)
+        self.assertIn("Solo las reservas online admiten transferencia pública", str(ctx.exception))
+
+    def test_initiate_public_transfer_rejects_non_held_status(self):
+        booking = self.create_held_online_booking()
+        booking.status = BookingStatus.CONFIRMED
+        booking.confirmed_at = timezone.now()
+        booking.save(update_fields=["status", "confirmed_at"])
+
+        with self.assertRaises(InvalidBookingError) as ctx:
+            initiate_public_transfer_payment(booking_or_id=booking)
+        self.assertIn("confirmada", str(ctx.exception).lower())
+
+    def test_initiate_public_transfer_when_booking_expired(self):
+        booking = self.create_held_online_booking()
+        booking.expires_at = timezone.now() - timedelta(seconds=1)
+        booking.save(update_fields=["expires_at"])
+
+        with self.assertRaises(BookingExpiredError):
+            initiate_public_transfer_payment(booking_or_id=booking)
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.EXPIRED)
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.status, AssignmentStatus.RELEASED)
+
+    def test_initiate_public_transfer_when_proof_window_expired(self):
+        booking = self.create_held_online_booking()
+        now = timezone.now()
+        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+
+        # Avanzar 6 minutos después del plazo de 5 minutos
+        later = now + timedelta(minutes=6)
+        with self.assertRaises(BookingExpiredError):
+            initiate_public_transfer_payment(booking_or_id=booking, now=later)
+
+        payment.refresh_from_db()
+        booking.refresh_from_db()
+        self.assertEqual(payment.status, PaymentStatus.EXPIRED)
+        self.assertEqual(booking.status, BookingStatus.EXPIRED)
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.status, AssignmentStatus.RELEASED)
+
+    def test_upload_public_transfer_voucher_success_and_24h_extension(self):
+        booking = self.create_held_online_booking()
+        now = timezone.now()
+        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+
+        # Antes de subir comprobante: el vencimiento es a los 5 minutos
+        self.assertEqual(booking.expires_at, now + timedelta(minutes=5))
+
+        # Subir comprobante dentro de los 5 minutos (al minuto 2)
+        upload_time = now + timedelta(minutes=2)
+        voucher = self.sample_pdf_voucher()
+
+        updated_payment = upload_public_transfer_voucher(
+            booking_or_id=booking,
+            voucher_file=voucher,
+            now=upload_time,
+        )
+
+        self.assertEqual(updated_payment.status, PaymentStatus.UNDER_REVIEW)
+        self.assertTrue(updated_payment.voucher)
+
+        # Extension de 24 horas solo tras guardar
+        expected_review_deadline = upload_time + timedelta(hours=24)
+        self.assertEqual(updated_payment.review_deadline_at, expected_review_deadline)
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.expires_at, expected_review_deadline)
+        self.assertEqual(booking.status, BookingStatus.HELD)
+
+        # Auditoría registrada
+        audit = AuditEvent.objects.filter(entity_type=Payment._meta.label, entity_id=str(updated_payment.pk)).first()
+        self.assertIsNotNone(audit)
+        self.assertIn("UNDER_REVIEW", str(audit.after))
+
+    def test_upload_public_transfer_voucher_rejects_after_5_minutes(self):
+        booking = self.create_held_online_booking()
+        now = timezone.now()
+        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+
+        # Intentar subir comprobante a los 6 minutos (vencido)
+        upload_time = now + timedelta(minutes=6)
+        voucher = self.sample_pdf_voucher()
+
+        with self.assertRaises(BookingExpiredError) as ctx:
+            upload_public_transfer_voucher(
+                booking_or_id=booking,
+                voucher_file=voucher,
+                now=upload_time,
+            )
+        self.assertIn("ha expirado", str(ctx.exception).lower())
+
+        payment.refresh_from_db()
+        booking.refresh_from_db()
+        self.assertEqual(payment.status, PaymentStatus.EXPIRED)
+        self.assertEqual(booking.status, BookingStatus.EXPIRED)
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.status, AssignmentStatus.RELEASED)
+
+    def test_upload_public_transfer_voucher_rejects_invalid_content(self):
+        booking = self.create_held_online_booking()
+        now = timezone.now()
+        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+
+        fake_voucher = SimpleUploadedFile("comprobante.pdf", b"esto no es un pdf", content_type="application/pdf")
+
+        with self.assertRaises(ValidationError):
+            upload_public_transfer_voucher(
+                booking_or_id=booking,
+                voucher_file=fake_voucher,
+                now=now,
+            )
+
+        # Reversión completa: el pago sigue en AWAITING_VOUCHER y no se extendió 24h
+        payment.refresh_from_db()
+        booking.refresh_from_db()
+        self.assertEqual(payment.status, PaymentStatus.AWAITING_VOUCHER)
+        self.assertFalse(payment.voucher)
+        self.assertEqual(booking.expires_at, now + timedelta(minutes=5))
+
+    def test_upload_public_transfer_voucher_cannot_replace_under_review(self):
+        booking = self.create_held_online_booking()
+        now = timezone.now()
+        initiate_public_transfer_payment(booking_or_id=booking, now=now)
+        upload_public_transfer_voucher(booking_or_id=booking, voucher_file=self.sample_pdf_voucher(), now=now)
+
+        # Segundo intento de carga
+        with self.assertRaises(InvalidPaymentStatusError) as ctx:
+            upload_public_transfer_voucher(booking_or_id=booking, voucher_file=self.sample_image_voucher(), now=now)
+        self.assertIn("revisión", str(ctx.exception).lower())
+
+    def test_expire_public_transfer_if_expired(self):
+        # 1. Caso AWAITING_VOUCHER vencido
+        b1 = self.create_held_online_booking(email="b1@online.com")
+        now = timezone.now()
+        p1 = initiate_public_transfer_payment(booking_or_id=b1, now=now)
+
+        b1.expires_at = now - timedelta(seconds=1)
+        b1.save(update_fields=["expires_at"])
+
+        result = expire_public_transfer_if_expired(b1, now=now)
+        self.assertTrue(result)
+        b1.refresh_from_db()
+        p1.refresh_from_db()
+        self.assertEqual(b1.status, BookingStatus.EXPIRED)
+        self.assertEqual(p1.status, PaymentStatus.EXPIRED)
+        sa1 = SeatAssignment.objects.get(leg__booking=b1)
+        self.assertEqual(sa1.status, AssignmentStatus.RELEASED)
+
+        # 2. Caso UNDER_REVIEW con reserva vencida: libera butacas y vence también el pago
+        b2 = self.create_held_online_booking(email="b2@online.com", seats=[self.seat_semi_2])
+        initiate_public_transfer_payment(booking_or_id=b2, now=now)
+        p2 = upload_public_transfer_voucher(booking_or_id=b2, voucher_file=self.sample_pdf_voucher(), now=now)
+
+        b2.expires_at = now - timedelta(seconds=1)
+        b2.save(update_fields=["expires_at"])
+
+        result2 = expire_public_transfer_if_expired(b2, now=now)
+        self.assertTrue(result2)
+        b2.refresh_from_db()
+        p2.refresh_from_db()
+        self.assertEqual(b2.status, BookingStatus.EXPIRED)
+        self.assertEqual(p2.status, PaymentStatus.EXPIRED)
+        sa2 = SeatAssignment.objects.get(leg__booking=b2)
+        self.assertEqual(sa2.status, AssignmentStatus.RELEASED)

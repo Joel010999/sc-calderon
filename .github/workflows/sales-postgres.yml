@@ -7,6 +7,7 @@ on:
       - feature/manual-reservations-panel-20260918
       - feature/manual-payments-20260918
       - feature/public-checkout-foundation-20260919
+      - feature/public-transfer-payment-20260919
   pull_request:
 
 permissions:
@@ -52,5 +53,7 @@ jobs:
         run: python manage.py test sales
       - name: Public checkout tests on PostgreSQL
         run: python manage.py test core.test_checkout
+      - name: Public transfer payment tests on PostgreSQL
+        run: python manage.py test core.test_transfer_views payments.tests.PublicTransferPaymentTests --verbosity 2
       - name: Complete suite on PostgreSQL
         run: python manage.py test

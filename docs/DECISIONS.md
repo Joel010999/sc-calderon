@@ -189,6 +189,18 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
   - El historial de intentos no almacena el cuerpo del correo y los mensajes de error se sanitizan de forma genérica (sin volcar excepciones del sistema).
   - El envío se ejecuta fuera de transacciones activas para no generar correos si hay un rollback posterior.
 - Auditoría propia: `TicketAuditEvent` registra las acciones sensibles (`ISSUE`, `DOWNLOAD`, `VOID`, `EMAIL`, `VERIFY`) sin acoplarse a la aplicación `panel` y sin almacenar información personal identificable (PII).
+## Flujo público de transferencia con comprobante (2026-09-19)
+
+- `Payment` incorpora los estados `AWAITING_VOUCHER` (pendiente de comprobante) y `EXPIRED` (expirado sin comprobante).
+- Plazos estrictos y configurables:
+  - Ventana para transferir y subir comprobante: 5 minutos (`PAYMENTS_PROOF_WINDOW_MINUTES = 5`).
+  - Plazo para revisión manual de operadores: 24 horas (`PAYMENTS_REVIEW_WINDOW_HOURS = 24`).
+- Inicio del flujo: POST idempotente sobre reservas `ONLINE` en estado `HELD`, protegido contra IDOR mediante token de sesión (`booking_access_{public_id}`) y CSRF. Si ya existe un pago activo para la reserva, se reutiliza idempotentemente sin duplicar registros.
+- Validación de comprobantes: extensión permitida PDF, JPG, JPEG y PNG de hasta 10 MB, con validación de contenido en servidor mediante firmas mágicas (magic bytes) y almacenamiento privado compatible con `default_storage`.
+- Extensión del vencimiento de la reserva: el plazo de la reserva (`Booking.expires_at`) se extiende 24 horas únicamente tras guardar exitosamente el comprobante en estado `UNDER_REVIEW`. Si la carga falla, la transacción se revierte completa sin extender el plazo ni cambiar de estado.
+- Expiración oportunista: si transcurren los 5 minutos sin subir el comprobante o si expira el plazo de retención, el pago en `AWAITING_VOUCHER` pasa a `EXPIRED`, la reserva pasa a `EXPIRED` y las butacas se liberan atómicamente a `RELEASED`.
+- Revisión en panel interno: el panel permite aprobar o rechazar transferencias de forma atómica bajo bloqueos ordenados (`Booking` luego `Payment`), registrando eventos en `panel.AuditEvent`. La aprobación confirma pago, reserva y butacas; el rechazo exige motivo obligatorio y mantiene la reserva en `HELD` si aún está vigente.
+- Integración en checkout público: en la interfaz pública solo se habilita el pago por transferencia bancaria; el efectivo no aparece y las pasarelas automáticas (Mercado Pago QR, Payway) se muestran como "Próximamente disponible" sin procesamientos reales.
 
 ## Pendiente de consultar con Sandro
 
@@ -199,8 +211,6 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 - Política ante cancelación del viaje por parte de la empresa.
 - Saldo a favor o devolución.
 - Cambio de nombre del pasajero.
-- Tiempo máximo que una transferencia puede permanecer pendiente de revisión.
-- Conducta exacta del vencimiento de la reserva durante la revisión de una transferencia.
 - Distribución definitiva del colectivo y butacas inhabilitadas.
 - Horarios habituales y duración entre paradas.
 - Tiempo adicional de preparación del colectivo entre viajes.

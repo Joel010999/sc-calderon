@@ -1,12 +1,117 @@
 {% extends 'core/base.html' %}
+{% load static l10n %}
 
 {% block content %}
-<main class="checkout-page-container summary-container">
-  <section class="summary-details-card">
-    <h1>Pago pendiente de activación</h1>
-    <p>Tu reserva <strong>{{ booking.public_id }}</strong> está retenida, pero todavía no hay un medio de pago público habilitado.</p>
-    <p>La reserva no fue confirmada económicamente. Podés volver al resumen mientras el plazo de retención siga vigente.</p>
-    <a class="button button--primary" href="{% url 'resumen_reserva' public_id=booking.public_id %}">Volver al resumen</a>
-  </section>
-</main>
+<div class="checkout-page-container summary-container">
+  <div class="summary-header">
+    <div class="summary-title-col">
+      <span class="eyebrow-ref">Reserva online #{{ booking.public_id }}</span>
+      <h1>Seleccioná tu medio de pago</h1>
+      <p class="muted">Elegí la opción con la que deseás abonar tus pasajes antes de que venza el tiempo de retención.</p>
+    </div>
+    <div class="summary-status-badge status-badge--held">
+      {{ booking.get_status_display }}
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="messages-list mt-3">
+      {% for msg in messages %}
+        <div class="alert alert--{{ msg.tags }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- TIMER -->
+  {% if is_held %}
+    <div class="timer-box" id="timer-box" data-remaining="{{ remaining_seconds }}">
+      <div class="timer-inner">
+        <span class="timer-label">Tiempo de retención restante</span>
+        <div class="timer-display" id="timer-display">--:--</div>
+        <p class="timer-note">
+          Tus butacas permanecerán retenidas hasta las <strong>{{ expires_at_local|date:"H:i" }} hs</strong>.
+          Si el tiempo expira, las butacas serán liberadas automáticamente.
+        </p>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- TOTAL BAR -->
+  <div class="summary-total-bar mt-4">
+    <div class="total-label">Importe total a pagar:</div>
+    <div class="total-amount">${{ total|unlocalize }} ARS</div>
+  </div>
+
+  <!-- PAYMENT METHODS LIST -->
+  <div class="payment-methods-grid mt-4" style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <!-- OPCION 1: TRANSFERENCIA BANCARIA (DISPONIBLE) -->
+    <div class="summary-details-card" style="border: 2px solid #047857; background: #f0fdf4;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <span class="badge" style="background: #047857; color: #fff; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.8rem;">
+            Disponible
+          </span>
+          <h2 style="margin: 0.5rem 0 0.25rem 0; font-size: 1.25rem;">Transferencia bancaria</h2>
+          <p class="muted" style="margin: 0; font-size: 0.9rem;">
+            Transferí desde Mercado Pago o cualquier banco/billetera virtual. Tendrás una ventana de <strong>5 minutos</strong> para transferir y subir tu comprobante de pago.
+          </p>
+        </div>
+        <div style="text-align: right;">
+          <form method="POST" action="{% url 'iniciar_transferencia' public_id=booking.public_id %}">
+            {% csrf_token %}
+            <button type="submit" class="button button--primary" id="btn-start-transfer">
+              Pagar con Transferencia →
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPCION 2: MERCADO PAGO QR (PRÓXIMAMENTE) -->
+    <div class="summary-details-card" style="opacity: 0.7; background: #f9fafb;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <span class="badge" style="background: #6b7280; color: #fff; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.8rem;">
+            Próximamente disponible
+          </span>
+          <h2 style="margin: 0.5rem 0 0.25rem 0; font-size: 1.25rem; color: #6b7280;">Mercado Pago QR</h2>
+          <p class="muted" style="margin: 0; font-size: 0.9rem;">
+            Próximamente podrás abonar al instante escaneando código QR desde la aplicación de Mercado Pago.
+          </p>
+        </div>
+        <div>
+          <button type="button" class="button button--ghost" disabled style="cursor: not-allowed;">
+            No disponible
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPCION 3: PAYWAY (PRÓXIMAMENTE) -->
+    <div class="summary-details-card" style="opacity: 0.7; background: #f9fafb;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <span class="badge" style="background: #6b7280; color: #fff; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.8rem;">
+            Próximamente disponible
+          </span>
+          <h2 style="margin: 0.5rem 0 0.25rem 0; font-size: 1.25rem; color: #6b7280;">Payway (Tarjetas de crédito y débito)</h2>
+          <p class="muted" style="margin: 0; font-size: 0.9rem;">
+            Próximamente podrás abonar en línea con tarjetas de crédito y débito a través de la pasarela Payway.
+          </p>
+        </div>
+        <div>
+          <button type="button" class="button button--ghost" disabled style="cursor: not-allowed;">
+            No disponible
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4" style="text-align: center;">
+    <a href="{% url 'resumen_reserva' public_id=booking.public_id %}" class="button button--ghost">
+      ← Volver al resumen de la reserva
+    </a>
+  </div>
+</div>
 {% endblock %}
