@@ -226,6 +226,14 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - `payments` confirma pago, reserva y butacas en una transacci?n; una importaci?n perezosa crea el trabajo durable `TicketFulfillment` antes del commit para evitar perder la intenci?n si el proceso cae.
 - `transaction.on_commit` procesa el trabajo fuera de la transacci?n. Los fallos de PDF o correo se registran por separado, no revierten el pago y se recuperan mediante `process_booking_fulfillment(..., retry=True)` o `reconcile_confirmed_fulfillments`.
 - No se usan signals, Celery, Redis, Mercado Pago QR ni Payway.
+## Cuentas, acceso y consentimiento (2026-09-20)
+
+- Se mantiene el usuario est?ndar de Django; no se reemplaza `AUTH_USER_MODEL`.
+- Comprar como invitado sigue permitido y no vincula reservas por coincidencia de email.
+- El cliente puede registrarse e iniciar sesi?n con email y contrase?a. Recuperaci?n mediante enlace seguro de Django; no se usan OTP ni c?digos.
+- Google queda preparado mediante OAuth con credenciales exclusivamente en entorno y sin secretos versionados. Apple queda pendiente.
+- El reclamo de una compra invitada usa un token aleatorio, guardado como hash, de un solo uso y con vencimiento. La entrega autom?tica por correo queda pendiente de la infraestructura de correo.
+- El consentimiento comercial es opcional, separado, desmarcado por defecto y auditable; retirarlo no elimina reservas ni pasajes. Campa?as y env?os masivos quedan pendientes.\n
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 

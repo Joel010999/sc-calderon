@@ -227,6 +227,27 @@
     </div>
   </div>
 
+  <!-- CLAIM TOKEN BANNER FOR GUESTS -->
+  {% if claim_token %}
+    <div class="alert alert--info summary-banner mt-4" style="background: rgba(43, 89, 63, 0.08); border: 1px solid rgba(43, 89, 63, 0.25); border-radius: 8px; padding: 1.25rem;">
+      <h3 style="color: var(--brand-dark, #0d1b1e); font-size: 1.1rem; margin-bottom: 0.5rem;">¿Compraste como invitado?</h3>
+      <p style="margin-bottom: 0.5rem;">Podés vincular esta reserva a tu cuenta para consultar tus viajes y pasajes en cualquier momento.</p>
+      <p style="margin-bottom: 0.75rem;">Tu código de reclamo es: <strong style="font-family: monospace; font-size: 1.1rem; letter-spacing: 1px; color: var(--color-primary, #2b593f); background: rgba(0,0,0,0.05); padding: 2px 8px; border-radius: 4px;">{{ claim_token }}</strong></p>
+      <div>
+        {% if user.is_authenticated %}
+          <form method="POST" action="{% url 'reclamar_reserva' %}" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="claim_token" value="{{ claim_token }}">
+            <button type="submit" class="button button--secondary">Vincular a mi cuenta actual</button>
+          </form>
+        {% else %}
+          <a href="{% url 'registro_cliente' %}" class="button button--secondary">Crear cuenta para asociar</a>
+          <a href="{% url 'login_cliente' %}" class="button button--ghost" style="margin-left: 0.5rem;">Ya tengo cuenta</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
   <!-- RELEASE ACTION IF HELD -->
   {% if is_held %}
     <div class="summary-actions-row mt-4">

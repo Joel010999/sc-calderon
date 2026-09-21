@@ -77,6 +77,14 @@ Las reglas del producto se encuentran en [PROJECT_SPEC.md](PROJECT_SPEC.md). Las
 
 ## Integraci?n de fulfillment econ?mico
 
+La confirmaci?n contin?a siendo responsabilidad de `payments`. Dentro de la misma transacci?n se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con `tickets.services.reconcile_confirmed_fulfillments`. La emisi?n y el correo permanecen en `tickets`, sin se?ales ocultas, Celery o Redis.
+## Cuentas de clientes
+
+La app `customers` reutiliza el usuario est?ndar de Django sin cambiar `AUTH_USER_MODEL`. `Customer` es un perfil separado y no otorga permisos del panel. El checkout sigue admitiendo invitados; las reservas nuevas de un cliente autenticado se vinculan expl?citamente. Las compras invitadas se reclaman con un token aleatorio almacenado como hash, de un solo uso y con vencimiento configurable.
+
+El acceso con Google usa OAuth configurable por variables de entorno y `state` en sesi?n; la simulaci?n solo se habilita expl?citamente para desarrollo y pruebas. No se mezclan cuentas de clientes con Administrador o Vendedor. Los tickets contin?an en almacenamiento privado y se autorizan por asociaci?n de cuenta.
+
+Los consentimientos comerciales son eventos auditables separados de la compra y de la creaci?n de cuenta; incluyen versi?n y origen y pueden revocarse sin borrar datos operativos.\n
 La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con el comando `reconcile_fulfillments` o `tickets.services.reconcile_confirmed_fulfillments`. Por lo tanto existe una dependencia explícita y unidireccional `payments -> tickets`; `tickets` no importa `payments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
 
 Los trabajos tienen una concesión temporal (`lease_until`) para evitar doble procesamiento. Un proceso que cae deja el trabajo recuperable después de `TICKETS_FULFILLMENT_STALE_SECONDS`. La operación periódica futura podrá invocar `python manage.py reconcile_fulfillments --limit 100`; esta entrega no instala ni configura un programador.

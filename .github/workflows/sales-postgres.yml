@@ -1,4 +1,4 @@
-name: Sales PostgreSQL tests
+﻿name: Sales PostgreSQL tests
 
 on:
   push:
