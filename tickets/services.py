@@ -3,6 +3,7 @@
 import hashlib
 import secrets
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -413,19 +414,26 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
     """
     job_id = job_or_id.pk if isinstance(job_or_id, TicketFulfillment) else job_or_id
     effective_now = now or timezone.now()
+    stale_after = timedelta(seconds=getattr(settings, "TICKETS_FULFILLMENT_STALE_SECONDS", 900))
     with transaction.atomic():
         job = TicketFulfillment.objects.select_for_update().select_related("booking").get(pk=job_id)
+        if job.next_attempt_at and job.next_attempt_at > effective_now and not retry:
+            return job
         if job.booking.status != BookingStatus.CONFIRMED:
             raise InvalidTicketError("Solo se pueden procesar reservas confirmadas.")
         if job.issue_status == FulfillmentIssueStatus.SUCCEEDED and job.email_status == FulfillmentEmailStatus.SENT:
             return job
-        if job.issue_status == FulfillmentIssueStatus.PROCESSING and not retry:
-            raise InvalidTicketError("El fulfillment ya se encuentra en proceso.")
+        if job.issue_status == FulfillmentIssueStatus.PROCESSING:
+            lease_active = job.lease_until and job.lease_until > effective_now
+            if lease_active:
+                raise InvalidTicketError("El fulfillment ya se encuentra en proceso.")
         job.issue_status = FulfillmentIssueStatus.PROCESSING
         job.attempts += 1
         job.last_attempt_at = effective_now
+        job.lease_until = effective_now + stale_after
+        job.next_attempt_at = None
         job.issue_error = ""
-        job.save(update_fields=["issue_status", "attempts", "last_attempt_at", "issue_error", "updated_at"])
+        job.save(update_fields=["issue_status", "attempts", "last_attempt_at", "lease_until", "next_attempt_at", "issue_error", "updated_at"])
 
     try:
         issue_tickets_for_booking(job.booking_id, now=effective_now)
@@ -434,7 +442,9 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
             job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
             job.issue_status = FulfillmentIssueStatus.FAILED
             job.issue_error = "No se pudieron generar los pasajes. Reintentá desde el panel."
-            job.save(update_fields=["issue_status", "issue_error", "updated_at"])
+            job.next_attempt_at = effective_now + timedelta(seconds=getattr(settings, "TICKETS_RECONCILE_RETRY_DELAY_SECONDS", 0))
+            job.lease_until = None
+            job.save(update_fields=["issue_status", "issue_error", "next_attempt_at", "lease_until", "updated_at"])
         return job
 
     with transaction.atomic():
@@ -442,7 +452,8 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
         job.issue_status = FulfillmentIssueStatus.SUCCEEDED
         job.email_status = FulfillmentEmailStatus.PENDING
         job.issue_error = ""
-        job.save(update_fields=["issue_status", "email_status", "issue_error", "updated_at"])
+        job.lease_until = effective_now + stale_after
+        job.save(update_fields=["issue_status", "email_status", "issue_error", "lease_until", "updated_at"])
 
     try:
         send_booking_tickets(job.booking_id, retry=retry, now=effective_now)
@@ -453,7 +464,9 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
             job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
             job.email_status = FulfillmentEmailStatus.FAILED
             job.email_error = "No se pudo enviar el correo. Reintentá desde el panel."
-            job.save(update_fields=["email_status", "email_error", "updated_at"])
+            job.next_attempt_at = effective_now + timedelta(seconds=getattr(settings, "TICKETS_RECONCILE_RETRY_DELAY_SECONDS", 0))
+            job.lease_until = None
+            job.save(update_fields=["email_status", "email_error", "next_attempt_at", "lease_until", "updated_at"])
         return job
 
     with transaction.atomic():
@@ -461,7 +474,9 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
         job.email_status = FulfillmentEmailStatus.SENT
         job.email_error = ""
         job.completed_at = timezone.now()
-        job.save(update_fields=["email_status", "email_error", "completed_at", "updated_at"])
+        job.next_attempt_at = None
+        job.lease_until = None
+        job.save(update_fields=["email_status", "email_error", "completed_at", "next_attempt_at", "lease_until", "updated_at"])
         TicketAuditEvent.objects.create(
             actor=actor,
             action=TicketAuditEvent.Action.EMAIL,
@@ -477,7 +492,8 @@ def reconcile_confirmed_fulfillments(limit=None):
     """Recupera trabajos pendientes/fallidos de reservas confirmadas."""
     qs = TicketFulfillment.objects.filter(booking__status=BookingStatus.CONFIRMED).filter(
         models.Q(issue_status__in=[FulfillmentIssueStatus.PENDING, FulfillmentIssueStatus.FAILED])
-        | models.Q(email_status=FulfillmentEmailStatus.FAILED)
+        | models.Q(email_status__in=[FulfillmentEmailStatus.PENDING, FulfillmentEmailStatus.FAILED])
+        | models.Q(issue_status=FulfillmentIssueStatus.PROCESSING, lease_until__lte=timezone.now())
     ).order_by("updated_at", "pk")
     if limit:
         qs = qs[:limit]

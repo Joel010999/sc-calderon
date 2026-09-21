@@ -342,6 +342,8 @@ class TicketFulfillment(models.Model):
     email_error = models.CharField("error de correo", max_length=255, blank=True, default="")
     attempts = models.PositiveIntegerField("intentos", default=0)
     last_attempt_at = models.DateTimeField("último intento", null=True, blank=True)
+    next_attempt_at = models.DateTimeField("próximo intento permitido", null=True, blank=True)
+    lease_until = models.DateTimeField("bloqueo de procesamiento hasta", null=True, blank=True)
     completed_at = models.DateTimeField("finalizado", null=True, blank=True)
     created_at = models.DateTimeField("creado", auto_now_add=True)
     updated_at = models.DateTimeField("actualizado", auto_now=True)
@@ -361,6 +363,7 @@ class TicketFulfillment(models.Model):
         ]
         indexes = [
             models.Index(fields=["issue_status", "email_status"], name="tickets_fulfill_status_idx"),
+            models.Index(fields=["next_attempt_at", "updated_at"], name="tickets_fulfill_retry_idx"),
         ]
 
     def __str__(self):

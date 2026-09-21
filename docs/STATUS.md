@@ -209,3 +209,13 @@ Actualizar este documento cuando finalice cada módulo.
 ## Integraci?n de fulfillment de tickets (2026-09-20)
 
 Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendiente de validaci?n final. Se agreg? trabajo durable de emisi?n/correo, reintentos protegidos en panel, descarga del invitado desde resumen de sesi?n y reconciliaci?n de reservas confirmadas.
+
+## Endurecimiento operativo de fulfillment (2026-09-21)
+
+Estado: implementado en `feature/fulfillment-operations-hardening-20260921`, pendiente de validación final.
+
+- Se agregaron concesiones temporales para recuperar trabajos `PROCESSING` abandonados y campos de próximo intento.
+- Se agregó el comando `reconcile_fulfillments` con dry-run, límite, filtros por estado/reserva y resumen de resultados.
+- Se agregó la bandeja global personalizada `/panel/fulfillment/` con filtros y acciones POST protegidas para Administrador y Vendedor.
+- Los workflows PostgreSQL ejecutan validaciones en pushes a `main` y Pull Requests dirigidos a `main`.
+- La dependencia real es `payments -> tickets` (unidireccional y perezosa); la documentación anterior que decía que payments no dependía de tickets quedó corregida.
