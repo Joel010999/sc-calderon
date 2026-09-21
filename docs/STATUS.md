@@ -214,3 +214,13 @@ Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendi
 Implementado en la rama de trabajo: registro y login local, recuperaci?n por enlace, perfil `customers`, asociaci?n de nuevas reservas autenticadas, reclamo expl?cito de compras invitadas con token de un solo uso y vencimiento, secci?n Mis viajes con descarga autorizada de tickets y consentimiento comercial revocable. Google OAuth qued? preparado y simulable sin credenciales reales.
 
 Pendiente: entrega de enlaces de reclamo y recuperaci?n mediante proveedor de correo productivo, configuraci?n/validaci?n de credenciales Google de producci?n, Apple, campa?as comerciales y cualquier cambio de datos personales pendiente.\n
+
+## Endurecimiento operativo de fulfillment (2026-09-21)
+
+Estado: implementado en `feature/fulfillment-operations-hardening-20260921`, pendiente de validación final.
+
+- Se agregaron concesiones temporales para recuperar trabajos `PROCESSING` abandonados y campos de próximo intento.
+- Se agregó el comando `reconcile_fulfillments` con dry-run, límite, filtros por estado/reserva y resumen de resultados.
+- Se agregó la bandeja global personalizada `/panel/fulfillment/` con filtros y acciones POST protegidas para Administrador y Vendedor.
+- Los workflows PostgreSQL ejecutan validaciones en pushes a `main` y Pull Requests dirigidos a `main`.
+- La dependencia real es `payments -> tickets` (unidireccional y perezosa); la documentación anterior que decía que payments no dependía de tickets quedó corregida.

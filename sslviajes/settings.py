@@ -184,6 +184,12 @@ STORAGES = {
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
+EMAIL_HOST = os.getenv('EMAIL_HOST', '')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 25))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False').lower() in ('true', '1', 't')
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 't')
 
 # Sales configuration
 SALES_MAX_PASSENGERS_PER_BOOKING = int(os.getenv('SALES_MAX_PASSENGERS_PER_BOOKING', 4))
@@ -202,6 +208,9 @@ PAYMENTS_ALLOWED_VOUCHER_EXTENSIONS = ('.pdf', '.jpg', '.jpeg', '.png')
 TICKETS_STORAGE_ROOT = Path(os.getenv('TICKETS_STORAGE_ROOT', str(BASE_DIR / 'private_tickets')))
 TICKETS_VERIFICATION_BASE_URL = os.getenv('TICKETS_VERIFICATION_BASE_URL', 'https://scviajes.com.ar')
 TICKETS_RATE_LIMIT_PER_MINUTE = int(os.getenv('TICKETS_RATE_LIMIT_PER_MINUTE', 30))
+TICKETS_FULFILLMENT_STALE_SECONDS = int(os.getenv('TICKETS_FULFILLMENT_STALE_SECONDS', 900))
+TICKETS_RECONCILE_MAX_LIMIT = int(os.getenv('TICKETS_RECONCILE_MAX_LIMIT', 100))
+TICKETS_RECONCILE_RETRY_DELAY_SECONDS = int(os.getenv('TICKETS_RECONCILE_RETRY_DELAY_SECONDS', 0))
 # Bank transfer configuration
 BANK_TRANSFER_ACCOUNT_HOLDER = os.getenv("BANK_TRANSFER_ACCOUNT_HOLDER", "SC Viajes S.R.L.")
 BANK_TRANSFER_ALIAS = os.getenv("BANK_TRANSFER_ALIAS", "scviajes.mp")

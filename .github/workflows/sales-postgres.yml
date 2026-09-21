@@ -2,15 +2,9 @@
 
 on:
   push:
-    branches:
-      - feature/sales-foundation-20260917
-      - feature/ticket-fulfillment-integration-20260920
-      - feature/manual-reservations-panel-20260918
-      - feature/manual-payments-20260918
-      - feature/public-checkout-foundation-20260919
-      - feature/public-transfer-payment-20260919
-      - feature/customer-accounts-consent-20260920
+    branches: [main, 'feature/**']
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read

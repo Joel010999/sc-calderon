@@ -234,3 +234,10 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - Google queda preparado mediante OAuth con credenciales exclusivamente en entorno y sin secretos versionados. Apple queda pendiente.
 - El reclamo de una compra invitada usa un token aleatorio, guardado como hash, de un solo uso y con vencimiento. La entrega autom?tica por correo queda pendiente de la infraestructura de correo.
 - El consentimiento comercial es opcional, separado, desmarcado por defecto y auditable; retirarlo no elimina reservas ni pasajes. Campa?as y env?os masivos quedan pendientes.\n
+
+## Endurecimiento operativo de fulfillment (2026-09-21)
+
+- `payments` depende explícitamente de `tickets` mediante una importación perezosa para crear el trabajo durable; la dependencia no es circular.
+- `TicketFulfillment` conserva intentos, último intento, `next_attempt_at` y una concesión `lease_until`. Las concesiones vencidas se pueden recuperar sin cambiar tickets, UUID, QR ni pagos.
+- La reconciliación manual se realiza con `python manage.py reconcile_fulfillments [--dry-run] [--limit N] [--status ...] [--booking UUID]`. El comando no ejecuta migraciones ni requiere infraestructura externa.
+- La bandeja global del panel usa POST+CSRF, roles de Administrador/Vendedor y auditoría. No se habilitan acciones mutables por GET.

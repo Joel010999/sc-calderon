@@ -4,6 +4,7 @@ from . import operations_views as operations
 from . import trip_views as trips
 from . import reservation_views as reservations
 from . import payment_views as payments
+from . import fulfillment_views as fulfillment
 
 app_name = 'panel'
 
@@ -23,6 +24,8 @@ urlpatterns = [
     path('pagos/<uuid:public_id>/', payments.payment_detail, name='payment_detail'),
     path('pagos/<uuid:public_id>/revisar/', payments.transfer_review, name='transfer_review'),
     path('pagos/<uuid:public_id>/comprobante/', payments.download_voucher, name='payment_voucher'),
+    path('fulfillment/', fulfillment.fulfillment_list, name='fulfillment_list'),
+    path('fulfillment/reconciliar/', fulfillment.fulfillment_reconcile, name='fulfillment_reconcile'),
 
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),

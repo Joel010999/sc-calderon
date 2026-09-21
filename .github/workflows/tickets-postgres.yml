@@ -2,13 +2,9 @@ name: Tickets PostgreSQL CI
 
 on:
   push:
-    branches:
-      - feature/ticket-pdf-foundation-20260919
-      - feature/ticket-fulfillment-integration-20260920
+    branches: [main, 'feature/**']
   pull_request:
-    branches:
-      - feature/ticket-pdf-foundation-20260919
-      - feature/ticket-fulfillment-integration-20260920
+    branches: [main]
 
 permissions:
   contents: read
