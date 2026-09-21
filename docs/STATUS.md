@@ -209,3 +209,8 @@ Actualizar este documento cuando finalice cada módulo.
 ## Integraci?n de fulfillment de tickets (2026-09-20)
 
 Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendiente de validaci?n final. Se agreg? trabajo durable de emisi?n/correo, reintentos protegidos en panel, descarga del invitado desde resumen de sesi?n y reconciliaci?n de reservas confirmadas.
+## Entrega de cuentas de clientes (2026-09-20)
+
+Implementado en la rama de trabajo: registro y login local, recuperaci?n por enlace, perfil `customers`, asociaci?n de nuevas reservas autenticadas, reclamo expl?cito de compras invitadas con token de un solo uso y vencimiento, secci?n Mis viajes con descarga autorizada de tickets y consentimiento comercial revocable. Google OAuth qued? preparado y simulable sin credenciales reales.
+
+Pendiente: entrega de enlaces de reclamo y recuperaci?n mediante proveedor de correo productivo, configuraci?n/validaci?n de credenciales Google de producci?n, Apple, campa?as comerciales y cualquier cambio de datos personales pendiente.\n

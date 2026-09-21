@@ -83,6 +83,7 @@ INSTALLED_APPS = [
     'sales.apps.SalesConfig',
     'payments.apps.PaymentsConfig',
     'tickets.apps.TicketsConfig',
+    'customers.apps.CustomersConfig',
 ]
 
 MIDDLEWARE = [
@@ -209,3 +210,17 @@ BANK_TRANSFER_CUIT = os.getenv("BANK_TRANSFER_CUIT", "")
 BANK_TRANSFER_ENTITY = os.getenv("BANK_TRANSFER_ENTITY", "Mercado Pago")
 PAYMENTS_PROOF_WINDOW_MINUTES = int(os.getenv("PAYMENTS_PROOF_WINDOW_MINUTES", 5))
 PAYMENTS_REVIEW_WINDOW_HOURS = int(os.getenv("PAYMENTS_REVIEW_WINDOW_HOURS", 24))
+
+# Customer accounts & Authentication
+AUTHENTICATION_BACKENDS = [
+    'customers.backends.EmailAuthBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# Google OAuth (strictly configured by env)
+GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
+GOOGLE_OAUTH_ENABLED = bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET)
+GOOGLE_OAUTH_SIMULATION_ENABLED = os.getenv('GOOGLE_OAUTH_SIMULATION_ENABLED', 'False').lower() in ('true', '1', 't')
+
+CUSTOMERS_CLAIM_TOKEN_HOURS = int(os.getenv("CUSTOMERS_CLAIM_TOKEN_HOURS", "24"))

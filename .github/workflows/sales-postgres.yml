@@ -1,4 +1,4 @@
-name: Sales PostgreSQL tests
+﻿name: Sales PostgreSQL tests
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
       - feature/manual-payments-20260918
       - feature/public-checkout-foundation-20260919
       - feature/public-transfer-payment-20260919
+      - feature/customer-accounts-consent-20260920
   pull_request:
 
 permissions:

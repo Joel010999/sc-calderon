@@ -36,6 +36,15 @@
       <a href="{% url 'buscar_viajes' %}">Buscador</a>
       <a href="/#como-funciona">Cómo funciona</a>
       <a href="/#preguntas">Preguntas frecuentes</a>
+      {% if user.is_authenticated %}
+        <a href="{% url 'mis_viajes' %}">Mis viajes</a>
+        <form method="POST" action="{% url 'logout_cliente' %}" style="display: inline; margin: 0;">
+          {% csrf_token %}
+          <button type="submit" class="button button--ghost" style="padding: 0.4rem 0.8rem; font-size: 0.9rem; border: none; background: transparent; color: inherit; cursor: pointer;">Cerrar sesión</button>
+        </form>
+      {% else %}
+        <a href="{% url 'login_cliente' %}">Ingresar</a>
+      {% endif %}
       <a href="{% url 'buscar_viajes' %}" class="button button--primary nav-cta">
         Reservar
       </a>
@@ -70,6 +79,15 @@
 
   <div class="page-shell">
     <main>
+      {% if messages %}
+        <div class="container" style="max-width: 1000px; margin: 1.5rem auto 0 auto; padding: 0 1.5rem;">
+          {% for message in messages %}
+            <div class="alert alert--{{ message.tags }}" style="padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1rem; font-weight: 500; {% if message.tags == 'error' %}background: #fee2e2; color: #991b1b; border: 1px solid #f87171;{% elif message.tags == 'success' %}background: #dcfce7; color: #166534; border: 1px solid #86efac;{% else %}background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc;{% endif %}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
       {% block content %}
       <!-- ═══════════════════ HERO ═══════════════════ -->
       <section class="hero" id="inicio">

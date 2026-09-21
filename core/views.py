@@ -696,6 +696,28 @@ def create_public_booking(request):
     request.session["active_held_booking_id"] = str(booking.public_id)
     request.session.pop("checkout_flow", None)
 
+    # 9. Asociación con cuenta de cliente o generación de token de reclamo para invitado
+    if request.user.is_authenticated:
+        try:
+            from customers.models import Customer, normalize_email
+            from customers.services import associate_booking_with_customer
+            normalized_u_email = normalize_email(request.user.email or request.user.username)
+            if request.user.is_staff or request.user.is_superuser:
+                raise ValidationError("Los usuarios internos no se asocian como clientes.")
+            customer = Customer.objects.filter(user=request.user).first()
+            if not customer:
+                raise ValidationError("La cuenta de cliente no está disponible.")
+            associate_booking_with_customer(customer, booking)
+        except Exception:
+            logger.exception("Error al asociar reserva a cliente autenticado")
+    else:
+        try:
+            from customers.services import create_booking_claim_token
+            claim_token = create_booking_claim_token(booking)
+            request.session[f"claim_token_{booking.public_id}"] = claim_token
+        except Exception:
+            logger.exception("Error al generar claim token para reserva invitada")
+
     return redirect("resumen_reserva", public_id=booking.public_id)
 
 
@@ -774,6 +796,7 @@ def booking_summary(request, public_id):
         "is_confirmed": (booking.status == BookingStatus.CONFIRMED),
         "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ),
         "issued_tickets": booking.tickets.filter(status="ISSUED").order_by("leg__sequence", "passenger__position"),
+        "claim_token": request.session.get(f"claim_token_{booking.public_id}", ""),
     })
 
 
@@ -1027,13 +1050,15 @@ def subir_comprobante(request, public_id):
 
 
 def login_cliente(request):
-    """Vista preparada para el login de clientes (pasajeros)."""
-    return render(request, "core/base.html")
+    """Inicia sesión del cliente delegando en la vista especializada de customers."""
+    from customers.views import customer_login
+    return customer_login(request)
 
 
 def registro_cliente(request):
-    """Vista preparada para el registro de clientes (pasajeros)."""
-    return render(request, "core/base.html")
+    """Registra un nuevo cliente delegando en la vista especializada de customers."""
+    from customers.views import customer_register
+    return customer_register(request)
 
 
 def health_check(request):
