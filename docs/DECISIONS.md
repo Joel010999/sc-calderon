@@ -226,3 +226,10 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - `payments` confirma pago, reserva y butacas en una transacci?n; una importaci?n perezosa crea el trabajo durable `TicketFulfillment` antes del commit para evitar perder la intenci?n si el proceso cae.
 - `transaction.on_commit` procesa el trabajo fuera de la transacci?n. Los fallos de PDF o correo se registran por separado, no revierten el pago y se recuperan mediante `process_booking_fulfillment(..., retry=True)` o `reconcile_confirmed_fulfillments`.
 - No se usan signals, Celery, Redis, Mercado Pago QR ni Payway.
+
+## Endurecimiento operativo de fulfillment (2026-09-21)
+
+- `payments` depende explícitamente de `tickets` mediante una importación perezosa para crear el trabajo durable; la dependencia no es circular.
+- `TicketFulfillment` conserva intentos, último intento, `next_attempt_at` y una concesión `lease_until`. Las concesiones vencidas se pueden recuperar sin cambiar tickets, UUID, QR ni pagos.
+- La reconciliación manual se realiza con `python manage.py reconcile_fulfillments [--dry-run] [--limit N] [--status ...] [--booking UUID]`. El comando no ejecuta migraciones ni requiere infraestructura externa.
+- La bandeja global del panel usa POST+CSRF, roles de Administrador/Vendedor y auditoría. No se habilitan acciones mutables por GET.

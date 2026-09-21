@@ -1,0 +1,20 @@
+{% extends 'panel/base.html' %}
+{% block content %}
+<div class="container operations">
+  <header class="ops-header"><div><p class="ops-eyebrow">Entrega de pasajes</p><h1>Bandeja de fulfillment</h1></div></header>
+  <form method="get" class="ops-card" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end">
+    <label>Estado<select name="status" class="form-input"><option value="">Todos</option><option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pendientes</option><option value="failed" {% if selected_status == 'failed' %}selected{% endif %}>Fallidos</option>{% for value,label in issue_statuses %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>Emisión: {{ label }}</option>{% endfor %}{% for value,label in email_statuses %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>Correo: {{ label }}</option>{% endfor %}</select></label>
+    <label>Fecha<input type="date" name="date" value="{{ selected_date }}" class="form-input"></label>
+    <label>Reserva o comprador<input type="search" name="q" value="{{ search_q }}" class="form-input"></label>
+    <button class="ops-button secondary" type="submit">Filtrar</button>
+  </form>
+  <form method="post" action="{% url 'panel:fulfillment_reconcile' %}">{% csrf_token %}
+    {% if missing_bookings %}<section class="ops-card"><h2>Reservas confirmadas sin trabajo registrado</h2><div class="table-scroll"><table class="table-audit"><thead><tr><th></th><th>Reserva</th><th>Comprador</th><th>Confirmada</th><th></th></tr></thead><tbody>{% for booking in missing_bookings %}<tr><td><input type="checkbox" name="fulfillment_ids" value="booking:{{ booking.pk }}"></td><td><a href="{% url 'panel:booking_detail' booking.public_id %}">{{ booking.public_id }}</a></td><td>{{ booking.email }}</td><td>{{ booking.confirmed_at|date:'d/m/Y H:i' }}</td><td><button class="ops-button secondary" type="submit" name="fulfillment_ids" value="booking:{{ booking.pk }}">Reconciliar</button></td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+    <section class="ops-card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Trabajos recientes</h2><button class="ops-button primary" type="submit">Reconciliar seleccionados (máx. 20)</button></div>
+      <div class="table-scroll"><table class="table-audit"><thead><tr><th></th><th>Reserva</th><th>Comprador</th><th>Pago</th><th>Fulfillment</th><th>Emisión</th><th>Correo</th><th>Intentos</th><th>Error</th><th>Fechas</th><th></th></tr></thead><tbody>
+      {% for job in fulfillments %}<tr><td><input type="checkbox" name="fulfillment_ids" value="{{ job.pk }}"></td><td><a href="{% url 'panel:booking_detail' job.booking.public_id %}">{{ job.booking.public_id }}</a></td><td>{{ job.booking.email }}</td><td>{% with payment=job.booking.payments.all|first %}{{ payment.get_status_display|default:'—' }}{% endwith %}</td><td>{{ job.issue_status }}/{{ job.email_status }}</td><td>{{ job.get_issue_status_display }}</td><td>{{ job.get_email_status_display }}</td><td>{{ job.attempts }}</td><td>{{ job.issue_error|default:job.email_error|default:'—' }}</td><td>Último: {{ job.last_attempt_at|date:'d/m/Y H:i'|default:'—' }}<br>Fin: {{ job.completed_at|date:'d/m/Y H:i'|default:'—' }}</td><td><button class="ops-button secondary" type="submit" name="fulfillment_ids" value="{{ job.pk }}">Reintentar</button></td></tr>{% empty %}<tr><td colspan="11">No hay trabajos para mostrar.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  </form>
+</div>
+{% endblock %}

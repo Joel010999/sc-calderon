@@ -77,4 +77,6 @@ Las reglas del producto se encuentran en [PROJECT_SPEC.md](PROJECT_SPEC.md). Las
 
 ## Integraci?n de fulfillment econ?mico
 
-La confirmaci?n contin?a siendo responsabilidad de `payments`. Dentro de la misma transacci?n se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con `tickets.services.reconcile_confirmed_fulfillments`. La emisi?n y el correo permanecen en `tickets`, sin se?ales ocultas, Celery o Redis.
+La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con el comando `reconcile_fulfillments` o `tickets.services.reconcile_confirmed_fulfillments`. Por lo tanto existe una dependencia explícita y unidireccional `payments -> tickets`; `tickets` no importa `payments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
+
+Los trabajos tienen una concesión temporal (`lease_until`) para evitar doble procesamiento. Un proceso que cae deja el trabajo recuperable después de `TICKETS_FULFILLMENT_STALE_SECONDS`. La operación periódica futura podrá invocar `python manage.py reconcile_fulfillments --limit 100`; esta entrega no instala ni configura un programador.
