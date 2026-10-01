@@ -1,5 +1,13 @@
 # Arquitectura de SC Viajes
 
+## FundaciÃ³n de validaciÃ³n de embarque
+
+`tickets.BoardingRecord` es el registro durable del embarque. Cada fila conserva el pasaje, pasajero, viaje, asignaciÃ³n de butaca, operador y fecha/hora consciente de zona horaria; una restricciÃ³n Ãºnica condicional permite un solo registro `ACTIVE` por pasaje y conserva las filas `REVERSED` como historial.
+
+La validaciÃ³n interna vive bajo `/panel/embarques/` y reutiliza el token opaco cuyo hash ya estÃ¡ almacenado en `Ticket.verification_token_hash`, ademÃ¡s del cÃ³digo legible del pasaje. El servicio recarga y comprueba en servidor el pasaje, reserva `CONFIRMED`, asignaciÃ³n `CONFIRMED`, relaciones cruzadas y coincidencia exacta con el viaje seleccionado. La primera validaciÃ³n crea el registro y la siguiente devuelve el registro activo sin duplicarlo; la reversiÃ³n es exclusivamente administrativa, exige motivo, usa POST+CSRF y conserva el historial.
+
+El manifiesto agrega el estado `Embarcado`/`Pendiente` y sus totales mediante una anotaciÃ³n `Exists`, sin escribir al consultar ni exponer informaciÃ³n de contacto, pagos o comprobantes. La verificaciÃ³n pÃºblica del QR permanece de consulta y no registra embarques. CÃ¡mara web, funcionamiento offline y polÃ­tica automÃ¡tica de no-show quedan fuera de alcance.
+
 ## Base técnica
 
 - Monolito modular en Django.

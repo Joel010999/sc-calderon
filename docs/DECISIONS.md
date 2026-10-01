@@ -1,5 +1,13 @@
 # Decisiones de SC Viajes
 
+## ValidaciÃ³n segura de embarque (2026-10-01)
+
+- El dominio de embarque pertenece a `tickets` porque el pasaje ya vincula el token QR seguro con su reserva, tramo, pasajero y asignaciÃ³n de butaca.
+- `BoardingRecord` conserva todos los embarques y sus reversiones. Solo puede existir un registro activo por pasaje mediante una restricciÃ³n Ãºnica condicional compatible con PostgreSQL y SQLite.
+- El panel acepta el token del QR existente o el cÃ³digo exacto del pasaje, pero nunca confÃ­a en UUID pÃºblicos ni en relaciones enviadas por el navegador. Se exige seleccionar el viaje y se revalidan server-side estado del pasaje, reserva, asignaciÃ³n, relaciones y viaje.
+- Administrador y Vendedor pueden validar; solo Administrador puede revertir con motivo obligatorio. Ambas operaciones generan auditorÃ­a y las reversiones no eliminan datos.
+- La cÃ¡mara del navegador, el funcionamiento offline y la polÃ­tica automÃ¡tica de no-show quedan explÃ­citamente fuera de esta entrega.
+
 ## Confirmado
 
 La especificación es la referencia completa. Este resumen no convierte referencias iniciales ni puntos pendientes en requisitos definitivos.
