@@ -243,3 +243,12 @@ Estado: implementado en `feature/trip-passenger-manifest-20261001`, pendiente de
 - Incluye resumen de subidas, bajadas y pasajeros que continúan por `TripStop`, acceso desde el detalle, vista de impresión y exportación CSV UTF-8 con BOM y protección contra fórmulas.
 - Acceso restringido a Administrador/Vendedor; no expone contacto, pagos, comprobantes, tickets ni auditoría y no ofrece acciones mutables por GET.
 - El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro.
+
+## Ciclo de vida de viajes y corte posterior al inicio (2026-10-01)
+
+Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendiente de validación final del coordinador.
+
+- Se agregaron servicios idempotentes y transaccionales para iniciar y finalizar viajes, con `select_for_update`, permisos Administrador/Vendedor y auditoría.
+- El detalle operativo ofrece acciones exclusivamente POST+CSRF y advierte reservas HELD y pagos pendientes sin liberarlos.
+- La creación de reservas continúa bloqueada server-side desde `STARTED`; el corte online configurable de una hora permanece vigente.
+- No se agregaron modelos ni migraciones; se verificaron `check`, `makemigrations --check --dry-run`, `diff --check` y 110 pruebas afectadas en SQLite.

@@ -18,7 +18,7 @@ from operations.models import Bus, Route, Seat, SeatCategory, Trip, TripFare, Tr
 from operations.services import schedule_trip
 from .models import AuditEvent
 from .trip_forms import TripFareForm
-from .trip_services import create_panel_trip, save_fare, set_fare_active
+from .trip_services import create_panel_trip, save_fare, set_fare_active, start_trip, complete_trip
 
 
 class TripDataMixin:
@@ -88,6 +88,30 @@ class TripDataMixin:
 
     def database_state(self):
         return [list(model.objects.order_by("pk").values()) for model in (Trip, TripStop, TripFare, AuditEvent)]
+
+
+class TripLifecycleTests(TripDataMixin, TestCase):
+    def test_seller_can_start_and_complete_with_idempotent_audit(self):
+        trip = self.make_trip()
+        started, changed = start_trip(actor=self.seller, trip_pk=trip.pk)
+        self.assertTrue(changed)
+        self.assertEqual(started.status, Trip.Status.STARTED)
+        started_again, changed = start_trip(actor=self.seller, trip_pk=trip.pk)
+        self.assertFalse(changed)
+        self.assertEqual(started_again.status, Trip.Status.STARTED)
+        completed, changed = complete_trip(actor=self.seller, trip_pk=trip.pk)
+        self.assertTrue(changed)
+        self.assertEqual(completed.status, Trip.Status.COMPLETED)
+        self.assertEqual(AuditEvent.objects.filter(entity_id=str(trip.pk)).count(), 2)
+
+    def test_invalid_transition_and_unauthorized_actor_are_rejected(self):
+        trip = self.make_trip()
+        with self.assertRaises(PermissionDenied):
+            start_trip(actor=self.common, trip_pk=trip.pk)
+        trip.status = Trip.Status.COMPLETED
+        trip.save(update_fields=["status"])
+        with self.assertRaises(ValidationError):
+            start_trip(actor=self.admin, trip_pk=trip.pk)
 
 
 class TripCreationTests(TripDataMixin, TestCase):
