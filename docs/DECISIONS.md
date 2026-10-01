@@ -241,3 +241,8 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - `TicketFulfillment` conserva intentos, último intento, `next_attempt_at` y una concesión `lease_until`. Las concesiones vencidas se pueden recuperar sin cambiar tickets, UUID, QR ni pagos.
 - La reconciliación manual se realiza con `python manage.py reconcile_fulfillments [--dry-run] [--limit N] [--status ...] [--booking UUID]`. El comando no ejecuta migraciones ni requiere infraestructura externa.
 - La bandeja global del panel usa POST+CSRF, roles de Administrador/Vendedor y auditoría. No se habilitan acciones mutables por GET.
+## Manifiesto operativo de pasajeros (2026-10-01)
+
+- El manifiesto se limita a un viaje solicitado y muestra solamente asignaciones de butaca `CONFIRMED` pertenecientes a reservas `CONFIRMED`; no incluye estados `HELD`, `EXPIRED` ni `RELEASED`.
+- Los pasajeros de una compra de ida y vuelta aparecen una vez por cada viaje y utilizan los `TripStop` y la butaca del tramo correspondiente.
+- El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro. Esta entrega implementa una vista operativa, de impresión y CSV, sin marcado de embarque, QR, caja, cancelaciones ni envío automático.

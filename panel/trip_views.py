@@ -10,7 +10,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from operations.models import Bus, Route, Trip, TripFare, TripStop
 from .operations_views import render_operations
-from .permissions import operations_access
+from .permissions import can_manage_reservations, operations_access
 from .trip_forms import TripFareForm, TripScheduleForm, TripSelectionForm
 from .trip_services import FARE_ERROR, create_panel_trip, save_fare, set_fare_active
 
@@ -48,7 +48,8 @@ def trip_detail(request, pk):
     )
     trip = get_object_or_404(queryset, pk=pk)
     return render_operations(request, "trip_detail", title=f"Viaje {trip.pk}",
-                             trip=trip, display_timezone=settings.TIME_ZONE)
+                             trip=trip, display_timezone=settings.TIME_ZONE,
+                             can_access_manifest=can_manage_reservations(request.user))
 
 
 @operations_access(write=True)
