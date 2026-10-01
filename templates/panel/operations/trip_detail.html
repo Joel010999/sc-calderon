@@ -3,7 +3,7 @@
 {% block operations_content %}
 {% timezone display_timezone %}
 <p><a href="{% url 'panel:trips' %}">← Volver a viajes</a></p>
-<section class="ops-card"><h2>{{ trip.route.name }}</h2>
+<section class="ops-card"><header class="ops-header"><h2>{{ trip.route.name }}</h2>{% if can_access_manifest %}<a class="ops-button" href="{% url 'panel:trip_manifest' trip.pk %}">Ver manifiesto de pasajeros</a>{% endif %}</header>
 <dl class="bus-data"><div><dt>Recorrido</dt><dd>{{ trip.route.code }}</dd></div><div><dt>Colectivo</dt><dd>{{ trip.bus.code }} · {{ trip.bus.display_name }}</dd></div><div><dt>Estado</dt><dd>{{ trip.get_status_display }}</dd></div><div><dt>Salida</dt><dd>{{ trip.departure_at|date:'d/m/Y H:i' }}</dd></div><div><dt>Llegada</dt><dd>{{ trip.arrival_at|date:'d/m/Y H:i'|default:'Sin cronograma' }}</dd></div></dl>
 <p class="muted">Horario argentino. El recorrido, colectivo, cronograma y estado no son editables en esta etapa.</p></section>
 <section class="ops-card"><h2>Cronograma de paradas</h2>
