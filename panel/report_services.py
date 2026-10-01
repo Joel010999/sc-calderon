@@ -1,8 +1,10 @@
 """Consultas de reportes de ventas: lectura de pagos aprobados confirmados."""
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db.models import Count, Sum
 from django.utils import timezone
 
@@ -11,6 +13,7 @@ from sales.models import BookingChannel, BookingStatus
 
 
 DEFAULT_MAX_RANGE_DAYS = 366
+REPORT_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def _local_date(value):
@@ -31,36 +34,66 @@ def build_sales_report(params):
             error = "La fecha hasta debe ser igual o posterior a la fecha desde."
         elif (end_date - start_date).days + 1 > max_days:
             error = f"El rango no puede superar {max_days} días."
-    tz = timezone.get_current_timezone()
+    # El reporte tiene una zona contractual independiente de la configuracion
+    # del request: los limites y la fecha de confirmacion son hora argentina.
+    tz = REPORT_TIMEZONE
     qs = Payment.objects.filter(
         status=PaymentStatus.APPROVED,
         booking__status=BookingStatus.CONFIRMED,
-    ).select_related("booking", "booking__seller").order_by("-created_at", "-pk")
+    ).select_related("booking", "booking__seller").annotate(
+        passenger_count=Count("booking__passengers", distinct=True),
+        leg_count=Count("booking__legs", distinct=True),
+    ).order_by("-booking__confirmed_at", "-pk")
     if start_date and end_date and not error:
         start = timezone.make_aware(datetime.combine(start_date, time.min), tz)
         end = timezone.make_aware(datetime.combine(end_date + timedelta(days=1), time.min), tz)
-        qs = qs.filter(created_at__gte=start, created_at__lt=end)
+        qs = qs.filter(booking__confirmed_at__gte=start, booking__confirmed_at__lt=end)
     elif start_date and not error:
         start = timezone.make_aware(datetime.combine(start_date, time.min), tz)
-        qs = qs.filter(created_at__gte=start)
+        qs = qs.filter(booking__confirmed_at__gte=start)
     elif end_date and not error:
         end = timezone.make_aware(datetime.combine(end_date + timedelta(days=1), time.min), tz)
-        qs = qs.filter(created_at__lt=end)
+        qs = qs.filter(booking__confirmed_at__lt=end)
     if params.get("medio") in PaymentMethod.values:
         qs = qs.filter(method=params["medio"])
     if params.get("canal") in BookingChannel.values:
         qs = qs.filter(booking__channel=params["canal"])
-    if params.get("vendedor", "").isdigit():
-        qs = qs.filter(booking__seller_id=int(params["vendedor"]))
-    total = qs.aggregate(amount=Sum("amount"), payments=Count("pk"))
+    seller_value = params.get("vendedor", "")
+    seller_ids = set(
+        get_user_model().objects.filter(
+            is_active=True, groups__name__in=["Administrador", "Vendedor"]
+        ).values_list("pk", flat=True)
+    )
+    if seller_value == "sin-vendedor":
+        qs = qs.filter(booking__seller__isnull=True)
+    elif seller_value.isdigit() and int(seller_value) in seller_ids:
+        qs = qs.filter(booking__seller_id=int(seller_value))
+    total = qs.aggregate(
+        amount=Sum("amount"), payments=Count("pk", distinct=True),
+        sales=Count("booking_id", distinct=True),
+        passengers=Count("booking__passengers", distinct=True),
+        legs=Count("booking__legs", distinct=True),
+    )
+    by_method = qs.values("method").annotate(count=Count("pk", distinct=True), amount=Sum("amount")).order_by("method")
+    by_channel = qs.values("booking__channel").annotate(count=Count("pk", distinct=True), amount=Sum("amount")).order_by("booking__channel")
+    by_seller = qs.values("booking__seller__username").annotate(count=Count("pk", distinct=True), amount=Sum("amount")).order_by("booking__seller__username")
+    sellers = get_user_model().objects.filter(
+        is_active=True, groups__name__in=["Administrador", "Vendedor"]
+    ).distinct().order_by("username")
     return {
         "queryset": qs,
         "total_amount": total["amount"] or Decimal("0.00"),
         "payment_count": total["payments"] or 0,
+        "confirmed_sales_count": total["sales"] or 0,
+        "passenger_count": total["passengers"] or 0,
+        "leg_count": total["legs"] or 0,
+        "cash_amount": qs.filter(method=PaymentMethod.CASH).aggregate(v=Sum("amount"))["v"] or Decimal("0.00"),
+        "transfer_amount": qs.filter(method=PaymentMethod.BANK_TRANSFER).aggregate(v=Sum("amount"))["v"] or Decimal("0.00"),
         "error": error,
         "start_date": start_date,
         "end_date": end_date,
-        "by_method": qs.values("method").annotate(count=Count("pk"), amount=Sum("amount")).order_by("method"),
-        "by_channel": qs.values("booking__channel").annotate(count=Count("pk"), amount=Sum("amount")).order_by("booking__channel"),
-        "by_seller": qs.values("booking__seller__username").annotate(count=Count("pk"), amount=Sum("amount")).order_by("booking__seller__username"),
+        "by_method": by_method,
+        "by_channel": by_channel,
+        "by_seller": by_seller,
+        "sellers": sellers,
     }

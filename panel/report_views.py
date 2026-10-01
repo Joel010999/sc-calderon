@@ -12,7 +12,7 @@ from django.views.decorators.http import require_GET
 from sales.models import BookingChannel
 from payments.models import PaymentMethod
 from .permissions import payments_access
-from .report_services import build_sales_report
+from .report_services import REPORT_TIMEZONE, build_sales_report
 
 
 def _safe_csv(value):
@@ -44,10 +44,11 @@ def sales_report_csv(request):
     response.write("\ufeff")
     response["Content-Disposition"] = 'attachment; filename="reporte-ventas.csv"'
     writer = csv.writer(response)
-    writer.writerow(["Fecha", "Medio", "Canal", "Vendedor", "Importe", "Moneda"])
+    writer.writerow(["Referencia pública", "Fecha de confirmación", "Estado", "Medio", "Canal", "Importe", "Moneda", "Pasajeros", "Tramos", "Vendedor"])
     for payment in report["queryset"].iterator():
-        local_dt = timezone.localtime(payment.created_at)
-        writer.writerow([local_dt.strftime("%d/%m/%Y %H:%M"), payment.get_method_display(),
-                         payment.booking.get_channel_display(), payment.booking.seller.username if payment.booking.seller else "Sin vendedor",
-                         _safe_csv(payment.amount), _safe_csv(payment.currency)])
+        local_dt = timezone.localtime(payment.booking.confirmed_at, REPORT_TIMEZONE)
+        writer.writerow([_safe_csv(payment.booking.public_id), local_dt.strftime("%d/%m/%Y %H:%M"), "Confirmada",
+                         payment.get_method_display(), payment.booking.get_channel_display(),
+                         _safe_csv(payment.amount), _safe_csv(payment.currency), payment.passenger_count,
+                         payment.leg_count, payment.booking.seller.username if payment.booking.seller else "Sin vendedor"])
     return response

@@ -222,6 +222,8 @@ Pendiente: entrega de enlaces de reclamo y recuperaci?n mediante proveedor de co
 Estado: implementado en `feature/basic-sales-reports-20261001`, pendiente de validaciÃ³n final del coordinador.
 
 - Reporte HTML paginado y CSV UTF-8 BOM de pagos aprobados y reservas confirmadas, con filtros de fecha, medio, canal y vendedor.
+- El detalle muestra referencia pública, fecha/hora `confirmed_at`, estado, canal, medio, importe, pasajeros y tramos calculados mediante agregaciones sobre `BookingPassenger`/`BookingLeg`; los totales no dependen de la página visible.
+- Incluye indicadores de ventas/pagos únicos, ingreso total, efectivo, transferencia, pasajeros y tramos, más desgloses visibles por medio, canal y vendedor (incluido "Sin vendedor"). La fecha de confirmación y los filtros se interpretan en `America/Argentina/Buenos_Aires`.
 - Acceso exclusivo para Administrador/Vendedor; consultas de solo lectura, sin PII ni comprobantes, con total sobre el queryset completo y protecciÃ³n contra fÃ³rmulas CSV.
 - No se agregaron modelos ni migraciones. La validaciÃ³n local requiere variables efÃ­meras `SECRET_KEY`, `DEBUG` y `ALLOWED_HOSTS`; no se accediÃ³ a datos reales ni se ejecutaron migraciones.
 
