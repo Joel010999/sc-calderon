@@ -36,6 +36,7 @@ urlpatterns = [
     path('operaciones/viajes/nuevo/', trips.trip_select, name='trip_create'),
     path('operaciones/viajes/nuevo/<int:route_pk>/<int:bus_pk>/horarios/', trips.trip_schedule, name='trip_schedule'),
     path('operaciones/viajes/<int:pk>/', trips.trip_detail, name='trip_detail'),
+    path('operaciones/viajes/<int:trip_pk>/iniciar/confirmar/', trips.trip_start_confirm, name='trip_start_confirm'),
     path('operaciones/viajes/<int:trip_pk>/iniciar/', trips.trip_start, name='trip_start'),
     path('operaciones/viajes/<int:trip_pk>/finalizar/', trips.trip_complete, name='trip_complete'),
     path('operaciones/viajes/<int:trip_pk>/manifiesto/', manifests.trip_manifest, name='trip_manifest'),

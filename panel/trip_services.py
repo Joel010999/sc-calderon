@@ -17,7 +17,11 @@ FARE_ERROR = "No se pudo guardar la tarifa. Revisá si ya existe una tarifa para
 
 
 def _trip_status_snapshot(trip):
-    return {"status": trip.status}
+    return {
+        "status": trip.status,
+        "started_at": trip.started_at.isoformat() if trip.started_at else None,
+        "completed_at": trip.completed_at.isoformat() if trip.completed_at else None,
+    }
 
 
 @transaction.atomic
@@ -41,9 +45,19 @@ def transition_trip(*, actor, trip_pk, target_status):
     if allowed.get(target_status) != current:
         raise ValidationError("La transición de estado del viaje no está permitida.")
     before = _trip_status_snapshot(trip)
+    now = timezone.now()
     trip.status = target_status
+    if target_status == Trip.Status.STARTED:
+        trip.started_at = now
+    elif target_status == Trip.Status.COMPLETED:
+        trip.completed_at = now
     trip.full_clean()
-    trip.save(update_fields=["status", "updated_at"])
+    update_fields = ["status", "updated_at"]
+    if target_status == Trip.Status.STARTED:
+        update_fields.append("started_at")
+    elif target_status == Trip.Status.COMPLETED:
+        update_fields.append("completed_at")
+    trip.save(update_fields=update_fields)
     record_event(actor, trip, AuditEvent.Action.UPDATE, before)
     return trip, True
 
@@ -58,19 +72,17 @@ def complete_trip(*, actor, trip_pk):
 
 def trip_pending_summary(trip_pk):
     """Cuenta reservas y pagos pendientes sin consultar fila por fila."""
-    from django.db.models import Count, Q
     from payments.models import Payment, PaymentStatus
     from sales.models import Booking, BookingStatus
 
     held_bookings = Booking.objects.filter(
         legs__trip_id=trip_pk, status=BookingStatus.HELD,
     ).distinct().count()
-    row = Payment.objects.filter(booking__legs__trip_id=trip_pk).aggregate(
-        pending_payments=Count("pk", filter=Q(status__in=[
-            PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW,
-        ])),
-    )
-    return {"held_bookings": held_bookings, "pending_payments": row["pending_payments"]}
+    pending_payments = Payment.objects.filter(
+        booking__legs__trip_id=trip_pk,
+        status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW],
+    ).distinct().count()
+    return {"held_bookings": held_bookings, "pending_payments": pending_payments}
 
 
 @transaction.atomic

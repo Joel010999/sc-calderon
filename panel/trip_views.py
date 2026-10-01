@@ -4,7 +4,7 @@ from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import OuterRef, Prefetch, Subquery
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
@@ -64,6 +64,18 @@ def trip_start(request, trip_pk):
     else:
         messages.success(request, "El viaje se inició correctamente." if changed else "El viaje ya estaba iniciado.")
     return redirect("panel:trip_detail", pk=trip_pk)
+
+
+@require_GET
+@reservations_access()
+def trip_start_confirm(request, trip_pk):
+    trip = get_object_or_404(Trip.objects.select_related("route", "bus"), pk=trip_pk)
+    pending = trip_pending_summary(trip.pk)
+    return render(request, "panel/operations/trip_start_confirm.html", {
+        "trip": trip,
+        "pending_summary": pending,
+        "display_timezone": settings.TIME_ZONE,
+    })
 
 
 @require_POST

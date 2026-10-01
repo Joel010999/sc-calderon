@@ -246,9 +246,11 @@ Estado: implementado en `feature/trip-passenger-manifest-20261001`, pendiente de
 
 ## Ciclo de vida de viajes y corte posterior al inicio (2026-10-01)
 
-Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendiente de validación final del coordinador.
+Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendiente de validación PostgreSQL y workflow CI.
 
-- Se agregaron servicios idempotentes y transaccionales para iniciar y finalizar viajes, con `select_for_update`, permisos Administrador/Vendedor y auditoría.
-- El detalle operativo ofrece acciones exclusivamente POST+CSRF y advierte reservas HELD y pagos pendientes sin liberarlos.
-- La creación de reservas continúa bloqueada server-side desde `STARTED`; el corte online configurable de una hora permanece vigente.
-- No se agregaron modelos ni migraciones; se verificaron `check`, `makemigrations --check --dry-run`, `diff --check` y 110 pruebas afectadas en SQLite.
+- Se agregaron servicios idempotentes y transaccionales para iniciar y finalizar viajes, con `select_for_update`, timestamps `started_at`/`completed_at`, permisos Administrador/Vendedor y auditoría.
+- El detalle operativo ofrece una pantalla de confirmación y acciones mutables exclusivamente POST+CSRF; muestra estado, fechas en `America/Argentina/Buenos_Aires` y advierte reservas HELD y pagos pendientes sin liberarlos.
+- La creación de reservas, asignaciones y confirmaciones de pagos manuales continúa bloqueada server-side desde `STARTED`; el corte online configurable de una hora permanece vigente.
+- Se agregó `operations/migrations/0002_trip_completed_at_trip_started_at.py`; solo debe aplicarse en bases temporales de pruebas, nunca en bases persistentes durante esta entrega.
+- Se verificaron `check`, `makemigrations --check --dry-run`, `diff --check` y las pruebas afectadas en SQLite.
+- La cancelación de viajes y sus consecuencias económicas siguen pendientes.

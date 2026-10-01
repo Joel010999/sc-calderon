@@ -9,6 +9,7 @@ from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError, connection
+from django.middleware.csrf import get_token
 from django.test import Client, TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -96,13 +97,55 @@ class TripLifecycleTests(TripDataMixin, TestCase):
         started, changed = start_trip(actor=self.seller, trip_pk=trip.pk)
         self.assertTrue(changed)
         self.assertEqual(started.status, Trip.Status.STARTED)
+        self.assertIsNotNone(started.started_at)
+        self.assertIsNone(started.completed_at)
         started_again, changed = start_trip(actor=self.seller, trip_pk=trip.pk)
         self.assertFalse(changed)
         self.assertEqual(started_again.status, Trip.Status.STARTED)
         completed, changed = complete_trip(actor=self.seller, trip_pk=trip.pk)
         self.assertTrue(changed)
         self.assertEqual(completed.status, Trip.Status.COMPLETED)
+        self.assertIsNotNone(completed.completed_at)
         self.assertEqual(AuditEvent.objects.filter(entity_id=str(trip.pk)).count(), 2)
+
+    def test_start_has_explicit_confirmation_screen_and_get_is_read_only(self):
+        trip = self.make_trip()
+        response = self.client.get(self.url("trip_start_confirm", trip_pk=trip.pk), secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Confirmar inicio del viaje")
+        self.assertContains(response, "Confirmar e iniciar viaje")
+        self.assertEqual(Trip.objects.get(pk=trip.pk).status, Trip.Status.SCHEDULED)
+        self.assertEqual(AuditEvent.objects.count(), 0)
+
+    def test_start_and_complete_views_require_post_and_authorized_role(self):
+        trip = self.make_trip()
+        self.assertEqual(self.client.get(self.url("trip_start", trip_pk=trip.pk), secure=True).status_code, 405)
+        self.client.force_login(self.common)
+        response = self.client.post(self.url("trip_start", trip_pk=trip.pk), secure=True)
+        self.assertEqual(response.status_code, 403)
+        self.client.force_login(self.admin)
+        response = self.client.post(self.url("trip_start", trip_pk=trip.pk), secure=True)
+        self.assertRedirects(response, self.url("trip_detail", pk=trip.pk), fetch_redirect_response=False)
+        self.assertEqual(Trip.objects.get(pk=trip.pk).status, Trip.Status.STARTED)
+
+    def test_start_post_requires_csrf(self):
+        trip = self.make_trip()
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.admin)
+        confirmation = csrf_client.get(self.url("trip_start_confirm", trip_pk=trip.pk), secure=True)
+        self.assertEqual(confirmation.status_code, 200)
+        self.assertEqual(csrf_client.post(
+            self.url("trip_start", trip_pk=trip.pk), secure=True,
+            HTTP_REFERER="https://testserver/",
+        ).status_code, 403)
+        token = get_token(confirmation.wsgi_request)
+        response = csrf_client.post(
+            self.url("trip_start", trip_pk=trip.pk),
+            {"csrfmiddlewaretoken": token},
+            secure=True,
+            HTTP_REFERER="https://testserver/",
+        )
+        self.assertRedirects(response, self.url("trip_detail", pk=trip.pk), fetch_redirect_response=False)
 
     def test_invalid_transition_and_unauthorized_actor_are_rejected(self):
         trip = self.make_trip()
@@ -357,20 +400,24 @@ class TripPermissionTests(TripDataMixin, TestCase):
             (self.url("fare_edit", trip_pk=self.trip.pk, pk=self.fare.pk), self.fare_data(self.trip, amount="999.00")),
             (self.url("fare_activate", trip_pk=self.trip.pk, pk=self.fare.pk), {}),
             (self.url("fare_deactivate", trip_pk=self.trip.pk, pk=self.fare.pk), {}),
+            (self.url("trip_start", trip_pk=self.trip.pk), {}),
+            (self.url("trip_complete", trip_pk=self.trip.pk), {}),
         ]
 
     def test_seller_and_staff_can_read_but_all_writes_are_forbidden(self):
-        for user in (self.seller, self.staff):
-            self.client.force_login(user)
-            for url in self.read_urls():
-                response = self.client.get(url, secure=True)
-                self.assertEqual(response.status_code, 200)
-                for write_url, _ in self.writes():
-                    self.assertNotContains(response, write_url)
-            before = self.database_state()
-            for url, data in self.writes():
-                self.assertEqual(self.client.post(url, data, secure=True).status_code, 403)
-            self.assertEqual(self.database_state(), before)
+        self.client.force_login(self.seller)
+        for url in self.read_urls():
+            self.assertEqual(self.client.get(url, secure=True).status_code, 200)
+        self.assertEqual(self.client.get(self.url("trip_start_confirm", trip_pk=self.trip.pk), secure=True).status_code, 200)
+
+        self.client.force_login(self.staff)
+        for url in self.read_urls():
+            self.assertEqual(self.client.get(url, secure=True).status_code, 200)
+        self.assertEqual(self.client.get(self.url("trip_start_confirm", trip_pk=self.trip.pk), secure=True).status_code, 403)
+        before = self.database_state()
+        for url, data in self.writes():
+            self.assertEqual(self.client.post(url, data, secure=True).status_code, 403)
+        self.assertEqual(self.database_state(), before)
 
     def test_anonymous_redirect_and_common_user_rejection(self):
         self.client.logout()
