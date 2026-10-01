@@ -77,6 +77,10 @@ Las reglas del producto se encuentran en [PROJECT_SPEC.md](PROJECT_SPEC.md). Las
 
 ## Integraci?n de fulfillment econ?mico
 
+## Reportes bÃ¡sicos de ventas (2026-10-01)
+
+El panel personalizado expone `/panel/reportes/ventas/` y su descarga CSV en modo estrictamente lectura para Administrador/Vendedor. La fuente es `Payment` APPROVED unido a `Booking` CONFIRMED; cada fila representa un pago y se consulta con `select_related` para evitar N+1. Los filtros de fecha usan `America/Argentina/Buenos_Aires`, el lÃ­mite de rango es configurable mediante `PANEL_REPORTS_MAX_RANGE_DAYS` (366 por defecto), y el CSV usa UTF-8 BOM, neutraliza fÃ³rmulas y no incluye PII, comprobantes ni datos de contabilidad/caja.
+
 La confirmaci?n contin?a siendo responsabilidad de `payments`. Dentro de la misma transacci?n se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con `tickets.services.reconcile_confirmed_fulfillments`. La emisi?n y el correo permanecen en `tickets`, sin se?ales ocultas, Celery o Redis.
 ## Cuentas de clientes
 

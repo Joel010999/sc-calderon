@@ -237,6 +237,12 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
+## Reportes bÃ¡sicos de ventas (2026-10-01)
+
+- Se confirma que el primer reporte es informativo y de solo lectura: no implementa contabilidad, cierre de caja, devoluciones ni conciliaciÃ³n.
+- Se contabiliza una Ãºnica vez cada `Payment` APPROVED cuya reserva estÃ© CONFIRMED, usando `Payment.created_at` como fecha del cobro.
+- El rango mÃ¡ximo es configurable (`PANEL_REPORTS_MAX_RANGE_DAYS`, 366 por defecto); los filtros y la exportaciÃ³n se ejecutan server-side.
+
 - `payments` depende explícitamente de `tickets` mediante una importación perezosa para crear el trabajo durable; la dependencia no es circular.
 - `TicketFulfillment` conserva intentos, último intento, `next_attempt_at` y una concesión `lease_until`. Las concesiones vencidas se pueden recuperar sin cambiar tickets, UUID, QR ni pagos.
 - La reconciliación manual se realiza con `python manage.py reconcile_fulfillments [--dry-run] [--limit N] [--status ...] [--booking UUID]`. El comando no ejecuta migraciones ni requiere infraestructura externa.
