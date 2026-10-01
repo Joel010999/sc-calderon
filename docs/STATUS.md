@@ -234,3 +234,12 @@ Estado: implementado en `feature/fulfillment-operations-hardening-20260921`, pen
 - Se agregó la bandeja global personalizada `/panel/fulfillment/` con filtros y acciones POST protegidas para Administrador y Vendedor.
 - Los workflows PostgreSQL ejecutan validaciones en pushes a `main` y Pull Requests dirigidos a `main`.
 - La dependencia real es `payments -> tickets` (unidireccional y perezosa); la documentación anterior que decía que payments no dependía de tickets quedó corregida.
+## Manifiesto operativo de pasajeros (2026-10-01)
+
+Estado: implementado en `feature/trip-passenger-manifest-20261001`, pendiente de validación final en PostgreSQL y del workflow CI.
+
+- Se agregó un manifiesto personalizado por viaje con filas exclusivamente de `SeatAssignment.CONFIRMED` y `Booking.CONFIRMED`, limitado al viaje solicitado.
+- Incluye pasajero, documento, butaca, categoría, paradas reales del tramo y referencia pública de reserva; ordena por subida, categoría y butaca.
+- Incluye resumen de subidas, bajadas y pasajeros que continúan por `TripStop`, acceso desde el detalle, vista de impresión y exportación CSV UTF-8 con BOM y protección contra fórmulas.
+- Acceso restringido a Administrador/Vendedor; no expone contacto, pagos, comprobantes, tickets ni auditoría y no ofrece acciones mutables por GET.
+- El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro.

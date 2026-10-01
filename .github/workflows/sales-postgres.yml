@@ -51,5 +51,7 @@ jobs:
         run: python manage.py test core.test_checkout
       - name: Public transfer payment tests on PostgreSQL
         run: python manage.py test core.test_transfer_views payments.tests.PublicTransferPaymentTests --verbosity 2
+      - name: Passenger manifest tests on PostgreSQL
+        run: python manage.py test panel.test_manifest --verbosity 2
       - name: Complete suite on PostgreSQL
         run: python manage.py test

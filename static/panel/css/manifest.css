@@ -1,0 +1,11 @@
+.manifest-header { align-items: flex-start; }
+.manifest-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+.manifest-booking-reference { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85em; }
+@media print {
+    @page { margin: 1.25cm; }
+    .panel-nav, .panel-sidebar, .no-print, .manifest-header p:first-child { display: none !important; }
+    .panel-layout, .panel-main-area, main { display: block; margin: 0; padding: 0; }
+    .ops-card { box-shadow: none; border: 1px solid #bbb; break-inside: avoid; }
+    .table-scroll { overflow: visible; }
+    body { background: #fff; color: #000; }
+}

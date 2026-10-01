@@ -6,6 +6,7 @@ from . import reservation_views as reservations
 from . import payment_views as payments
 from . import fulfillment_views as fulfillment
 from . import report_views as reports
+from . import manifest_views as manifests
 
 app_name = 'panel'
 
@@ -35,6 +36,9 @@ urlpatterns = [
     path('operaciones/viajes/nuevo/', trips.trip_select, name='trip_create'),
     path('operaciones/viajes/nuevo/<int:route_pk>/<int:bus_pk>/horarios/', trips.trip_schedule, name='trip_schedule'),
     path('operaciones/viajes/<int:pk>/', trips.trip_detail, name='trip_detail'),
+    path('operaciones/viajes/<int:trip_pk>/manifiesto/', manifests.trip_manifest, name='trip_manifest'),
+    path('operaciones/viajes/<int:trip_pk>/manifiesto/impresion/', manifests.trip_manifest_print, name='trip_manifest_print'),
+    path('operaciones/viajes/<int:trip_pk>/manifiesto.csv', manifests.trip_manifest_csv, name='trip_manifest_csv'),
     path('operaciones/viajes/<int:trip_pk>/tarifas/nueva/', trips.fare_form, name='fare_create'),
     path('operaciones/viajes/<int:trip_pk>/tarifas/<int:pk>/editar/', trips.fare_form, name='fare_edit'),
     path('operaciones/viajes/<int:trip_pk>/tarifas/<int:pk>/activar/', trips.fare_state, {'active': True}, name='fare_activate'),

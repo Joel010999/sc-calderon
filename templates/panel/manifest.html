@@ -1,0 +1,54 @@
+{% extends 'panel/operations/base.html' %}
+{% load tz static %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'panel/css/manifest.css' %}">{% endblock %}
+{% block operations_content %}
+{% timezone display_timezone %}
+<header class="ops-header manifest-header">
+    <div>
+        <p><a href="{% url 'panel:trip_detail' trip.pk %}">← Volver al detalle del viaje</a></p>
+        <h2>Manifiesto de pasajeros · Viaje {{ trip.pk }}</h2>
+        <p class="muted">{{ trip.route.name }} · {{ trip.bus.display_name }} · {{ trip.departure_at|date:'d/m/Y H:i' }}</p>
+    </div>
+    <div class="manifest-actions no-print">
+        <a class="ops-button" href="{% url 'panel:trip_manifest_print' trip.pk %}">Vista para imprimir</a>
+        <a class="ops-button" href="{% url 'panel:trip_manifest_csv' trip.pk %}">Exportar CSV</a>
+    </div>
+</header>
+
+<section class="ops-card">
+    <h3>Resumen por parada</h3>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Resumen del manifiesto por parada">
+        <table>
+            <thead><tr><th>Orden</th><th>Parada</th><th>Suben</th><th>Bajan</th><th>Continúan</th></tr></thead>
+            <tbody>
+                {% for summary in summaries %}
+                <tr><td>{{ summary.sequence }}</td><th scope="row">{{ summary.name }}</th><td>{{ summary.boarding }}</td><td>{{ summary.alighting }}</td><td>{{ summary.continuing }}</td></tr>
+                {% empty %}<tr><td colspan="5">No hay paradas programadas.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="ops-card">
+    <h3>Pasajeros confirmados <span class="muted">({{ rows|length }})</span></h3>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Pasajeros confirmados del viaje">
+        <table>
+            <thead><tr><th>Pasajero</th><th>Documento</th><th>Butaca</th><th>Categoría</th><th>Sube en</th><th>Baja en</th><th>Reserva</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <th scope="row">{{ row.passenger_name }}</th>
+                    <td>{{ row.document_type }} {{ row.document_number }}</td>
+                    <td>{{ row.seat_number }}</td>
+                    <td>{{ row.category_display }}</td>
+                    <td>{{ row.origin_stop }}</td>
+                    <td>{{ row.destination_stop }}</td>
+                    <td><span class="manifest-booking-reference">{{ row.booking_public_id }}</span></td>
+                </tr>
+                {% empty %}<tr><td colspan="7">No hay pasajeros confirmados para este viaje.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endtimezone %}
+{% endblock %}
