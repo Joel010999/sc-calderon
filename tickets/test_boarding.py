@@ -213,6 +213,24 @@ class BoardingPanelTests(TicketBaseMixin, TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(BoardingRecord.objects.count(), 0)
 
+    @override_settings(PANEL_BOARDING_INVALID_ATTEMPTS_PER_MINUTE=1)
+    def test_invalid_attempts_are_rate_limited_without_storing_scan_value(self):
+        self.client.force_login(self.seller_user)
+        token = self._csrf()
+        data = {"trip": self.trip_ida.pk, "scan_value": "TK-NOEXISTE-L1-P1", "csrfmiddlewaretoken": token}
+        first = self.client.post(
+            self.url, data, HTTP_REFERER="https://testserver/panel/embarques/", secure=True
+        )
+        second = self.client.post(
+            self.url, data, HTTP_REFERER="https://testserver/panel/embarques/", secure=True
+        )
+        self.assertEqual(first.context["outcome"].code, BoardingCode.INVALID_TICKET)
+        self.assertEqual(
+            second.context["outcome"].message,
+            "Se alcanzó el límite de intentos inválidos. Probá nuevamente más tarde.",
+        )
+        self.assertEqual(BoardingRecord.objects.count(), 0)
+
 
 @unittest.skipUnless(connection.vendor == "postgresql", "La concurrencia real se verifica en PostgreSQL.")
 class BoardingConcurrencyTests(TicketBaseMixin, TransactionTestCase):
