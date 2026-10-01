@@ -5,6 +5,7 @@ from . import trip_views as trips
 from . import reservation_views as reservations
 from . import payment_views as payments
 from . import fulfillment_views as fulfillment
+from . import report_views as reports
 
 app_name = 'panel'
 
@@ -26,6 +27,8 @@ urlpatterns = [
     path('pagos/<uuid:public_id>/comprobante/', payments.download_voucher, name='payment_voucher'),
     path('fulfillment/', fulfillment.fulfillment_list, name='fulfillment_list'),
     path('fulfillment/reconciliar/', fulfillment.fulfillment_reconcile, name='fulfillment_reconcile'),
+    path('reportes/ventas/', reports.sales_report, name='sales_report'),
+    path('reportes/ventas.csv', reports.sales_report_csv, name='sales_report_csv'),
 
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),

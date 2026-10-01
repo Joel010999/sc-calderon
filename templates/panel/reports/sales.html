@@ -1,0 +1,25 @@
+{% extends 'panel/base.html' %}
+{% block content %}
+<div class="container">
+  <h1 class="dashboard-title">Reporte de ventas</h1>
+  <p>Solo incluye pagos aprobados asociados a reservas confirmadas. Este reporte es informativo: no sustituye la contabilidad ni el cierre de caja.</p>
+  <p>Rango máximo configurable: {{ max_range_days }} días. Fechas interpretadas en America/Argentina/Buenos_Aires.</p>
+  <form method="get">
+    <label>Desde <input type="date" name="desde" value="{{ request.GET.desde }}"></label>
+    <label>Hasta <input type="date" name="hasta" value="{{ request.GET.hasta }}"></label>
+    <label>Medio <select name="medio"><option value="">Todos</option>{% for value,label in payment_methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>Canal <select name="canal"><option value="">Todos</option>{% for value,label in channels %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>Vendedor <input name="vendedor" value="{{ request.GET.vendedor }}"></label>
+    <button type="submit">Filtrar</button>
+    <a href="{% url 'panel:sales_report_csv' %}{% if query_string %}?{{ query_string }}{% endif %}">Descargar CSV</a>
+  </form>
+  {% if error %}<div class="alert-error">{{ error }}</div>{% endif %}
+  <section class="stats-grid"><div class="stat-card"><b>Pagos únicos</b><strong>{{ payment_count }}</strong></div><div class="stat-card"><b>Total vendido</b><strong>$ {{ total_amount|floatformat:2 }}</strong></div></section>
+  <h2>Detalle</h2>
+  <table><thead><tr><th>Fecha</th><th>Medio</th><th>Canal</th><th>Vendedor</th><th>Importe</th></tr></thead><tbody>
+  {% for payment in page.object_list %}<tr><td>{{ payment.created_at|date:'d/m/Y H:i' }}</td><td>{{ payment.get_method_display }}</td><td>{{ payment.booking.get_channel_display }}</td><td>{{ payment.booking.seller.username|default:'Sin vendedor' }}</td><td>$ {{ payment.amount|floatformat:2 }}</td></tr>{% empty %}<tr><td colspan="5">No hay ventas para los filtros seleccionados.</td></tr>{% endfor %}
+  </tbody></table>
+  <p>Mostrando {{ page.start_index|default:0 }}–{{ page.end_index|default:0 }} de {{ paginator.count }} pagos.</p>
+  {% if page.has_previous %}<a href="?{{ query_string }}&pagina={{ page.previous_page_number }}">Anterior</a>{% endif %} {% if page.has_next %}<a href="?{{ query_string }}&pagina={{ page.next_page_number }}">Siguiente</a>{% endif %}
+</div>
+{% endblock %}

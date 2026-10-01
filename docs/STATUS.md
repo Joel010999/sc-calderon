@@ -217,6 +217,14 @@ Pendiente: entrega de enlaces de reclamo y recuperaci?n mediante proveedor de co
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
+## Reportes bÃ¡sicos de ventas (2026-10-01)
+
+Estado: implementado en `feature/basic-sales-reports-20261001`, pendiente de validaciÃ³n final del coordinador.
+
+- Reporte HTML paginado y CSV UTF-8 BOM de pagos aprobados y reservas confirmadas, con filtros de fecha, medio, canal y vendedor.
+- Acceso exclusivo para Administrador/Vendedor; consultas de solo lectura, sin PII ni comprobantes, con total sobre el queryset completo y protecciÃ³n contra fÃ³rmulas CSV.
+- No se agregaron modelos ni migraciones. La validaciÃ³n local requiere variables efÃ­meras `SECRET_KEY`, `DEBUG` y `ALLOWED_HOSTS`; no se accediÃ³ a datos reales ni se ejecutaron migraciones.
+
 Estado: implementado en `feature/fulfillment-operations-hardening-20260921`, pendiente de validación final.
 
 - Se agregaron concesiones temporales para recuperar trabajos `PROCESSING` abandonados y campos de próximo intento.
