@@ -414,7 +414,11 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
     """
     job_id = job_or_id.pk if isinstance(job_or_id, TicketFulfillment) else job_or_id
     effective_now = now or timezone.now()
-    stale_after = timedelta(seconds=getattr(settings, "TICKETS_FULFILLMENT_STALE_SECONDS", 900))
+    stale_after = timedelta(seconds=getattr(
+        settings,
+        "OPERATIONAL_MAINTENANCE_LEASE_SECONDS",
+        getattr(settings, "TICKETS_FULFILLMENT_STALE_SECONDS", 900),
+    ))
     with transaction.atomic():
         job = TicketFulfillment.objects.select_for_update().select_related("booking").get(pk=job_id)
         if job.next_attempt_at and job.next_attempt_at > effective_now and not retry:

@@ -14,3 +14,15 @@ def production_fulfillment_configuration(app_configs, **kwargs):
     if not getattr(settings, "EMAIL_HOST", "") and "smtp" in settings.EMAIL_BACKEND.lower():
         warnings.append(Warning("EMAIL_HOST no está configurado para el backend SMTP.", id="tickets.W003"))
     return warnings
+
+
+@register()
+def operational_maintenance_configuration(app_configs, **kwargs):
+    """Detecta límites de mantenimiento peligrosamente amplios o inexistentes."""
+    if getattr(settings, "OPERATIONAL_MAINTENANCE_MAX_LIMIT", 0) < 1:
+        return [Warning("OPERATIONAL_MAINTENANCE_MAX_LIMIT debe ser positivo.", id="tickets.W004")]
+    if getattr(settings, "OPERATIONAL_MAINTENANCE_MAX_SECONDS", 0) <= 0:
+        return [Warning("OPERATIONAL_MAINTENANCE_MAX_SECONDS debe ser positivo.", id="tickets.W005")]
+    if getattr(settings, "OPERATIONAL_MAINTENANCE_LEASE_SECONDS", 0) <= 0:
+        return [Warning("OPERATIONAL_MAINTENANCE_LEASE_SECONDS debe ser positivo.", id="tickets.W006")]
+    return []

@@ -245,6 +245,13 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
+## Mantenimiento operativo programado (2026-10-02)
+
+- Se adopta `python manage.py run_operational_maintenance` como proceso efímero para un Cron futuro de Railway, con tareas explícitas de expiración de reservas, pagos públicos y fulfillment.
+- La expiración selecciona `HELD` vencidas y delega en `expire_booking` o `expire_public_transfer_if_expired`; nunca modifica `CONFIRMED`, pagos aprobados ni viajes iniciados/completados.
+- Cada trabajo se procesa de forma independiente, con límite máximo de elementos y tiempo, tolerancia a fallos y leases existentes de `TicketFulfillment`.
+- `--dry-run` es estrictamente de lectura: no persiste trabajos ni auditoría y no realiza generación de PDF o correo; los logs sólo incluyen métricas y estados sin PII.
+
 ## Reportes básicos de ventas (2026-10-01)
 
 - Se confirma que el primer reporte es informativo y de solo lectura: no implementa contabilidad, cierre de caja, devoluciones ni conciliación.
