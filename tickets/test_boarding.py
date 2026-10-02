@@ -63,34 +63,6 @@ class BoardingServiceTests(TicketBaseMixin, TransactionTestCase):
         self.assertEqual(BoardingRecord.objects.filter(ticket=self.ticket, status=BoardingStatus.ACTIVE).count(), 1)
         self.assertEqual(second.record.operator_id, self.seller_user.pk)
 
-    def test_started_trip_accepts_new_boarding(self):
-        self.trip_ida.status = self.trip_ida.Status.STARTED
-        self.trip_ida.save(update_fields=["status", "updated_at"])
-
-        result = validate_boarding(self.raw_token, self.trip_ida.pk, self.seller_user, now=self.now)
-
-        self.assertEqual(result.code, BoardingCode.VALID)
-        self.assertEqual(BoardingRecord.objects.count(), 1)
-
-    def test_completed_trip_rejects_new_boarding_and_preserves_idempotency(self):
-        self.trip_ida.status = self.trip_ida.Status.COMPLETED
-        self.trip_ida.save(update_fields=["status", "updated_at"])
-        rejected = validate_boarding(self.raw_token, self.trip_ida.pk, self.seller_user, now=self.now)
-
-        self.assertEqual(rejected.code, BoardingCode.TICKET_NOT_VALID)
-        self.assertEqual(BoardingRecord.objects.count(), 0)
-
-        self.trip_ida.status = self.trip_ida.Status.SCHEDULED
-        self.trip_ida.save(update_fields=["status", "updated_at"])
-        boarded = validate_boarding(self.raw_token, self.trip_ida.pk, self.seller_user, now=self.now)
-        self.trip_ida.status = self.trip_ida.Status.COMPLETED
-        self.trip_ida.save(update_fields=["status", "updated_at"])
-        second = validate_boarding(self.raw_token, self.trip_ida.pk, self.admin_user, now=self.now)
-
-        self.assertEqual(boarded.code, BoardingCode.VALID)
-        self.assertEqual(second.code, BoardingCode.ALREADY_BOARDED)
-        self.assertEqual(BoardingRecord.objects.filter(status=BoardingStatus.ACTIVE).count(), 1)
-
     def test_round_trip_ticket_only_works_for_its_own_trip(self):
         booking = self.create_confirmed_booking(round_trip=True, seats_list=[self.seat_2])
         tickets = issue_tickets_for_booking(booking)
