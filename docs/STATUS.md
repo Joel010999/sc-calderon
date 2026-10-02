@@ -226,6 +226,15 @@ Pendiente: entrega de enlaces de reclamo y recuperación mediante proveedor de c
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
+## Almacenamiento privado y correo SMTP (2026-10-02)
+
+Estado: implementado en `feature/production-storage-email-20261002`, sin conexión a proveedores reales.
+
+- Pasajes y comprobantes mantienen filesystem local en desarrollo/tests y agregan backend S3-compatible privado configurable por entorno.
+- Las descargas no exponen URLs públicas permanentes y conservan autorización por vistas/tokens.
+- Se completó configuración SMTP genérica, console para desarrollo, locmem en tests, reply-to y checks de seguridad sin secretos.
+- WhiteNoise permanece separado para staticfiles. No se migraron ni borraron archivos locales; la migración posterior deberá verificarse con inventario y checksums.
+
 ## Mantenimiento operativo programado (2026-10-02)
 
 Estado: implementado en `feature/scheduled-operational-maintenance-20261002`, pendiente de validación final del coordinador.
