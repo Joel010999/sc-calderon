@@ -226,6 +226,15 @@ Pendiente: entrega de enlaces de reclamo y recuperaci?n mediante proveedor de co
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
+## Mantenimiento operativo programado (2026-10-02)
+
+Estado: implementado en `feature/scheduled-operational-maintenance-20261002`, pendiente de validación final del coordinador.
+
+- Se agregó `run_operational_maintenance` con selección de tareas (`expire`, `fulfillment`), `--dry-run`, `--limit`, `--booking` y tiempo máximo seguro.
+- Expiración y fulfillment reutilizan servicios existentes, con procesamiento independiente, leases, tolerancia a fallos y salida JSON de métricas sin PII.
+- Se agregaron límites configurables en `.env.example` y checks de configuración.
+- No se agregaron modelos ni migraciones; no se ejecutaron migraciones contra bases persistentes ni se configuró todavía el Cron de Railway.
+
 ## Reportes bÃ¡sicos de ventas (2026-10-01)
 
 Estado: implementado en `feature/basic-sales-reports-20261001`, pendiente de validaciÃ³n final del coordinador.
