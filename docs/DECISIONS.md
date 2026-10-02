@@ -272,6 +272,10 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - La bandeja global del panel usa POST+CSRF, roles de Administrador/Vendedor y auditoría. No se habilitan acciones mutables por GET.
 ## Manifiesto operativo de pasajeros (2026-10-01)
 
+## Bandeja operativa (2026-10-02)
+
+Se adopta una bandeja unificada de consulta para Administrador/Vendedor, sin escrituras ni auditoría. Expone referencias públicas, estados y tiempos, no PII, comprobantes, tokens ni datos de pago. No reemplaza caja, contabilidad ni mantenimiento programado.
+
 - El manifiesto se limita a un viaje solicitado y muestra solamente asignaciones de butaca `CONFIRMED` pertenecientes a reservas `CONFIRMED`; no incluye estados `HELD`, `EXPIRED` ni `RELEASED`.
 - Los pasajeros de una compra de ida y vuelta aparecen una vez por cada viaje y utilizan los `TripStop` y la butaca del tramo correspondiente.
 - El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro. La vista operativa, de impresión y CSV incluye ahora el estado `Embarcado`/`Pendiente`; QR, caja, cancelaciones y envío automático siguen fuera de alcance.

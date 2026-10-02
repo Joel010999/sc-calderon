@@ -95,6 +95,7 @@
     </div>
 
     <h2 class="section-title">Módulos del Sistema</h2>
+    {% if can_access_operational_inbox %}<p><a class="stat-link" href="{% url 'panel:operational_inbox' %}">Abrir bandeja operativa</a></p>{% endif %}
     <div class="modules-grid">
         <div class="module-card disabled">
             <div class="module-icon">
