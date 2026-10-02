@@ -6,6 +6,8 @@ import uuid
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 
+from core.private_storage import get_private_storage
+
 
 class PrivateTicketFileSystemStorage(FileSystemStorage):
     """Storage privado para pasajes PDF fuera del directorio público.
@@ -41,12 +43,12 @@ class PrivateTicketFileSystemStorage(FileSystemStorage):
         self._custom_location = value
 
 
-_ticket_storage = PrivateTicketFileSystemStorage()
-
-
 def get_ticket_storage():
     """Retorna la instancia de almacenamiento privado para pasajes PDF."""
-    return _ticket_storage
+    return get_private_storage(
+        scope="tickets",
+        filesystem_class=PrivateTicketFileSystemStorage,
+    )
 
 
 def ticket_upload_path(instance, filename):

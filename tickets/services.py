@@ -340,6 +340,7 @@ def send_booking_tickets(booking_or_id, retry=False, now=None) -> TicketEmailAtt
         body=body,
         from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "webmaster@localhost"),
         to=[booking.email],
+        reply_to=([settings.EMAIL_REPLY_TO] if getattr(settings, "EMAIL_REPLY_TO", "") else []),
     )
 
     for ticket in tickets:

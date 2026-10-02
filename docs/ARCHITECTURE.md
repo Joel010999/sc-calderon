@@ -54,6 +54,23 @@ Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y rein
 
 ## Ciclo de vida operativo de viajes (2026-10-01)
 
+## Almacenamiento privado y correo productivo (2026-10-02)
+
+Los pasajes PDF y comprobantes de transferencia usan storages privados separados
+de los archivos estáticos. Desarrollo y tests conservan filesystem local; producción
+debe seleccionar `PRIVATE_STORAGE_BACKEND=s3` mediante variables de entorno. El
+backend usa `django-storages` con un bucket S3-compatible, endpoint opcional,
+credenciales fuera del repositorio y objetos privados. No se generan URLs desde
+los modelos: las descargas siguen pasando por vistas autenticadas o tokens
+autorizados. La migración de archivos locales queda para una etapa posterior,
+con inventario, copia verificada, checksum, ventana de corte y rollback.
+
+WhiteNoise continúa sirviendo exclusivamente `staticfiles`; no comparte bucket,
+raíz ni permisos con el almacenamiento privado. El correo conserva console en
+desarrollo y locmem en tests, y permite SMTP genérico mediante entorno con TLS,
+SSL, timeout y reply-to validados. La entrega mantiene `TicketEmailAttempt` y sus
+reintentos idempotentes: un fallo SMTP no revierte pagos ni emisión de pasajes.
+
 ## Mantenimiento operativo efímero (2026-10-02)
 
 `run_operational_maintenance` es un comando de proceso corto para un Cron futuro de

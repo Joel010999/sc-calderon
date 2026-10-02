@@ -1,3 +1,4 @@
+import re
 import uuid
 from decimal import Decimal
 
@@ -257,7 +258,20 @@ class TicketEmailAttempt(models.Model):
         return f"Envío {self.booking.public_id} · {self.get_status_display()} ({self.recipient_email})"
 
 
+    def __str__(self):
+        return f"Envío {self.booking.public_id} · {self.get_status_display()}"
+
+
 class TicketAuditEvent(models.Model):
+    def save(self, *args, **kwargs):
+        if self.action == self.Action.EMAIL:
+            self.description = re.sub(
+                r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}",
+                "[destinatario omitido]",
+                self.description,
+                flags=re.IGNORECASE,
+            )
+        return super().save(*args, **kwargs)
     class Action(models.TextChoices):
         ISSUE = "ISSUE", "Emisión"
         DOWNLOAD = "DOWNLOAD", "Descarga"
