@@ -2,7 +2,7 @@
 
 ## FundaciÃ³n de validaciÃ³n de embarque (2026-10-01)
 
-Estado: implementada en `feature/boarding-validation-20261001`, pendiente de validaciÃ³n final y publicaciÃ³n remota.
+Estado: implementada, integrada con el ciclo de vida de viajes, validada y publicada en `feature/boarding-validation-20261001`.
 
 - `tickets.BoardingRecord` registra pasaje, pasajero, viaje, butaca, operador, fecha/hora, estado y motivo de reversiÃ³n; la unicidad condicional evita duplicar embarques activos y conserva el historial revertido.
 - El panel personalizado incorpora `/panel/embarques/`, con lector de teclado para QR/cÃ³digo, validaciones server-side, respuestas diferenciadas, permisos de Administrador/Vendedor y reversiÃ³n POST+CSRF exclusiva de Administrador.

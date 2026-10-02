@@ -259,7 +259,7 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 
 - El manifiesto se limita a un viaje solicitado y muestra solamente asignaciones de butaca `CONFIRMED` pertenecientes a reservas `CONFIRMED`; no incluye estados `HELD`, `EXPIRED` ni `RELEASED`.
 - Los pasajeros de una compra de ida y vuelta aparecen una vez por cada viaje y utilizan los `TripStop` y la butaca del tramo correspondiente.
-- El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro. Esta entrega implementa una vista operativa, de impresión y CSV, sin marcado de embarque, QR, caja, cancelaciones ni envío automático.
+- El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro. La vista operativa, de impresión y CSV incluye ahora el estado `Embarcado`/`Pendiente`; QR, caja, cancelaciones y envío automático siguen fuera de alcance.
 
 ## Ciclo de vida y corte de ventas (2026-10-01)
 

@@ -149,9 +149,6 @@ def validate_boarding(scan_value, selected_trip_id, operator, now=None):
             return BoardingOutcome(BoardingCode.INVALID_TICKET, MESSAGES[BoardingCode.INVALID_TICKET], ticket=ticket)
         if ticket.leg.trip_id != selected_trip.pk:
             return BoardingOutcome(BoardingCode.WRONG_TRIP, MESSAGES[BoardingCode.WRONG_TRIP], ticket=ticket)
-        if selected_trip.status not in (Trip.Status.SCHEDULED, Trip.Status.BOARDING):
-            return BoardingOutcome(BoardingCode.TICKET_NOT_VALID, MESSAGES[BoardingCode.TICKET_NOT_VALID], ticket=ticket)
-
         active = BoardingRecord.objects.select_related("operator").filter(
             ticket=ticket,
             status=BoardingStatus.ACTIVE,
@@ -163,6 +160,9 @@ def validate_boarding(scan_value, selected_trip_id, operator, now=None):
                 ticket=ticket,
                 record=active,
             )
+
+        if selected_trip.status not in (Trip.Status.SCHEDULED, Trip.Status.BOARDING, Trip.Status.STARTED):
+            return BoardingOutcome(BoardingCode.TICKET_NOT_VALID, MESSAGES[BoardingCode.TICKET_NOT_VALID], ticket=ticket)
 
         try:
             with transaction.atomic():
