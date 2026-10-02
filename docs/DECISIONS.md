@@ -245,6 +245,14 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
+## Storage privado y correo SMTP (2026-10-02)
+
+- Se adopta `django-storages[s3]` como integración configurable para un bucket privado S3-compatible, sin acoplarse a AWS ni migrar archivos existentes.
+- `filesystem` permanece como backend explícito para desarrollo/tests; producción debe usar `s3` y superar los checks de bucket, endpoint, HTTPS y credenciales.
+- No se habilitan URLs públicas permanentes para pasajes o comprobantes; las vistas existentes continúan autorizando y abriendo los archivos directamente.
+- SMTP se configura por variables de entorno. TLS y SSL son excluyentes, y se validan host, credenciales, puerto y timeout sin imprimir secretos.
+- La migración futura de archivos requiere inventario, copia verificada y rollback; no forma parte de esta entrega.
+
 ## Mantenimiento operativo programado (2026-10-02)
 
 - Se adopta `python manage.py run_operational_maintenance` como proceso efímero para un Cron futuro de Railway, con tareas explícitas de expiración de reservas, pagos públicos y fulfillment.

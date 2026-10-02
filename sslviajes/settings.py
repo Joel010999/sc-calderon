@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -23,6 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+TESTING = any(argument in {'test', 'pytest'} for argument in sys.argv)
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY')
@@ -184,12 +186,36 @@ STORAGES = {
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
+SERVER_EMAIL = os.getenv('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
+EMAIL_REPLY_TO = os.getenv('EMAIL_REPLY_TO', '')
 EMAIL_HOST = os.getenv('EMAIL_HOST', '')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 25))
+EMAIL_CONFIGURATION_ERRORS = []
+try:
+    EMAIL_PORT = int(os.getenv('EMAIL_PORT', 25))
+except (TypeError, ValueError):
+    EMAIL_PORT = 25
+    EMAIL_CONFIGURATION_ERRORS.append('EMAIL_PORT debe ser un entero.')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False').lower() in ('true', '1', 't')
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 't')
+try:
+    EMAIL_TIMEOUT = float(os.getenv('EMAIL_TIMEOUT', 10))
+except (TypeError, ValueError):
+    EMAIL_TIMEOUT = 10
+    EMAIL_CONFIGURATION_ERRORS.append('EMAIL_TIMEOUT debe ser un número.')
+
+# Private storage configuration. The default keeps development and tests local.
+PRIVATE_STORAGE_BACKEND = os.getenv('PRIVATE_STORAGE_BACKEND', 'filesystem').lower()
+PRIVATE_STORAGE_S3_BUCKET = os.getenv('PRIVATE_STORAGE_S3_BUCKET', '')
+PRIVATE_STORAGE_S3_ENDPOINT_URL = os.getenv('PRIVATE_STORAGE_S3_ENDPOINT_URL', '')
+PRIVATE_STORAGE_S3_REGION_NAME = os.getenv('PRIVATE_STORAGE_S3_REGION_NAME', '')
+PRIVATE_STORAGE_S3_ACCESS_KEY_ID = os.getenv('PRIVATE_STORAGE_S3_ACCESS_KEY_ID', '')
+PRIVATE_STORAGE_S3_SECRET_ACCESS_KEY = os.getenv('PRIVATE_STORAGE_S3_SECRET_ACCESS_KEY', '')
+try:
+    PRIVATE_STORAGE_S3_QUERYSTRING_EXPIRE = int(os.getenv('PRIVATE_STORAGE_S3_QUERYSTRING_EXPIRE', 300))
+except (TypeError, ValueError):
+    PRIVATE_STORAGE_S3_QUERYSTRING_EXPIRE = 300
 
 # Sales configuration
 SALES_MAX_PASSENGERS_PER_BOOKING = int(os.getenv('SALES_MAX_PASSENGERS_PER_BOOKING', 4))

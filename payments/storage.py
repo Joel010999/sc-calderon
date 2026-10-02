@@ -7,6 +7,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage, default_storage
 
+from core.private_storage import get_private_storage
+
 from .exceptions import PaymentVoucherError
 
 
@@ -46,12 +48,12 @@ class ProtectedFileSystemStorage(FileSystemStorage):
         self._custom_location = value
 
 
-_voucher_storage = ProtectedFileSystemStorage()
-
-
 def get_voucher_storage():
     """Retorna la instancia de almacenamiento privado para comprobantes."""
-    return _voucher_storage
+    return get_private_storage(
+        scope="vouchers",
+        filesystem_class=ProtectedFileSystemStorage,
+    )
 
 
 def voucher_upload_path(instance, filename):
