@@ -4,7 +4,7 @@ import unittest
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
-from django.db import IntegrityError, connection
+from django.db import IntegrityError, close_old_connections, connection, connections
 from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -248,11 +248,14 @@ class BoardingConcurrencyTests(TicketBaseMixin, TransactionTestCase):
         errors = []
 
         def scan():
+            close_old_connections()
             try:
                 barrier.wait(timeout=10)
                 results.append(validate_boarding(self.raw_token, self.trip_ida.pk, self.seller_user))
             except Exception as exc:  # pragma: no cover - solo informa fallos del worker de prueba
                 errors.append(exc)
+            finally:
+                connections.close_all()
 
         threads = [threading.Thread(target=scan) for _ in range(2)]
         for thread in threads:
