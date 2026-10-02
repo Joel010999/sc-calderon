@@ -1,6 +1,6 @@
 /* Estilos básicos para reemplazar Tailwind en el panel de SC Viajes */
 body {
-    font-family: 'Inter', sans-serif;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
     background-color: #f3f4f6;
     margin: 0;
     padding: 0;

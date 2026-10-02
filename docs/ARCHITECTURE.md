@@ -1,12 +1,12 @@
 # Arquitectura de SC Viajes
 
-## FundaciÃ³n de validaciÃ³n de embarque
+## Fundación de validación de embarque
 
-`tickets.BoardingRecord` es el registro durable del embarque. Cada fila conserva el pasaje, pasajero, viaje, asignaciÃ³n de butaca, operador y fecha/hora consciente de zona horaria; una restricciÃ³n Ãºnica condicional permite un solo registro `ACTIVE` por pasaje y conserva las filas `REVERSED` como historial.
+`tickets.BoardingRecord` es el registro durable del embarque. Cada fila conserva el pasaje, pasajero, viaje, asignación de butaca, operador y fecha/hora consciente de zona horaria; una restricción única condicional permite un solo registro `ACTIVE` por pasaje y conserva las filas `REVERSED` como historial.
 
-La validaciÃ³n interna vive bajo `/panel/embarques/` y reutiliza el token opaco cuyo hash ya estÃ¡ almacenado en `Ticket.verification_token_hash`, ademÃ¡s del cÃ³digo legible del pasaje. El servicio recarga y comprueba en servidor el pasaje, reserva `CONFIRMED`, asignaciÃ³n `CONFIRMED`, relaciones cruzadas y coincidencia exacta con el viaje seleccionado. La primera validaciÃ³n crea el registro y la siguiente devuelve el registro activo sin duplicarlo; la reversiÃ³n es exclusivamente administrativa, exige motivo, usa POST+CSRF y conserva el historial.
+La validación interna vive bajo `/panel/embarques/` y reutiliza el token opaco cuyo hash ya está almacenado en `Ticket.verification_token_hash`, además del código legible del pasaje. El servicio recarga y comprueba en servidor el pasaje, reserva `CONFIRMED`, asignación `CONFIRMED`, relaciones cruzadas y coincidencia exacta con el viaje seleccionado. La primera validación crea el registro y la siguiente devuelve el registro activo sin duplicarlo; la reversión es exclusivamente administrativa, exige motivo, usa POST+CSRF y conserva el historial.
 
-El manifiesto agrega el estado `Embarcado`/`Pendiente` y sus totales mediante una anotaciÃ³n `Exists`, sin escribir al consultar ni exponer informaciÃ³n de contacto, pagos o comprobantes. La verificaciÃ³n pÃºblica del QR permanece de consulta y no registra embarques. CÃ¡mara web, funcionamiento offline y polÃ­tica automÃ¡tica de no-show quedan fuera de alcance.
+El manifiesto agrega el estado `Embarcado`/`Pendiente` y sus totales mediante una anotación `Exists`, sin escribir al consultar ni exponer información de contacto, pagos o comprobantes. La verificación pública del QR permanece de consulta y no registra embarques. Cámara web, funcionamiento offline y política automática de no-show quedan fuera de alcance.
 
 ## Base técnica
 
@@ -21,14 +21,14 @@ El manifiesto agrega el estado `Embarcado`/`Pendiente` y sus totales mediante un
 
 Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y reintentos. La tecnología queda diferida: no instalar Celery ni Redis ahora, ni introducir infraestructura sin una decisión aprobada.
 
-## FundaciÃ³n de pagos manuales
+## Fundación de pagos manuales
 
 - `payments` depende de `sales` para reservas y snapshots de importe; `sales` y `operations` no dependen de `payments`.
-- `Payment` representa un cobro manual completo: efectivo aprobado inmediatamente o transferencia bancaria bajo revisiÃ³n. El importe se calcula desde `SeatAssignment.price` y se conserva como `Decimal`.
-- Las transiciones bloquean `Booking` y luego `Payment` dentro de `transaction.atomic`; la confirmaciÃ³n actualiza pago, reserva y butacas atÃ³micamente.
-- Los comprobantes usan almacenamiento privado compatible con `default_storage`, nombres UUID no predecibles, extensiones PDF/JPG/JPEG/PNG y lÃ­mite configurable de 10 MB. La descarga requiere autenticaciÃ³n y permisos.
-- El panel ofrece registro de efectivo, presentaciÃ³n y revisiÃ³n de transferencias, auditorÃ­a y mÃ©tricas de pagos aprobados. No se habilitan pasarelas, pagos parciales ni caja.
-- Antes de producciÃ³n debe definirse almacenamiento persistente para comprobantes en Railway.
+- `Payment` representa un cobro manual completo: efectivo aprobado inmediatamente o transferencia bancaria bajo revisión. El importe se calcula desde `SeatAssignment.price` y se conserva como `Decimal`.
+- Las transiciones bloquean `Booking` y luego `Payment` dentro de `transaction.atomic`; la confirmación actualiza pago, reserva y butacas atómicamente.
+- Los comprobantes usan almacenamiento privado compatible con `default_storage`, nombres UUID no predecibles, extensiones PDF/JPG/JPEG/PNG y límite configurable de 10 MB. La descarga requiere autenticación y permisos.
+- El panel ofrece registro de efectivo, presentación y revisión de transferencias, auditoría y métricas de pagos aprobados. No se habilitan pasarelas, pagos parciales ni caja.
+- Antes de producción debe definirse almacenamiento persistente para comprobantes en Railway.
 
 ## Checkout publico hasta reserva HELD
 
@@ -87,20 +87,20 @@ Esta separación es conceptual. No crear todos estos módulos todavía: se imple
 
 Las reglas del producto se encuentran en [PROJECT_SPEC.md](PROJECT_SPEC.md). Las definiciones abiertas se registran en [DECISIONS.md](DECISIONS.md); no deben resolverse por suposición.
 
-## Integraci?n de fulfillment econ?mico
+## Integración de fulfillment económico
 
-## Reportes bÃ¡sicos de ventas (2026-10-01)
+## Reportes básicos de ventas (2026-10-01)
 
-El panel personalizado expone `/panel/reportes/ventas/` y su descarga CSV en modo estrictamente lectura para Administrador/Vendedor. La fuente es `Payment` APPROVED unido a `Booking` CONFIRMED; cada fila representa un pago y se consulta con `select_related` para evitar N+1. Los filtros de fecha usan `America/Argentina/Buenos_Aires`, el lÃ­mite de rango es configurable mediante `PANEL_REPORTS_MAX_RANGE_DAYS` (366 por defecto), y el CSV usa UTF-8 BOM, neutraliza fÃ³rmulas y no incluye PII, comprobantes ni datos de contabilidad/caja.
+El panel personalizado expone `/panel/reportes/ventas/` y su descarga CSV en modo estrictamente lectura para Administrador/Vendedor. La fuente es `Payment` APPROVED unido a `Booking` CONFIRMED; cada fila representa un pago y se consulta con `select_related` para evitar N+1. Los filtros de fecha usan `America/Argentina/Buenos_Aires`, el límite de rango es configurable mediante `PANEL_REPORTS_MAX_RANGE_DAYS` (366 por defecto), y el CSV usa UTF-8 BOM, neutraliza fórmulas y no incluye PII, comprobantes ni datos de contabilidad/caja.
 
-La confirmaci?n contin?a siendo responsabilidad de `payments`. Dentro de la misma transacci?n se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con `tickets.services.reconcile_confirmed_fulfillments`. La emisi?n y el correo permanecen en `tickets`, sin se?ales ocultas, Celery o Redis.
+La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con `tickets.services.reconcile_confirmed_fulfillments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
 ## Cuentas de clientes
 
-La app `customers` reutiliza el usuario est?ndar de Django sin cambiar `AUTH_USER_MODEL`. `Customer` es un perfil separado y no otorga permisos del panel. El checkout sigue admitiendo invitados; las reservas nuevas de un cliente autenticado se vinculan expl?citamente. Las compras invitadas se reclaman con un token aleatorio almacenado como hash, de un solo uso y con vencimiento configurable.
+La app `customers` reutiliza el usuario estándar de Django sin cambiar `AUTH_USER_MODEL`. `Customer` es un perfil separado y no otorga permisos del panel. El checkout sigue admitiendo invitados; las reservas nuevas de un cliente autenticado se vinculan explícitamente. Las compras invitadas se reclaman con un token aleatorio almacenado como hash, de un solo uso y con vencimiento configurable.
 
-El acceso con Google usa OAuth configurable por variables de entorno y `state` en sesi?n; la simulaci?n solo se habilita expl?citamente para desarrollo y pruebas. No se mezclan cuentas de clientes con Administrador o Vendedor. Los tickets contin?an en almacenamiento privado y se autorizan por asociaci?n de cuenta.
+El acceso con Google usa OAuth configurable por variables de entorno y `state` en sesión; la simulación solo se habilita explícitamente para desarrollo y pruebas. No se mezclan cuentas de clientes con Administrador o Vendedor. Los tickets continúan en almacenamiento privado y se autorizan por asociación de cuenta.
 
-Los consentimientos comerciales son eventos auditables separados de la compra y de la creaci?n de cuenta; incluyen versi?n y origen y pueden revocarse sin borrar datos operativos.\n
+Los consentimientos comerciales son eventos auditables separados de la compra y de la creación de cuenta; incluyen versión y origen y pueden revocarse sin borrar datos operativos.\n
 La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con el comando `reconcile_fulfillments` o `tickets.services.reconcile_confirmed_fulfillments`. Por lo tanto existe una dependencia explícita y unidireccional `payments -> tickets`; `tickets` no importa `payments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
 
 Los trabajos tienen una concesión temporal (`lease_until`) para evitar doble procesamiento. Un proceso que cae deja el trabajo recuperable después de `TICKETS_FULFILLMENT_STALE_SECONDS`. La operación periódica futura podrá invocar `python manage.py reconcile_fulfillments --limit 100`; esta entrega no instala ni configura un programador.
