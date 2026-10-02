@@ -1,10 +1,10 @@
-"""Pruebas integrales de cuentas de clientes, autenticaciÃƒÂ³n por correo normalizado,
+"""Pruebas integrales de cuentas de clientes, autenticación por correo normalizado,
 
 
 
 
 
-recuperaciÃƒÂ³n de contraseÃƒÂ±a por enlace, separaciÃƒÂ³n de panel, reclamo de reservas invitadas,
+recuperación de contraseña por enlace, separación de panel, reclamo de reservas invitadas,
 
 
 descarga de pasajes, consentimiento comercial auditable y Google OAuth configurable por env.
@@ -151,7 +151,7 @@ User = get_user_model()
 class BaseCustomerTestCase(TestCase):
 
 
-    """ConfiguraciÃƒÂ³n base de infraestructura de datos para pruebas de clientes."""
+    """Configuración base de infraestructura de datos para pruebas de clientes."""
 
 
 
@@ -172,7 +172,7 @@ class BaseCustomerTestCase(TestCase):
         # Paradas
 
 
-        self.stop_cba = Stop.objects.create(name="CÃ³rdoba Capital", code="CBA", city="CÃ³rdoba", province="CÃ³rdoba")
+        self.stop_cba = Stop.objects.create(name="Córdoba Capital", code="CBA", city="Córdoba", province="Córdoba")
 
 
         self.stop_juj = Stop.objects.create(name="San Salvador de Jujuy", code="JUJ", city="San Salvador de Jujuy", province="Jujuy")
@@ -184,7 +184,7 @@ class BaseCustomerTestCase(TestCase):
         # Recorrido
 
 
-        self.route = Route.objects.create(name="CÃƒÂ³rdoba Ã¢â€ â€™ Jujuy", code="CBA-JUJ", is_active=True)
+        self.route = Route.objects.create(name="Córdoba → Jujuy", code="CBA-JUJ", is_active=True)
 
 
         RouteStop.objects.create(route=self.route, stop=self.stop_cba, sequence=1, allows_boarding=True, allows_alighting=False)
@@ -298,7 +298,7 @@ class BaseCustomerTestCase(TestCase):
     def _create_confirmed_booking_with_tickets(self, customer_email="cliente@ejemplo.com"):
 
 
-        """Crea una reserva confirmada con pasaje emitido y archivo fÃƒÂ­sico en storage."""
+        """Crea una reserva confirmada con pasaje emitido y archivo físico en storage."""
 
 
         now = timezone.now()
@@ -373,7 +373,7 @@ class BaseCustomerTestCase(TestCase):
             first_name="Juan",
 
 
-            last_name="PÃƒÂ©rez",
+            last_name="Pérez",
 
 
             document_type="DNI",
@@ -464,7 +464,7 @@ class BaseCustomerTestCase(TestCase):
             pdf_path=pdf_filename,
 
 
-            passenger_name="Juan PÃƒÂ©rez",
+            passenger_name="Juan Pérez",
 
 
             passenger_document_masked="30***456",
@@ -512,7 +512,7 @@ class BaseCustomerTestCase(TestCase):
 class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
 
 
-    """Pruebas de registro, login con correo normalizado y separaciÃƒÂ³n del panel."""
+    """Pruebas de registro, login con correo normalizado y separación del panel."""
 
 
 
@@ -521,7 +521,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
     def test_registration_normalizes_email_and_authenticates_case_insensitively(self):
 
 
-        """El registro guarda el correo normalizado en minÃƒÂºsculas y permite el login sin distinciÃƒÂ³n de mayÃƒÂºsculas."""
+        """El registro guarda el correo normalizado en minúsculas y permite el login sin distinción de mayúsculas."""
 
 
         raw_email = "  Pasajero.Ejemplo@CORREO.Com  "
@@ -548,7 +548,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
             "first_name": "Carlos",
 
 
-            "last_name": "GÃƒÂ³mez",
+            "last_name": "Gómez",
 
 
             "commercial_consent": "on",
@@ -569,7 +569,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
 
 
 
-        # Verificar normalizaciÃƒÂ³n en base de datos
+        # Verificar normalización en base de datos
 
 
         customer = Customer.objects.get(normalized_email=expected_normalized)
@@ -590,7 +590,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
 
 
 
-        # Cerrar sesiÃƒÂ³n
+        # Cerrar sesión
 
 
         self.client.post(reverse("logout_cliente"))
@@ -599,7 +599,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
 
 
 
-        # Iniciar sesiÃƒÂ³n con mayÃƒÂºsculas distintas
+        # Iniciar sesión con mayúsculas distintas
 
 
         login_resp = self.client.post(reverse("login_cliente"), {
@@ -701,7 +701,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
 
 
 
-        # Intento de acceso a la raÃƒÂ­z del panel
+        # Intento de acceso a la raíz del panel
 
 
         panel_resp = self.client.get(reverse("panel:dashboard"))
@@ -728,7 +728,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
     def test_anonymous_access_to_mis_viajes_redirects_to_customer_login(self):
 
 
-        """Un usuario anÃƒÂ³nimo que intenta ver sus viajes es redirigido a login_cliente y no a panel."""
+        """Un usuario anónimo que intenta ver sus viajes es redirigido a login_cliente y no a panel."""
 
 
         response = self.client.get(reverse("mis_viajes"))
@@ -749,7 +749,7 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
 class CustomerConsentAuditingTests(BaseCustomerTestCase):
 
 
-    """Pruebas de consentimiento comercial explÃƒÂ­cito, separado y auditable."""
+    """Pruebas de consentimiento comercial explícito, separado y auditable."""
 
 
 
@@ -758,7 +758,7 @@ class CustomerConsentAuditingTests(BaseCustomerTestCase):
     def test_optional_commercial_consent_audited_on_registration(self):
 
 
-        """El consentimiento es opcional y registra metadatos de auditorÃƒÂ­a completos."""
+        """El consentimiento es opcional y registra metadatos de auditoría completos."""
 
 
         # 1. Registro con consentimiento otorgado
@@ -904,7 +904,7 @@ class CustomerConsentAuditingTests(BaseCustomerTestCase):
 class PasswordResetLinkTests(BaseCustomerTestCase):
 
 
-    """Pruebas de restablecimiento de contraseÃƒÂ±a mediante enlace seguro por correo."""
+    """Pruebas de restablecimiento de contraseña mediante enlace seguro por correo."""
 
 
 
@@ -913,7 +913,7 @@ class PasswordResetLinkTests(BaseCustomerTestCase):
     def test_password_reset_flow_with_link(self):
 
 
-        """EnvÃƒÂ­a un enlace ÃƒÂºnico por correo, valida token seguro y actualiza contraseÃƒÂ±a."""
+        """Envía un enlace único por correo, valida token seguro y actualiza contraseña."""
 
 
         customer = register_customer(
@@ -952,7 +952,7 @@ class PasswordResetLinkTests(BaseCustomerTestCase):
 
 
 
-        # 2. Verificar que se enviÃƒÂ³ exactamente un correo
+        # 2. Verificar que se envió exactamente un correo
 
 
         self.assertEqual(len(mail.outbox), 1)
@@ -985,7 +985,7 @@ class PasswordResetLinkTests(BaseCustomerTestCase):
 
 
 
-        # 4. Acceder al formulario de confirmaciÃƒÂ³n con token vÃƒÂ¡lido
+        # 4. Acceder al formulario de confirmación con token válido
 
 
         get_confirm = self.client.get(confirm_url)
@@ -1000,7 +1000,7 @@ class PasswordResetLinkTests(BaseCustomerTestCase):
 
 
 
-        # 5. Establecer nueva contraseÃƒÂ±a
+        # 5. Establecer nueva contraseña
 
 
         post_confirm = self.client.post(confirm_url, {
@@ -1024,7 +1024,7 @@ class PasswordResetLinkTests(BaseCustomerTestCase):
 
 
 
-        # 6. Verificar que la nueva contraseÃƒÂ±a funciona y la vieja ya no
+        # 6. Verificar que la nueva contraseña funciona y la vieja ya no
 
 
         self.assertTrue(self.client.login(username="recuperar@ejemplo.com", password="NewSecretPassword123!"))
@@ -1036,7 +1036,7 @@ class PasswordResetLinkTests(BaseCustomerTestCase):
     def test_password_reset_rejects_invalid_token(self):
 
 
-        """Rechaza tokens invÃƒÂ¡lidos o manipulados."""
+        """Rechaza tokens inválidos o manipulados."""
 
 
         customer = register_customer(
@@ -1078,7 +1078,7 @@ class PasswordResetLinkTests(BaseCustomerTestCase):
 class GuestCheckoutAndClaimTokenTests(BaseCustomerTestCase):
 
 
-    """Pruebas de checkout como invitado, generaciÃƒÂ³n de claim tokens y asociaciÃƒÂ³n segura."""
+    """Pruebas de checkout como invitado, generación de claim tokens y asociación segura."""
 
 
 
@@ -1087,7 +1087,7 @@ class GuestCheckoutAndClaimTokenTests(BaseCustomerTestCase):
     def test_guest_checkout_creates_claim_token_and_keeps_working(self):
 
 
-        """La compra como invitado ('checkout invitado') continÃƒÂºa funcionando y genera un claim token seguro."""
+        """La compra como invitado ('checkout invitado') continúa funcionando y genera un claim token seguro."""
 
 
         now = timezone.now()
@@ -1195,7 +1195,7 @@ class GuestCheckoutAndClaimTokenTests(BaseCustomerTestCase):
 
 
 
-        # Iniciar sesiÃƒÂ³n y asociar reserva
+        # Iniciar sesión y asociar reserva
 
 
         self.client.force_login(customer.user)
@@ -1222,7 +1222,7 @@ class GuestCheckoutAndClaimTokenTests(BaseCustomerTestCase):
 
 
 
-        # Verificar asociaciÃƒÂ³n en base de datos
+        # Verificar asociación en base de datos
 
 
         cb = CustomerBooking.objects.get(booking=booking)
@@ -1363,7 +1363,7 @@ class GuestCheckoutAndClaimTokenTests(BaseCustomerTestCase):
 class CustomerTripsAndTicketsTests(BaseCustomerTestCase):
 
 
-    """Pruebas de visualizaciÃƒÂ³n de 'Mis viajes' y descarga segura de pasajes."""
+    """Pruebas de visualización de 'Mis viajes' y descarga segura de pasajes."""
 
 
 
@@ -1489,7 +1489,7 @@ class CustomerTripsAndTicketsTests(BaseCustomerTestCase):
 class GoogleOAuthConfigurationAndSimulationTests(BaseCustomerTestCase):
 
 
-    """Pruebas de inicio de sesiÃƒÂ³n con Google: solo configurable por env y callback simulado seguro."""
+    """Pruebas de inicio de sesión con Google: solo configurable por env y callback simulado seguro."""
 
 
 
@@ -1498,7 +1498,7 @@ class GoogleOAuthConfigurationAndSimulationTests(BaseCustomerTestCase):
     def test_google_login_not_configured_gives_friendly_message(self):
 
 
-        """Si Google OAuth no estÃƒÂ¡ configurado en env y simulaciÃƒÂ³n desactivada, no rompe y avisa amistosamente."""
+        """Si Google OAuth no está configurado en env y simulación desactivada, no rompe y avisa amistosamente."""
 
 
         with self.settings(GOOGLE_OAUTH_ENABLED=False, GOOGLE_OAUTH_SIMULATION_ENABLED=False, DEBUG=False):
@@ -1519,13 +1519,13 @@ class GoogleOAuthConfigurationAndSimulationTests(BaseCustomerTestCase):
     def test_google_oauth_callback_simulated_securely(self):
 
 
-        """En entorno con simulaciÃƒÂ³n habilitada, procesa el callback simulado seguro verificando state CSRF."""
+        """En entorno con simulación habilitada, procesa el callback simulado seguro verificando state CSRF."""
 
 
         with self.settings(GOOGLE_OAUTH_SIMULATION_ENABLED=True):
 
 
-            # 1. Iniciar login de Google para generar state en sesiÃƒÂ³n
+            # 1. Iniciar login de Google para generar state en sesión
 
 
             init_resp = self.client.get(reverse("google_login"))
@@ -1594,7 +1594,7 @@ class GoogleOAuthConfigurationAndSimulationTests(BaseCustomerTestCase):
 
 
 
-            # Verificar creaciÃƒÂ³n del usuario y perfil Customer
+            # Verificar creación del usuario y perfil Customer
 
 
             customer = Customer.objects.get(normalized_email="carlos@ejemplo.com")
