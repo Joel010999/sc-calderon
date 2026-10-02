@@ -64,6 +64,22 @@ def can_manage_payments(user):
     )
 
 
+def can_access_operational_inbox(user):
+    return can_manage_reservations(user)
+
+
+def operational_inbox_access():
+    def decorate(view):
+        @login_required(login_url="panel:login")
+        @wraps(view)
+        def wrapped(request, *args, **kwargs):
+            if not can_access_operational_inbox(request.user):
+                raise PermissionDenied("No tenés permiso para acceder a la bandeja operativa.")
+            return view(request, *args, **kwargs)
+        return wrapped
+    return decorate
+
+
 def require_payments_access(user):
     if not can_manage_payments(user):
         raise PermissionDenied("No tenés permiso para acceder al módulo de pagos.")

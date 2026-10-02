@@ -265,6 +265,10 @@ Estado: implementado en `feature/trip-passenger-manifest-20261001`, pendiente de
 
 ## Ciclo de vida de viajes y corte posterior al inicio (2026-10-01)
 
+## Bandeja operativa (2026-10-02)
+
+En implementación en `feature/operations-inbox-20261002`: vista de solo lectura para Administrador/Vendedor con categorías, prioridades server-side, filtros, búsqueda segura, paginación y contadores globales. No crea migraciones. Cámara, offline, polling agresivo, caja, contabilidad y mantenimiento programado quedan fuera de alcance.
+
 Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendiente de validación PostgreSQL y workflow CI.
 
 - Se agregaron servicios idempotentes y transaccionales para iniciar y finalizar viajes, con `select_for_update`, timestamps `started_at`/`completed_at`, permisos Administrador/Vendedor y auditoría.

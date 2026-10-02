@@ -8,6 +8,7 @@ from . import fulfillment_views as fulfillment
 from . import report_views as reports
 from . import manifest_views as manifests
 from . import boarding_views as boarding
+from . import inbox_views as inbox
 
 app_name = 'panel'
 
@@ -33,6 +34,7 @@ urlpatterns = [
     path('reportes/ventas.csv', reports.sales_report_csv, name='sales_report_csv'),
     path('embarques/', boarding.boarding_validate, name='boarding_validate'),
     path('embarques/<int:record_pk>/revertir/', boarding.boarding_reverse, name='boarding_reverse'),
+    path('bandeja-operativa/', inbox.operational_inbox, name='operational_inbox'),
 
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),

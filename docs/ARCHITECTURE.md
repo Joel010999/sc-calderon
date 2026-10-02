@@ -115,6 +115,10 @@ La confirmación continúa siendo responsabilidad de `payments`. Dentro de la mi
 Los trabajos tienen una concesión temporal (`lease_until`) para evitar doble procesamiento. Un proceso que cae deja el trabajo recuperable después de `TICKETS_FULFILLMENT_STALE_SECONDS`. La operación periódica futura podrá invocar `python manage.py reconcile_fulfillments --limit 100`; esta entrega no instala ni configura un programador.
 ## Manifiesto operativo de pasajeros
 
+## Bandeja operativa de solo lectura (2026-10-02)
+
+`panel.inbox_services` compone señales existentes sin modelo propio ni migración. Valida filtros server-side, conserva contadores globales al paginar y enlaza a pantallas autorizadas. La prioridad es crítica para vencimientos/fallos/leases, alta para pendientes próximos y tickets incompletos, media para tareas pendientes o rechazos recientes e informativa para viajes próximos. No reemplaza caja, contabilidad ni mantenimiento programado.
+
 El manifiesto del panel es una consulta de solo lectura sobre un `Trip` concreto. La fuente de filas es `sales.SeatAssignment`, limitada simultáneamente por `trip_id`, `leg__trip_id`, `AssignmentStatus.CONFIRMED` y `BookingStatus.CONFIRMED`. La consulta usa `select_related` para pasajero, reserva, tramo y `TripStop` con su parada, y no consulta pagos, comprobantes, tickets, correos ni auditoría.
 
 Las paradas y el resumen se calculan con la fotografía real de `TripStop`; nunca se reconstruyen desde nombres o desde `Route`. La vista HTML, la vista de impresión y el CSV son endpoints GET protegidos por los roles Administrador/Vendedor y no modifican datos. El CSV se emite en UTF-8 con BOM y antepone una comilla simple a valores que podrían interpretarse como fórmulas de planilla.
