@@ -31,8 +31,10 @@
 
 <section class="ops-card">
     <h3>Pasajeros confirmados <span class="muted">({{ rows|length }})</span></h3>
+    <p><strong>Embarcados:</strong> {{ boarded_count }} · <strong>Pendientes:</strong> {{ pending_count }}</p>
     <div class="table-scroll" tabindex="0" role="region" aria-label="Pasajeros confirmados del viaje">
         <table>
+            <caption>Estado de embarque incluido en la referencia de reserva</caption>
             <thead><tr><th>Pasajero</th><th>Documento</th><th>Butaca</th><th>Categoría</th><th>Sube en</th><th>Baja en</th><th>Reserva</th></tr></thead>
             <tbody>
                 {% for row in rows %}
@@ -43,7 +45,7 @@
                     <td>{{ row.category_display }}</td>
                     <td>{{ row.origin_stop }}</td>
                     <td>{{ row.destination_stop }}</td>
-                    <td><span class="manifest-booking-reference">{{ row.booking_public_id }}</span></td>
+                    <td><span class="manifest-booking-reference">{{ row.booking_public_id }}</span><br><span class="muted">{% if row.boarded %}Embarcado{% else %}Pendiente{% endif %}</span></td>
                 </tr>
                 {% empty %}<tr><td colspan="7">No hay pasajeros confirmados para este viaje.</td></tr>{% endfor %}
             </tbody>

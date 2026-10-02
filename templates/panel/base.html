@@ -33,6 +33,7 @@
                     <span class="sidebar-heading">Principal</span>
                     <a href="{% url 'panel:dashboard' %}" class="sidebar-link">Dashboard</a>
                     <a href="{% url 'panel:fulfillment_list' %}" class="sidebar-link">Entrega de pasajes</a>
+                    {% if can_access_reservations %}<a href="{% url 'panel:boarding_validate' %}" class="sidebar-link">Validar embarque</a>{% endif %}
                 </div>
                 {% if can_access_reservations %}
                 <div class="sidebar-section">

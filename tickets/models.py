@@ -264,6 +264,8 @@ class TicketAuditEvent(models.Model):
         VOID = "VOID", "Anulación"
         EMAIL = "EMAIL", "Envío de correo"
         VERIFY = "VERIFY", "Verificación"
+        BOARDING = "BOARDING", "Embarque"
+        BOARDING_REVERSAL = "BOARDING_REVERSAL", "Reversión de embarque"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -304,6 +306,119 @@ class TicketAuditEvent(models.Model):
 
     def __str__(self):
         return f"[{self.get_action_display()}] {self.description}"
+
+
+class BoardingStatus(models.TextChoices):
+    ACTIVE = "ACTIVE", "Embarcado"
+    REVERSED = "REVERSED", "Revertido"
+
+
+class BoardingRecord(models.Model):
+    """Registro histórico de cada validación de embarque."""
+
+    ticket = models.ForeignKey(
+        Ticket,
+        verbose_name="pasaje",
+        on_delete=models.PROTECT,
+        related_name="boarding_records",
+    )
+    passenger = models.ForeignKey(
+        "sales.BookingPassenger",
+        verbose_name="pasajero",
+        on_delete=models.PROTECT,
+        related_name="boarding_records",
+    )
+    trip = models.ForeignKey(
+        "operations.Trip",
+        verbose_name="viaje",
+        on_delete=models.PROTECT,
+        related_name="boarding_records",
+    )
+    seat_assignment = models.ForeignKey(
+        "sales.SeatAssignment",
+        verbose_name="asignación de butaca",
+        on_delete=models.PROTECT,
+        related_name="boarding_records",
+    )
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="operador",
+        on_delete=models.PROTECT,
+        related_name="boarding_records",
+    )
+    boarded_at = models.DateTimeField(
+        "fecha y hora de embarque",
+        default=timezone.now,
+        validators=[validate_aware_datetime],
+    )
+    status = models.CharField(
+        "estado del registro",
+        max_length=10,
+        choices=BoardingStatus.choices,
+        default=BoardingStatus.ACTIVE,
+    )
+    reversed_at = models.DateTimeField(
+        "fecha y hora de reversión",
+        null=True,
+        blank=True,
+        validators=[validate_aware_datetime],
+    )
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="usuario que revirtió",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reversed_boarding_records",
+    )
+    reversal_reason = models.TextField("motivo de reversión", blank=True, default="")
+    created_at = models.DateTimeField("fecha de creación", auto_now_add=True)
+    updated_at = models.DateTimeField("última actualización", auto_now=True)
+
+    class Meta:
+        verbose_name = "registro de embarque"
+        verbose_name_plural = "registros de embarque"
+        ordering = ["-boarded_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ticket"],
+                condition=Q(status=BoardingStatus.ACTIVE),
+                name="tickets_active_boarding_ticket_unique",
+                violation_error_message="El pasaje ya tiene un embarque activo.",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=BoardingStatus.values),
+                name="tickets_boarding_status_valid",
+                violation_error_message="El estado del embarque no es válido.",
+            ),
+            models.CheckConstraint(
+                condition=Q(status=BoardingStatus.ACTIVE, reversed_at__isnull=True)
+                | Q(status=BoardingStatus.REVERSED, reversed_at__isnull=False),
+                name="tickets_boarding_reversal_consistent",
+                violation_error_message="La reversión del embarque no es consistente.",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["trip", "status"], name="tickets_board_trip_idx"),
+            models.Index(fields=["operator", "boarded_at"], name="tickets_board_op_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.ticket_id and self.passenger_id and self.ticket.passenger_id != self.passenger_id:
+            errors["passenger"] = "El pasajero debe coincidir con el pasaje."
+        if self.ticket_id and self.seat_assignment_id and self.ticket.seat_assignment_id != self.seat_assignment_id:
+            errors["seat_assignment"] = "La butaca debe coincidir con el pasaje."
+        if self.ticket_id and self.trip_id and self.ticket.leg.trip_id != self.trip_id:
+            errors["trip"] = "El viaje debe coincidir con el tramo del pasaje."
+        if self.status == BoardingStatus.REVERSED and not self.reversal_reason.strip():
+            errors["reversal_reason"] = "La reversión requiere un motivo."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"Embarque {self.ticket.ticket_code} · {self.get_status_display()}"
 
 
 class FulfillmentIssueStatus(models.TextChoices):

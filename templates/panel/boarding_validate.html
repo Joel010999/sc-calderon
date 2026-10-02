@@ -1,0 +1,54 @@
+{% extends 'panel/base.html' %}
+{% load tz %}
+{% block content %}
+<section class="ops-card">
+    <header class="ops-header">
+        <div>
+            <p class="muted">Panel interno</p>
+            <h2>Validar embarque</h2>
+            <p class="muted">Seleccioná el viaje y escaneá el QR con un lector que funcione como teclado.</p>
+        </div>
+    </header>
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="form-grid">
+            <div class="form-field">
+                {{ form.trip.label_tag }}
+                {{ form.trip }}
+                {{ form.trip.errors }}
+            </div>
+            <div class="form-field">
+                {{ form.scan_value.label_tag }}
+                {{ form.scan_value }}
+                {{ form.scan_value.errors }}
+            </div>
+        </div>
+        <button class="ops-button" type="submit">Validar pasaje</button>
+    </form>
+</section>
+
+{% if outcome %}
+<section class="ops-card boarding-result boarding-result-{{ outcome.code|lower }}" aria-live="polite">
+    <h3>{{ outcome.message }}</h3>
+    {% if outcome.ticket %}
+    <dl>
+        <dt>Pasaje</dt><dd>{{ outcome.ticket.ticket_code }}</dd>
+        <dt>Pasajero</dt><dd>{{ outcome.ticket.passenger_name }}</dd>
+        <dt>Butaca</dt><dd>{{ outcome.ticket.seat_number }}</dd>
+    </dl>
+    {% endif %}
+    {% if outcome.record and outcome.code == 'ALREADY_BOARDED' %}
+    <p>Registrado el {{ outcome.record.boarded_at|localtime|date:'d/m/Y H:i' }} por {{ outcome.record.operator.get_full_name|default:outcome.record.operator.username }}.</p>
+    {% if can_reverse %}
+    <form method="post" action="{% url 'panel:boarding_reverse' outcome.record.pk %}">
+        {% csrf_token %}
+        {{ reversal_form.reason.label_tag }}
+        {{ reversal_form.reason }}
+        <button class="ops-button" type="submit">Revertir embarque</button>
+    </form>
+    {% endif %}
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}

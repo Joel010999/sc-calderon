@@ -1,5 +1,14 @@
 # Estado de SC Viajes
 
+## FundaciÃ³n de validaciÃ³n de embarque (2026-10-01)
+
+Estado: implementada, integrada con el ciclo de vida de viajes, validada y publicada en `feature/boarding-validation-20261001`.
+
+- `tickets.BoardingRecord` registra pasaje, pasajero, viaje, butaca, operador, fecha/hora, estado y motivo de reversiÃ³n; la unicidad condicional evita duplicar embarques activos y conserva el historial revertido.
+- El panel personalizado incorpora `/panel/embarques/`, con lector de teclado para QR/cÃ³digo, validaciones server-side, respuestas diferenciadas, permisos de Administrador/Vendedor y reversiÃ³n POST+CSRF exclusiva de Administrador.
+- El manifiesto muestra estado de embarque y totales embarcados/pendientes mediante consulta de solo lectura. La verificaciÃ³n pÃºblica QR no registra embarques.
+- Se excluyen cÃ¡mara web, funcionamiento offline, geolocalizaciÃ³n, no-show automÃ¡tico, cierre automÃ¡tico de manifiesto, cambios, cancelaciones y notificaciones al pasajero.
+
 - Proyecto: SC Viajes.
 - Estado: fundación técnica aprobada.
 - `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
