@@ -64,16 +64,23 @@ class Command(BaseCommand):
         counts = Counter(processed=0, succeeded=0, failed=0, skipped=0, candidates=0)
         details = Counter()
         timed_out = False
+        limit_reached = False
         considered = 0
 
         for task in tasks:
+            if considered >= limit:
+                limit_reached = True
+                break
             if self._expired(started, max_seconds):
                 timed_out = True
                 break
             candidates = self._candidates(task, booking_id, timezone.now())[:limit - considered]
             counts["candidates"] += len(candidates)
             for candidate in candidates:
-                if considered >= limit or self._expired(started, max_seconds):
+                if considered >= limit:
+                    limit_reached = True
+                    break
+                if self._expired(started, max_seconds):
                     timed_out = True
                     break
                 considered += 1
@@ -83,7 +90,9 @@ class Command(BaseCommand):
                     continue
                 counts["processed"] += 1
                 try:
-                    self._process(task, candidate)
+                    result = self._process(task, candidate)
+                    if task == "fulfillment" and not self._fulfillment_succeeded(result):
+                        raise RuntimeError("fulfillment no completado")
                     counts["succeeded"] += 1
                     details[f"{task}:succeeded"] += 1
                 except Exception:
@@ -91,6 +100,8 @@ class Command(BaseCommand):
                     counts["failed"] += 1
                     details[f"{task}:failed"] += 1
                     self.stderr.write("ERROR tarea=%s: operación no completada" % task)
+            if considered >= limit and not timed_out:
+                limit_reached = True
             if timed_out:
                 break
 
@@ -108,6 +119,7 @@ class Command(BaseCommand):
             "failed": counts["failed"],
             "skipped": counts["skipped"],
             "timed_out": timed_out,
+            "limit_reached": limit_reached,
             "elapsed_ms": elapsed_ms,
             "metrics": dict(details),
         }
@@ -137,6 +149,13 @@ class Command(BaseCommand):
     @staticmethod
     def _expired(started, max_seconds):
         return time.monotonic() - started >= max_seconds
+
+    @staticmethod
+    def _fulfillment_succeeded(job):
+        return (
+            job.issue_status == FulfillmentIssueStatus.SUCCEEDED
+            and job.email_status == FulfillmentEmailStatus.SENT
+        )
 
     def _candidates(self, task, booking_id, now):
         if task == "expire":
@@ -177,9 +196,12 @@ class Command(BaseCommand):
             lease_until__lte=now,
         ).values_list("booking_id", flat=True))
         # Tickets existentes sin trabajo también son reconciliables.
-        ids += list(Ticket.objects.filter(booking__status=BookingStatus.CONFIRMED).exclude(
+        orphan_tickets = Ticket.objects.filter(booking__status=BookingStatus.CONFIRMED).exclude(
             booking__in=TicketFulfillment.objects.values("booking_id")
-        ).values_list("booking_id", flat=True))
+        )
+        if booking_id:
+            orphan_tickets = orphan_tickets.filter(booking__public_id=booking_id)
+        ids += list(orphan_tickets.values_list("booking_id", flat=True))
         return list(dict.fromkeys(ids))
 
     @staticmethod
@@ -195,4 +217,4 @@ class Command(BaseCommand):
             return
         from tickets.services import process_booking_fulfillment
         job, _ = TicketFulfillment.objects.get_or_create(booking_id=booking_pk)
-        process_booking_fulfillment(job.pk, retry=True)
+        return process_booking_fulfillment(job.pk, retry=True)
