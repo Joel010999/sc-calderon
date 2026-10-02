@@ -1,12 +1,12 @@
 # Decisiones de SC Viajes
 
-## ValidaciÃ³n segura de embarque (2026-10-01)
+## Validación segura de embarque (2026-10-01)
 
-- El dominio de embarque pertenece a `tickets` porque el pasaje ya vincula el token QR seguro con su reserva, tramo, pasajero y asignaciÃ³n de butaca.
-- `BoardingRecord` conserva todos los embarques y sus reversiones. Solo puede existir un registro activo por pasaje mediante una restricciÃ³n Ãºnica condicional compatible con PostgreSQL y SQLite.
-- El panel acepta el token del QR existente o el cÃ³digo exacto del pasaje, pero nunca confÃ­a en UUID pÃºblicos ni en relaciones enviadas por el navegador. Se exige seleccionar el viaje y se revalidan server-side estado del pasaje, reserva, asignaciÃ³n, relaciones y viaje.
-- Administrador y Vendedor pueden validar; solo Administrador puede revertir con motivo obligatorio. Ambas operaciones generan auditorÃ­a y las reversiones no eliminan datos.
-- La cÃ¡mara del navegador, el funcionamiento offline y la polÃ­tica automÃ¡tica de no-show quedan explÃ­citamente fuera de esta entrega.
+- El dominio de embarque pertenece a `tickets` porque el pasaje ya vincula el token QR seguro con su reserva, tramo, pasajero y asignación de butaca.
+- `BoardingRecord` conserva todos los embarques y sus reversiones. Solo puede existir un registro activo por pasaje mediante una restricción única condicional compatible con PostgreSQL y SQLite.
+- El panel acepta el token del QR existente o el código exacto del pasaje, pero nunca confía en UUID públicos ni en relaciones enviadas por el navegador. Se exige seleccionar el viaje y se revalidan server-side estado del pasaje, reserva, asignación, relaciones y viaje.
+- Administrador y Vendedor pueden validar; solo Administrador puede revertir con motivo obligatorio. Ambas operaciones generan auditoría y las reversiones no eliminan datos.
+- La cámara del navegador, el funcionamiento offline y la política automática de no-show quedan explícitamente fuera de esta entrega.
 
 ## Confirmado
 
@@ -137,16 +137,16 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
   - Interfaz responsive desarrollada con HTML semántico y CSS local; sin dependencias externas ni CDNs.
   - Plano de asientos generado dinámicamente según la configuración de plantas (`Seat.Deck`) y coordenadas de butacas; sin esquemas rígidos hardcodeados.
 
-## FundaciÃ³n de pagos manuales (2026-09-18)
+## Fundación de pagos manuales (2026-09-18)
 
 - Se crea `payments`, dependiente de `sales`; `operations` y `sales` no dependen de ella.
 - Cada `Payment` cubre el importe total de una reserva manual HELD. No hay pagos parciales.
-- Efectivo queda APPROVED y confirma la reserva y butacas en una sola transacciÃ³n. Transferencia requiere comprobante y queda UNDER_REVIEW hasta aprobaciÃ³n o rechazo con motivo.
+- Efectivo queda APPROVED y confirma la reserva y butacas en una sola transacción. Transferencia requiere comprobante y queda UNDER_REVIEW hasta aprobación o rechazo con motivo.
 - Una transferencia vencida no puede aprobarse, no extiende el vencimiento y deja el pago sin modificar; la reserva se libera como EXPIRED antes del error de dominio.
-- Comprobantes permitidos: PDF, JPG, JPEG y PNG, con lÃ­mite configurable inicial de 10 MB y almacenamiento privado.
-- Una restricciÃ³n condicional impide dos pagos UNDER_REVIEW o APPROVED para una reserva. Rechazados y pendientes no cuentan en mÃ©tricas.
-- Quedan fuera de alcance caja, reembolsos, Mercado Pago, Payway, tarjetas, checkout pÃºblico y pagos parciales.
-- Pendientes con Sandro: polÃ­tica de vencimiento de transferencias durante revisiÃ³n en checkout pÃºblico. Antes de Railway debe definirse almacenamiento persistente para comprobantes.
+- Comprobantes permitidos: PDF, JPG, JPEG y PNG, con límite configurable inicial de 10 MB y almacenamiento privado.
+- Una restricción condicional impide dos pagos UNDER_REVIEW o APPROVED para una reserva. Rechazados y pendientes no cuentan en métricas.
+- Quedan fuera de alcance caja, reembolsos, Mercado Pago, Payway, tarjetas, checkout público y pagos parciales.
+- Pendientes con Sandro: política de vencimiento de transferencias durante revisión en checkout público. Antes de Railway debe definirse almacenamiento persistente para comprobantes.
 
 ## Fundación de checkout público (2026-09-19)
 
@@ -229,34 +229,34 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 
 No resolver estas decisiones por suposición. Registrar la respuesta aprobada antes de implementar la regla correspondiente.
 
-## Fulfillment de pasajes despu?s de la confirmaci?n econ?mica (2026-09-20)
+## Fulfillment de pasajes después de la confirmación económica (2026-09-20)
 
-- `payments` confirma pago, reserva y butacas en una transacci?n; una importaci?n perezosa crea el trabajo durable `TicketFulfillment` antes del commit para evitar perder la intenci?n si el proceso cae.
-- `transaction.on_commit` procesa el trabajo fuera de la transacci?n. Los fallos de PDF o correo se registran por separado, no revierten el pago y se recuperan mediante `process_booking_fulfillment(..., retry=True)` o `reconcile_confirmed_fulfillments`.
+- `payments` confirma pago, reserva y butacas en una transacción; una importación perezosa crea el trabajo durable `TicketFulfillment` antes del commit para evitar perder la intención si el proceso cae.
+- `transaction.on_commit` procesa el trabajo fuera de la transacción. Los fallos de PDF o correo se registran por separado, no revierten el pago y se recuperan mediante `process_booking_fulfillment(..., retry=True)` o `reconcile_confirmed_fulfillments`.
 - No se usan signals, Celery, Redis, Mercado Pago QR ni Payway.
 ## Cuentas, acceso y consentimiento (2026-09-20)
 
-- Se mantiene el usuario est?ndar de Django; no se reemplaza `AUTH_USER_MODEL`.
+- Se mantiene el usuario estándar de Django; no se reemplaza `AUTH_USER_MODEL`.
 - Comprar como invitado sigue permitido y no vincula reservas por coincidencia de email.
-- El cliente puede registrarse e iniciar sesi?n con email y contrase?a. Recuperaci?n mediante enlace seguro de Django; no se usan OTP ni c?digos.
+- El cliente puede registrarse e iniciar sesión con email y contraseña. Recuperación mediante enlace seguro de Django; no se usan OTP ni códigos.
 - Google queda preparado mediante OAuth con credenciales exclusivamente en entorno y sin secretos versionados. Apple queda pendiente.
-- El reclamo de una compra invitada usa un token aleatorio, guardado como hash, de un solo uso y con vencimiento. La entrega autom?tica por correo queda pendiente de la infraestructura de correo.
-- El consentimiento comercial es opcional, separado, desmarcado por defecto y auditable; retirarlo no elimina reservas ni pasajes. Campa?as y env?os masivos quedan pendientes.\n
+- El reclamo de una compra invitada usa un token aleatorio, guardado como hash, de un solo uso y con vencimiento. La entrega automática por correo queda pendiente de la infraestructura de correo.
+- El consentimiento comercial es opcional, separado, desmarcado por defecto y auditable; retirarlo no elimina reservas ni pasajes. Campañas y envíos masivos quedan pendientes.
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
 ## Mantenimiento operativo programado (2026-10-02)
 
-- Se adopta `python manage.py run_operational_maintenance` como proceso efímero para un Cron futuro de Railway, con tareas explícitas de expiración y fulfillment.
-- La expiración sólo selecciona `HELD` vencidas y delega en `expire_booking`; nunca modifica `CONFIRMED`, pagos aprobados ni viajes iniciados/completados.
+- Se adopta `python manage.py run_operational_maintenance` como proceso efímero para un Cron futuro de Railway, con tareas explícitas de expiración de reservas, pagos públicos y fulfillment.
+- La expiración selecciona `HELD` vencidas y delega en `expire_booking` o `expire_public_transfer_if_expired`; nunca modifica `CONFIRMED`, pagos aprobados ni viajes iniciados/completados.
 - Cada trabajo se procesa de forma independiente, con límite máximo de elementos y tiempo, tolerancia a fallos y leases existentes de `TicketFulfillment`.
 - `--dry-run` es estrictamente de lectura: no persiste trabajos ni auditoría y no realiza generación de PDF o correo; los logs sólo incluyen métricas y estados sin PII.
 
-## Reportes bÃ¡sicos de ventas (2026-10-01)
+## Reportes básicos de ventas (2026-10-01)
 
-- Se confirma que el primer reporte es informativo y de solo lectura: no implementa contabilidad, cierre de caja, devoluciones ni conciliaciÃ³n.
-- Se contabiliza una Ãºnica vez cada `Payment` APPROVED cuya reserva estÃ© CONFIRMED, usando `Payment.created_at` como fecha del cobro.
-- El rango mÃ¡ximo es configurable (`PANEL_REPORTS_MAX_RANGE_DAYS`, 366 por defecto); los filtros y la exportaciÃ³n se ejecutan server-side.
+- Se confirma que el primer reporte es informativo y de solo lectura: no implementa contabilidad, cierre de caja, devoluciones ni conciliación.
+- Se contabiliza una única vez cada `Payment` APPROVED cuya reserva esté CONFIRMED, usando `Payment.created_at` como fecha del cobro.
+- El rango máximo es configurable (`PANEL_REPORTS_MAX_RANGE_DAYS`, 366 por defecto); los filtros y la exportación se ejecutan server-side.
 
 - `payments` depende explícitamente de `tickets` mediante una importación perezosa para crear el trabajo durable; la dependencia no es circular.
 - `TicketFulfillment` conserva intentos, último intento, `next_attempt_at` y una concesión `lease_until`. Las concesiones vencidas se pueden recuperar sin cambiar tickets, UUID, QR ni pagos.

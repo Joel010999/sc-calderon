@@ -50,7 +50,7 @@ class ReservationPanelBaseTestCase(TestCase):
 
         # Paradas
         cls.stop_cba = Stop.objects.create(code="CBA", name="Córdoba Capital", city="Córdoba", province="Córdoba")
-        cls.stop_jma = Stop.objects.create(code="JMA", name="JesÃºs MarÃ­a", city="JesÃºs MarÃ­a", province="Córdoba")
+        cls.stop_jma = Stop.objects.create(code="JMA", name="Jesús María", city="Jesús María", province="Córdoba")
         cls.stop_ssj = Stop.objects.create(code="SSJ", name="San Salvador de Jujuy", city="San Salvador de Jujuy", province="Jujuy")
 
         # Recorridos
@@ -159,7 +159,7 @@ class ReservationPermissionsTests(ReservationPanelBaseTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_operations_permissions_not_expanded_for_seller(self):
-        """El acceso a reservas no amplÃ­a los permisos de escritura en operations."""
+        """El acceso a reservas no amplía los permisos de escritura en operations."""
         self.client.force_login(self.user_seller)
         # El vendedor no puede crear ni modificar colectivos
         response = self.client.post(reverse("panel:bus_create"), {"code": "TEST", "display_name": "Test"}, secure=True)
@@ -184,7 +184,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
             }],
             passengers_data=[{
                 "first_name": "Juan",
-                "last_name": "PÃ©rez",
+                "last_name": "Pérez",
                 "document_type": "DNI",
                 "document_number": "40.123.456",
                 "birth_date": "1995-05-15",
@@ -204,8 +204,8 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
                 "seats": [self.seat_cama_2],
             }],
             passengers_data=[{
-                "first_name": "MarÃ­a",
-                "last_name": "GonzÃ¡lez",
+                "first_name": "María",
+                "last_name": "González",
                 "document_type": "DNI",
                 "document_number": "35.987.654",
                 "birth_date": "1990-10-20",
@@ -219,7 +219,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
         self.assertEqual(response.status_code, 200)
         content = response.content.decode("utf-8")
 
-        # Columnas e informaciÃ³n visible
+        # Columnas e información visible
         self.assertIn(str(self.b_held.public_id)[:8], content)
         self.assertIn("held@correo.com", content)
         self.assertIn("Córdoba Capital → San Salvador de Jujuy", content)
@@ -232,7 +232,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
         content = response.content.decode("utf-8")
         self.assertIn("held@correo.com", content)
 
-        # Filtro por estado CONFIRMED (no hay ninguna aÃºn)
+        # Filtro por estado CONFIRMED (no hay ninguna aún)
         response_conf = self.client.get(reverse("panel:booking_list") + "?status=CONFIRMED", secure=True)
         self.assertEqual(response_conf.status_code, 200)
         self.assertNotIn("held@correo.com", response_conf.content.decode("utf-8"))
@@ -259,7 +259,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
         self.assertNotIn("held@correo.com", content)
 
     def test_search_by_normalized_document(self):
-        """BÃºsqueda por documento sin formato normalizado encuentra la reserva."""
+        """Búsqueda por documento sin formato normalizado encuentra la reserva."""
         # El documento fue guardado con puntos: '40.123.456', buscamos '40123456'
         response = self.client.get(reverse("panel:booking_list") + "?q=40123456", secure=True)
         self.assertEqual(response.status_code, 200)
@@ -267,7 +267,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
         self.assertIn("held@correo.com", content)
         self.assertNotIn("admin_booking@correo.com", content)
 
-        # BÃºsqueda con espacios o minÃºsculas
+        # Búsqueda con espacios o minúsculas
         response_fmt = self.client.get(reverse("panel:booking_list") + "?q= 40.123.456 ", secure=True)
         self.assertEqual(response_fmt.status_code, 200)
         self.assertIn("held@correo.com", response_fmt.content.decode("utf-8"))
@@ -304,13 +304,13 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
                 "gender": "Masculino",
             }],
         )
-        # Registrar auditorÃ­a de creaciÃ³n inicial como lo hace el servicio del panel
+        # Registrar auditoría de creación inicial como lo hace el servicio del panel
         AuditEvent.objects.create(
             actor=self.user_seller,
             action=AuditEvent.Action.CREATE,
             entity_type=self.booking._meta.label,
             entity_id=str(self.booking.pk),
-            description=f"CreaciÃ³n: Reserva {self.booking.public_id}",
+            description=f"Creación: Reserva {self.booking.public_id}",
             before={},
             after={},
         )
@@ -329,17 +329,17 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
         # Pasajero y documento
         self.assertIn("Carlos Romero", content)
         self.assertIn("30.456.789", content)
-        # Pasajero no almacena email ni telÃ©fono
+        # Pasajero no almacena email ni teléfono
         self.assertNotIn("carlos@correo.com", content)
-        # Butaca, categorÃ­a y precio histÃ³rico
+        # Butaca, categoría y precio histórico
         self.assertIn("Butaca 1", content)
         self.assertIn("Cama", content)
         self.assertIn("15000.00", content)
         # Vendedor
         self.assertIn("seller_test", content)
         # Auditoría existente
-        self.assertIn("CreaciÃ³n: Reserva", content)
-        # AcciÃ³n para liberar visible para HELD
+        self.assertIn("Creación: Reserva", content)
+        # Acción para liberar visible para HELD
         self.assertIn("Liberar reserva", content)
         # NO ofrece confirmar
         self.assertNotIn("Confirmar reserva", content)
@@ -372,7 +372,7 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
         avail_seat_pks = [s.pk for s in avail["available_seats"]]
         self.assertIn(self.seat_cama_1.pk, avail_seat_pks)
 
-        # Auditoría de liberaciÃ³n registrada
+        # Auditoría de liberación registrada
         audit = AuditEvent.objects.filter(entity_type=self.booking._meta.label, entity_id=str(self.booking.pk), description__startswith="Liberación:")
         self.assertTrue(audit.exists())
         self.assertEqual(audit.first().actor, self.user_seller)
@@ -414,7 +414,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
             "outbound_seats": [str(self.seat_cama_1.pk)],
             "contact_email": "nuevo_cliente@correo.com",
             "contact_phone": "3514444444",
-            "p_1_first_name": "AgustÃ­n",
+            "p_1_first_name": "Agustín",
             "p_1_last_name": "Morales",
             "p_1_document_type": "DNI",
             "p_1_document_number": "38.555.666",
@@ -434,19 +434,19 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         self.assertEqual(booking.passengers.count(), 1)
 
         p = booking.passengers.first()
-        self.assertEqual(p.first_name, "AgustÃ­n")
+        self.assertEqual(p.first_name, "Agustín")
         self.assertEqual(p.last_name, "Morales")
         self.assertEqual(p.normalized_document, "38555666")
         self.assertFalse(hasattr(p, "email"))
         self.assertFalse(hasattr(p, "phone"))
 
-        # Snapshot de asignaciÃ³n de butaca y precio tomado del servidor
+        # Snapshot de asignación de butaca y precio tomado del servidor
         assignment = SeatAssignment.objects.get(passenger=p)
         self.assertEqual(assignment.seat, self.seat_cama_1)
         self.assertEqual(assignment.price, Decimal("15000.00"))
         self.assertEqual(assignment.status, AssignmentStatus.HELD)
 
-        # Auditoría de creaciÃ³n registrada en panel.AuditEvent en la misma transacciÃ³n
+        # Auditoría de creación registrada en panel.AuditEvent en la misma transacción
         audit = AuditEvent.objects.filter(entity_type=booking._meta.label, entity_id=str(booking.pk), action=AuditEvent.Action.CREATE)
         self.assertTrue(audit.exists())
         self.assertEqual(audit.first().actor, self.user_seller)
@@ -454,7 +454,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         self.assertEqual(audit_after["email"], "nuevo_cliente@correo.com")
         self.assertEqual(audit_after["phone"], "3514444444")
         p_snapshot = audit_after["passengers"][0]
-        self.assertEqual(p_snapshot["first_name"], "AgustÃ­n")
+        self.assertEqual(p_snapshot["first_name"], "Agustín")
         self.assertNotIn("email", p_snapshot)
         self.assertNotIn("phone", p_snapshot)
 
@@ -474,8 +474,8 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
             "return_seats": [str(self.seat_b2_cama_1.pk)],
             "contact_email": "turista_idavuelta@correo.com",
             "contact_phone": "3517777777",
-            "p_1_first_name": "LucÃ­a",
-            "p_1_last_name": "FernÃ¡ndez",
+            "p_1_first_name": "Lucía",
+            "p_1_last_name": "Fernández",
             "p_1_document_type": "DNI",
             "p_1_document_number": "39.111.222",
             "p_1_birth_date": "1994-09-08",
@@ -493,7 +493,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         self.assertEqual(leg1.trip, self.trip_outbound)
         self.assertEqual(leg2.trip, self.trip_return)
 
-        # Precios histÃ³ricos por asignaciÃ³n
+        # Precios históricos por asignación
         self.assertEqual(leg1.seat_assignments.first().price, Decimal("15000.00"))
         self.assertEqual(leg2.seat_assignments.first().price, Decimal("16000.00"))
 
@@ -562,7 +562,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         response = self.client.post(create_url, post_data, secure=True)
         self.assertEqual(response.status_code, 200)
 
-        # Rollback atÃ³mico verificado
+        # Rollback atómico verificado
         self.assertEqual(Booking.objects.count(), initial_booking_count)
         self.assertEqual(SeatAssignment.objects.count(), initial_assignment_count)
         self.assertFalse(Booking.objects.filter(email="segundo@correo.com").exists())
@@ -616,7 +616,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         self.assertFalse(Booking.objects.filter(email="incompleto@correo.com").exists())
 
     def test_passenger_document_normalization_and_reuse_allowed(self):
-        """Mismo documento puede usarse en reservas distintas (sin restricciÃ³n global de unicidad)."""
+        """Mismo documento puede usarse en reservas distintas (sin restricción global de unicidad)."""
         create_manual_booking(
             seller=self.user_seller,
             email="reserva1@correo.com",
@@ -628,7 +628,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
             }],
             passengers_data=[{
                 "first_name": "Pablo",
-                "last_name": "GÃ³mez",
+                "last_name": "Gómez",
                 "document_type": "DNI",
                 "document_number": "33.444.555",
                 "birth_date": "1988-04-04",
@@ -648,7 +648,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
             }],
             passengers_data=[{
                 "first_name": "Pablo",
-                "last_name": "GÃ³mez",
+                "last_name": "Gómez",
                 "document_type": "DNI",
                 "document_number": "33.444.555",
                 "birth_date": "1988-04-04",
@@ -721,7 +721,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         self.assertFalse(Booking.objects.filter(email="started@correo.com").exists())
 
     def test_csrf_protection(self):
-        """PeticiÃ³n sin token CSRF es rechazada por el middleware de Django."""
+        """Petición sin token CSRF es rechazada por el middleware de Django."""
         csrf_client = Client(enforce_csrf_checks=True)
         csrf_client.force_login(self.user_seller)
 

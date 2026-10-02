@@ -1,13 +1,13 @@
 # Estado de SC Viajes
 
-## FundaciÃ³n de validaciÃ³n de embarque (2026-10-01)
+## Fundación de validación de embarque (2026-10-01)
 
 Estado: implementada, integrada con el ciclo de vida de viajes, validada y publicada en `feature/boarding-validation-20261001`.
 
-- `tickets.BoardingRecord` registra pasaje, pasajero, viaje, butaca, operador, fecha/hora, estado y motivo de reversiÃ³n; la unicidad condicional evita duplicar embarques activos y conserva el historial revertido.
-- El panel personalizado incorpora `/panel/embarques/`, con lector de teclado para QR/cÃ³digo, validaciones server-side, respuestas diferenciadas, permisos de Administrador/Vendedor y reversiÃ³n POST+CSRF exclusiva de Administrador.
-- El manifiesto muestra estado de embarque y totales embarcados/pendientes mediante consulta de solo lectura. La verificaciÃ³n pÃºblica QR no registra embarques.
-- Se excluyen cÃ¡mara web, funcionamiento offline, geolocalizaciÃ³n, no-show automÃ¡tico, cierre automÃ¡tico de manifiesto, cambios, cancelaciones y notificaciones al pasajero.
+- `tickets.BoardingRecord` registra pasaje, pasajero, viaje, butaca, operador, fecha/hora, estado y motivo de reversión; la unicidad condicional evita duplicar embarques activos y conserva el historial revertido.
+- El panel personalizado incorpora `/panel/embarques/`, con lector de teclado para QR/código, validaciones server-side, respuestas diferenciadas, permisos de Administrador/Vendedor y reversión POST+CSRF exclusiva de Administrador.
+- El manifiesto muestra estado de embarque y totales embarcados/pendientes mediante consulta de solo lectura. La verificación pública QR no registra embarques.
+- Se excluyen cámara web, funcionamiento offline, geolocalización, no-show automático, cierre automático de manifiesto, cambios, cancelaciones y notificaciones al pasajero.
 
 - Proyecto: SC Viajes.
 - Estado: fundación técnica aprobada.
@@ -189,11 +189,11 @@ Estado: implementado en `feature/ticket-pdf-foundation-20260919`.
   - Depende únicamente de `sales` en modo lectura transaccional para consultar `Booking` confirmado y sus asignaciones históricas. `sales`, `operations`, `payments`, `panel` y `core` no dependen de `tickets`.
   - Motor de generación de PDF y QR 100 % desacoplado y portable: `tickets.rendering.data.TicketData` (dataclass de entrada), `tickets.rendering.template.draw_provisional_ticket` (canvas ReportLab provisional reemplazable) y `tickets.rendering.generator.build_ticket_pdf` (orquestador que genera `bytes`). No utiliza dependencias pesadas de navegador headless ni bindings C frágiles.
 - **Modelos y migración inicial**:
-  - `Ticket`: pasaje emitido con clave primaria interna `id`, identificador p?blico `public_id` (UUID4 indexado y ?nico), c?digo legible `ticket_code` (`TK-<reserva>-L<tramo>-P<pasajero>`), relaci?n `PROTECT` a `sales.Booking`, `sales.BookingLeg`, `sales.BookingPassenger` y `sales.SeatAssignment`, y estado (`PENDING`, `ISSUED`, `VOID`).
+  - `Ticket`: pasaje emitido con clave primaria interna `id`, identificador público `public_id` (UUID4 indexado y único), código legible `ticket_code` (`TK-<reserva>-L<tramo>-P<pasajero>`), relación `PROTECT` a `sales.Booking`, `sales.BookingLeg`, `sales.BookingPassenger` y `sales.SeatAssignment`, y estado (`PENDING`, `ISSUED`, `VOID`).
   - Snapshots históricos inmutables en `Ticket`: `passenger_name`, `passenger_document_masked`, `origin_stop_name`, `destination_stop_name`, `departure_at`, `arrival_at`, `seat_number`, `seat_category`, `price` (en `Decimal`, snapshot directo de `SeatAssignment.price`, nunca recalculado desde `TripFare`), `currency` y `booking_public_id`.
   - Tokens criptográficos de alta entropía (>= 256 bits, SHA-256): `verification_token_hash` y `download_token_hash`. Separación estricta de alcances; los tokens en plano nunca se persisten en base de datos.
   - `TicketEmailAttempt`: registro de intentos de entrega agrupada por reserva (`Booking`), estado (`PENDING`, `SENT`, `FAILED`), marca temporal, correo destinatario y mensaje de error sanitizado (sin volcados internos de red o contraseñas).
-  - `TicketAuditEvent`: bit?cora transaccional para auditor?a de acciones sensibles (`ISSUE`, `DOWNLOAD`, `VOID`, `EMAIL`, `VERIFY`).
+  - `TicketAuditEvent`: bitácora transaccional para auditoría de acciones sensibles (`ISSUE`, `DOWNLOAD`, `VOID`, `EMAIL`, `VERIFY`).
   - Migración inicial generada: `tickets/migrations/0001_initial.py`. Probada únicamente en bases temporales de test runner; no ejecutada en bases locales ni reales.
 - **Almacenamiento seguro**:
   - `PrivateTicketFileSystemStorage` independiente de comprobantes de pago, con `base_url=None`, directorio aislado `TICKETS_STORAGE_ROOT` y rutas UUIDv4 no predecibles (`tickets/<uuid4>.pdf`).
@@ -215,14 +215,14 @@ Estado: implementado en `feature/ticket-pdf-foundation-20260919`.
 
 Actualizar este documento cuando finalice cada módulo.
 
-## Integraci?n de fulfillment de tickets (2026-09-20)
+## Integración de fulfillment de tickets (2026-09-20)
 
-Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendiente de validaci?n final. Se agreg? trabajo durable de emisi?n/correo, reintentos protegidos en panel, descarga del invitado desde resumen de sesi?n y reconciliaci?n de reservas confirmadas.
+Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendiente de validación final. Se agregó trabajo durable de emisión/correo, reintentos protegidos en panel, descarga del invitado desde resumen de sesión y reconciliación de reservas confirmadas.
 ## Entrega de cuentas de clientes (2026-09-20)
 
-Implementado en la rama de trabajo: registro y login local, recuperaci?n por enlace, perfil `customers`, asociaci?n de nuevas reservas autenticadas, reclamo expl?cito de compras invitadas con token de un solo uso y vencimiento, secci?n Mis viajes con descarga autorizada de tickets y consentimiento comercial revocable. Google OAuth qued? preparado y simulable sin credenciales reales.
+Implementado en la rama de trabajo: registro y login local, recuperación por enlace, perfil `customers`, asociación de nuevas reservas autenticadas, reclamo explícito de compras invitadas con token de un solo uso y vencimiento, sección Mis viajes con descarga autorizada de tickets y consentimiento comercial revocable. Google OAuth quedó preparado y simulable sin credenciales reales.
 
-Pendiente: entrega de enlaces de reclamo y recuperaci?n mediante proveedor de correo productivo, configuraci?n/validaci?n de credenciales Google de producci?n, Apple, campa?as comerciales y cualquier cambio de datos personales pendiente.\n
+Pendiente: entrega de enlaces de reclamo y recuperación mediante proveedor de correo productivo, configuración/validación de credenciales Google de producción, Apple, campañas comerciales y cualquier cambio de datos personales pendiente.
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
@@ -230,20 +230,21 @@ Pendiente: entrega de enlaces de reclamo y recuperaci?n mediante proveedor de co
 
 Estado: implementado en `feature/scheduled-operational-maintenance-20261002`, pendiente de validación final del coordinador.
 
-- Se agregó `run_operational_maintenance` con selección de tareas (`expire`, `fulfillment`), `--dry-run`, `--limit`, `--booking` y tiempo máximo seguro.
+- Se agregó `run_operational_maintenance` con selección de tareas (`expire`, `payments`, `fulfillment`), `--dry-run`, `--limit`, `--booking` y tiempo máximo seguro.
 - Expiración y fulfillment reutilizan servicios existentes, con procesamiento independiente, leases, tolerancia a fallos y salida JSON de métricas sin PII.
 - Se agregaron límites configurables en `.env.example` y checks de configuración.
 - No se agregaron modelos ni migraciones; no se ejecutaron migraciones contra bases persistentes ni se configuró todavía el Cron de Railway.
+- Los pagos `AWAITING_VOUCHER` y `UNDER_REVIEW` se vencen mediante el servicio existente, conservando la política comercial vigente.
 
-## Reportes bÃ¡sicos de ventas (2026-10-01)
+## Reportes básicos de ventas (2026-10-01)
 
-Estado: implementado en `feature/basic-sales-reports-20261001`, pendiente de validaciÃ³n final del coordinador.
+Estado: implementado en `feature/basic-sales-reports-20261001`, pendiente de validación final del coordinador.
 
 - Reporte HTML paginado y CSV UTF-8 BOM de pagos aprobados y reservas confirmadas, con filtros de fecha, medio, canal y vendedor.
 - El detalle muestra referencia pública, fecha/hora `confirmed_at`, estado, canal, medio, importe, pasajeros y tramos calculados mediante agregaciones sobre `BookingPassenger`/`BookingLeg`; los totales no dependen de la página visible.
 - Incluye indicadores de ventas/pagos únicos, ingreso total, efectivo, transferencia, pasajeros y tramos, más desgloses visibles por medio, canal y vendedor (incluido "Sin vendedor"). La fecha de confirmación y los filtros se interpretan en `America/Argentina/Buenos_Aires`.
-- Acceso exclusivo para Administrador/Vendedor; consultas de solo lectura, sin PII ni comprobantes, con total sobre el queryset completo y protecciÃ³n contra fÃ³rmulas CSV.
-- No se agregaron modelos ni migraciones. La validaciÃ³n local requiere variables efÃ­meras `SECRET_KEY`, `DEBUG` y `ALLOWED_HOSTS`; no se accediÃ³ a datos reales ni se ejecutaron migraciones.
+- Acceso exclusivo para Administrador/Vendedor; consultas de solo lectura, sin PII ni comprobantes, con total sobre el queryset completo y protección contra fórmulas CSV.
+- No se agregaron modelos ni migraciones. La validación local requiere variables efímeras `SECRET_KEY`, `DEBUG` y `ALLOWED_HOSTS`; no se accedió a datos reales ni se ejecutaron migraciones.
 
 Estado: implementado en `feature/fulfillment-operations-hardening-20260921`, pendiente de validación final.
 
