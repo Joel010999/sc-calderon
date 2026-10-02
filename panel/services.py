@@ -24,6 +24,8 @@ def snapshot(instance):
         return {
             "route_id": instance.route_id, "bus_id": instance.bus_id,
             "status": instance.status, "departure_at": instance.departure_at.isoformat(),
+            "started_at": instance.started_at.isoformat() if instance.started_at else None,
+            "completed_at": instance.completed_at.isoformat() if instance.completed_at else None,
             "stops": stops,
         }
     if isinstance(instance, TripFare):

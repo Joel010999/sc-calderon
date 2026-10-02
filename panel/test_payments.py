@@ -18,6 +18,7 @@ from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, T
 from panel.models import AuditEvent
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import register_cash_payment, register_transfer_payment
+from sales.exceptions import InvalidBookingError
 from sales.models import (
     AssignmentStatus,
     Booking,
@@ -157,6 +158,23 @@ class PanelPaymentsTestCase(TestCase):
 
     def sample_voucher(self, name="comprobante.pdf"):
         return SimpleUploadedFile(name, b"%PDF-1.4 test voucher content", content_type="application/pdf")
+
+    def test_manual_payments_are_rejected_after_trip_started(self):
+        cash_booking = self.create_booking(email="cash-after-start@correo.com")
+        self.trip.status = Trip.Status.STARTED
+        self.trip.started_at = timezone.now()
+        self.trip.save(update_fields=["status", "started_at", "updated_at"])
+        with self.assertRaises(InvalidBookingError):
+            register_cash_payment(booking_or_id=cash_booking, seller=self.seller_user)
+
+        transfer_booking = self.create_booking(email="transfer-after-start@correo.com")
+        with self.assertRaises(InvalidBookingError):
+            register_transfer_payment(
+                booking_or_id=transfer_booking,
+                seller=self.seller_user,
+                voucher=self.sample_voucher("transfer-after-start.pdf"),
+            )
+        self.assertFalse(Payment.objects.filter(booking__in=[cash_booking, transfer_booking]).exists())
 
     # --- Permisos y Control de Acceso ---
 

@@ -52,6 +52,10 @@ Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y rein
 - Entrega de correos agrupada: `send_booking_tickets` envía exactamente un correo al email de la reserva con todos los pasajes PDF adjuntos. Registra intentos en `TicketEmailAttempt` persistiendo el estado `PENDING` antes de la comunicación I/O de red, impidiendo envíos duplicados concurrentes y exigiendo reintento explícito (`retry=True`) únicamente tras fallos registrados.
 - Pendientes antes de producción: definición de almacenamiento persistente en Railway y proveedor SMTP definitivo. La emisión automática ligada a la aprobación de pagos se integrará en una rama posterior.
 
+## Ciclo de vida operativo de viajes (2026-10-01)
+
+Las transiciones `SCHEDULED -> STARTED` y `STARTED -> COMPLETED` se ejecutan mediante servicios transaccionales del panel. Cada servicio bloquea el `Trip` con `select_for_update()`, valida la transición y registra actor, estado anterior, estado nuevo y timestamps en la auditoría dentro de la misma transacción; son idempotentes cuando el estado ya es el destino. Los timestamps `started_at` y `completed_at` se presentan en `America/Argentina/Buenos_Aires`. Sólo Administrador y Vendedor pueden invocarlas mediante POST con CSRF, y el inicio exige una pantalla de confirmación. Una vez iniciado el viaje, el dominio rechaza nuevas reservas, asignaciones y confirmaciones de ventas manuales, mantiene el corte online de una hora y no libera automáticamente reservas `HELD` ni transferencias pendientes.
+
 ## Módulos conceptuales
 
 | Módulo | Responsabilidad |

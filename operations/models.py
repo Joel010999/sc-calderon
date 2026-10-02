@@ -152,6 +152,8 @@ class Trip(TimestampedModel):
     bus = models.ForeignKey(Bus, verbose_name="colectivo", on_delete=models.PROTECT, related_name="trips")
     departure_at = models.DateTimeField("salida", validators=[validate_aware_datetime])
     status = models.CharField("estado", max_length=9, choices=Status.choices, default=Status.SCHEDULED)
+    started_at = models.DateTimeField("fecha de inicio", null=True, blank=True, validators=[validate_aware_datetime])
+    completed_at = models.DateTimeField("fecha de finalización", null=True, blank=True, validators=[validate_aware_datetime])
 
     class Meta:
         verbose_name = "viaje"

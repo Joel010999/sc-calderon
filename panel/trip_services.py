@@ -16,6 +16,75 @@ from .trip_forms import TripFareForm
 FARE_ERROR = "No se pudo guardar la tarifa. Revisá si ya existe una tarifa para ese tramo y categoría."
 
 
+def _trip_status_snapshot(trip):
+    return {
+        "status": trip.status,
+        "started_at": trip.started_at.isoformat() if trip.started_at else None,
+        "completed_at": trip.completed_at.isoformat() if trip.completed_at else None,
+    }
+
+
+@transaction.atomic
+def transition_trip(*, actor, trip_pk, target_status):
+    """Cambia el estado operativo permitido de un viaje, de forma serializable.
+
+    El viaje se bloquea antes de validar el estado, por lo que dos operadores
+    concurrentes no pueden ejecutar la misma transición ni duplicar auditoría.
+    """
+    from .permissions import require_reservations_access
+
+    require_reservations_access(actor)
+    trip = get_object_or_404(Trip.objects.select_for_update(), pk=trip_pk)
+    allowed = {
+        Trip.Status.STARTED: Trip.Status.SCHEDULED,
+        Trip.Status.COMPLETED: Trip.Status.STARTED,
+    }
+    current = trip.status
+    if current == target_status:
+        return trip, False
+    if allowed.get(target_status) != current:
+        raise ValidationError("La transición de estado del viaje no está permitida.")
+    before = _trip_status_snapshot(trip)
+    now = timezone.now()
+    trip.status = target_status
+    if target_status == Trip.Status.STARTED:
+        trip.started_at = now
+    elif target_status == Trip.Status.COMPLETED:
+        trip.completed_at = now
+    trip.full_clean()
+    update_fields = ["status", "updated_at"]
+    if target_status == Trip.Status.STARTED:
+        update_fields.append("started_at")
+    elif target_status == Trip.Status.COMPLETED:
+        update_fields.append("completed_at")
+    trip.save(update_fields=update_fields)
+    record_event(actor, trip, AuditEvent.Action.UPDATE, before)
+    return trip, True
+
+
+def start_trip(*, actor, trip_pk):
+    return transition_trip(actor=actor, trip_pk=trip_pk, target_status=Trip.Status.STARTED)
+
+
+def complete_trip(*, actor, trip_pk):
+    return transition_trip(actor=actor, trip_pk=trip_pk, target_status=Trip.Status.COMPLETED)
+
+
+def trip_pending_summary(trip_pk):
+    """Cuenta reservas y pagos pendientes sin consultar fila por fila."""
+    from payments.models import Payment, PaymentStatus
+    from sales.models import Booking, BookingStatus
+
+    held_bookings = Booking.objects.filter(
+        legs__trip_id=trip_pk, status=BookingStatus.HELD,
+    ).distinct().count()
+    pending_payments = Payment.objects.filter(
+        booking__legs__trip_id=trip_pk,
+        status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW],
+    ).distinct().count()
+    return {"held_bookings": held_bookings, "pending_payments": pending_payments}
+
+
 @transaction.atomic
 def create_panel_trip(*, actor, route, bus, schedules):
     require_operations_manager(actor)
