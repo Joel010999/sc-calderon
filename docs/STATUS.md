@@ -243,3 +243,14 @@ Estado: implementado en `feature/trip-passenger-manifest-20261001`, pendiente de
 - Incluye resumen de subidas, bajadas y pasajeros que continúan por `TripStop`, acceso desde el detalle, vista de impresión y exportación CSV UTF-8 con BOM y protección contra fórmulas.
 - Acceso restringido a Administrador/Vendedor; no expone contacto, pagos, comprobantes, tickets ni auditoría y no ofrece acciones mutables por GET.
 - El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro.
+
+## Ciclo de vida de viajes y corte posterior al inicio (2026-10-01)
+
+Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendiente de validación PostgreSQL y workflow CI.
+
+- Se agregaron servicios idempotentes y transaccionales para iniciar y finalizar viajes, con `select_for_update`, timestamps `started_at`/`completed_at`, permisos Administrador/Vendedor y auditoría.
+- El detalle operativo ofrece una pantalla de confirmación y acciones mutables exclusivamente POST+CSRF; muestra estado, fechas en `America/Argentina/Buenos_Aires` y advierte reservas HELD y pagos pendientes sin liberarlos.
+- La creación de reservas, asignaciones y confirmaciones de pagos manuales continúa bloqueada server-side desde `STARTED`; el corte online configurable de una hora permanece vigente.
+- Se agregó `operations/migrations/0002_trip_completed_at_trip_started_at.py`; solo debe aplicarse en bases temporales de pruebas, nunca en bases persistentes durante esta entrega.
+- Se verificaron `check`, `makemigrations --check --dry-run`, `diff --check` y las pruebas afectadas en SQLite.
+- La cancelación de viajes y sus consecuencias económicas siguen pendientes.

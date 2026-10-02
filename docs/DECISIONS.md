@@ -252,3 +252,11 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - El manifiesto se limita a un viaje solicitado y muestra solamente asignaciones de butaca `CONFIRMED` pertenecientes a reservas `CONFIRMED`; no incluye estados `HELD`, `EXPIRED` ni `RELEASED`.
 - Los pasajeros de una compra de ida y vuelta aparecen una vez por cada viaje y utilizan los `TripStop` y la butaca del tramo correspondiente.
 - El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro. Esta entrega implementa una vista operativa, de impresión y CSV, sin marcado de embarque, QR, caja, cancelaciones ni envío automático.
+
+## Ciclo de vida y corte de ventas (2026-10-01)
+
+- Se confirman únicamente las transiciones `SCHEDULED -> STARTED` y `STARTED -> COMPLETED`; no se habilita cancelar viajes.
+- El cambio se realiza desde una pantalla explícita de confirmación y luego por POST protegido con CSRF, con bloqueo `select_for_update()` y auditoría atómica, para Administrador y Vendedor. Se conservan `started_at` y `completed_at` para presentar el momento de cada transición en la zona horaria argentina.
+- No se liberan automáticamente reservas HELD ni pagos en revisión al iniciar o finalizar. Se muestran advertencias operativas para resolverlos manualmente.
+- La venta online conserva el corte configurable de una hora antes de la subida y el servidor rechaza nuevas reservas cuando el viaje ya inició. Las reservas manuales preexistentes tampoco pueden confirmarse mediante nuevos pagos una vez iniciado el viaje.
+- La cancelación de viajes y sus consecuencias económicas (reembolsos, saldos, reubicaciones o liberación de reservas) siguen pendientes de una decisión de negocio.

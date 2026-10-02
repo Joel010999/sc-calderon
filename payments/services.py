@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
+from operations.models import Trip
 from panel.models import AuditEvent
 from sales.exceptions import BookingExpiredError, InvalidBookingError
 from sales.models import (
@@ -71,6 +72,15 @@ def _enqueue_ticket_fulfillment(booking):
     return enqueue_booking_fulfillment(booking)
 
 
+def _lock_manual_booking_trips(booking):
+    """Bloquea los viajes de una venta manual y rechaza ventas posteriores al inicio."""
+    trip_ids = sorted(booking.legs.values_list("trip_id", flat=True).distinct())
+    trips = list(Trip.objects.select_for_update().filter(pk__in=trip_ids).order_by("pk"))
+    if any(trip.status in (Trip.Status.STARTED, Trip.Status.COMPLETED, Trip.Status.CANCELLED) for trip in trips):
+        raise InvalidBookingError("No se pueden registrar ventas manuales para un viaje iniciado o finalizado.")
+    return trips
+
+
 def register_cash_payment(*, booking_or_id, seller, reference="", now=None):
     payment, expired_error = _register_cash_payment_atomic(
         booking_or_id=booking_or_id, seller=seller, reference=reference, now=now
@@ -103,6 +113,8 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
 
     if booking.channel != BookingChannel.MANUAL:
         raise InvalidBookingError("Solo las reservas manuales admiten registro de pago en efectivo.")
+
+    _lock_manual_booking_trips(booking)
 
     if booking.status == BookingStatus.CONFIRMED:
         raise InvalidBookingError("La reserva ya se encuentra confirmada.")
@@ -258,6 +270,8 @@ def _register_transfer_payment_atomic(*, booking_or_id, seller, voucher, referen
     if booking.channel != BookingChannel.MANUAL:
         raise InvalidBookingError("Solo las reservas manuales admiten transferencias en el panel.")
 
+    _lock_manual_booking_trips(booking)
+
     if booking.status == BookingStatus.CONFIRMED:
         raise InvalidBookingError("La reserva ya se encuentra confirmada.")
     elif booking.status == BookingStatus.EXPIRED:
@@ -396,6 +410,8 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
         )
 
     if approved:
+        if booking.channel == BookingChannel.MANUAL:
+            _lock_manual_booking_trips(booking)
         # Verificar vencimiento de la reserva
         if booking.expires_at <= effective_now or booking.status == BookingStatus.EXPIRED:
             # Rechaza si vencida sin modificar Payment

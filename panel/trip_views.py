@@ -4,15 +4,15 @@ from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import OuterRef, Prefetch, Subquery
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from operations.models import Bus, Route, Trip, TripFare, TripStop
 from .operations_views import render_operations
-from .permissions import can_manage_reservations, operations_access
+from .permissions import can_manage_reservations, operations_access, reservations_access
 from .trip_forms import TripFareForm, TripScheduleForm, TripSelectionForm
-from .trip_services import FARE_ERROR, create_panel_trip, save_fare, set_fare_active
+from .trip_services import FARE_ERROR, create_panel_trip, save_fare, set_fare_active, start_trip, complete_trip, trip_pending_summary
 
 
 CONFIRMATION_SALT = "panel.trip-schedule"
@@ -47,9 +47,47 @@ def trip_detail(request, pk):
         ).order_by("origin_stop__sequence", "destination_stop__sequence", "seat_category", "pk")),
     )
     trip = get_object_or_404(queryset, pk=pk)
+    pending = trip_pending_summary(trip.pk)
     return render_operations(request, "trip_detail", title=f"Viaje {trip.pk}",
                              trip=trip, display_timezone=settings.TIME_ZONE,
-                             can_access_manifest=can_manage_reservations(request.user))
+                             can_access_manifest=can_manage_reservations(request.user),
+                             pending_summary=pending)
+
+
+@require_POST
+@reservations_access()
+def trip_start(request, trip_pk):
+    try:
+        _, changed = start_trip(actor=request.user, trip_pk=trip_pk)
+    except ValidationError as error:
+        messages.error(request, error.messages[0])
+    else:
+        messages.success(request, "El viaje se inició correctamente." if changed else "El viaje ya estaba iniciado.")
+    return redirect("panel:trip_detail", pk=trip_pk)
+
+
+@require_GET
+@reservations_access()
+def trip_start_confirm(request, trip_pk):
+    trip = get_object_or_404(Trip.objects.select_related("route", "bus"), pk=trip_pk)
+    pending = trip_pending_summary(trip.pk)
+    return render(request, "panel/operations/trip_start_confirm.html", {
+        "trip": trip,
+        "pending_summary": pending,
+        "display_timezone": settings.TIME_ZONE,
+    })
+
+
+@require_POST
+@reservations_access()
+def trip_complete(request, trip_pk):
+    try:
+        _, changed = complete_trip(actor=request.user, trip_pk=trip_pk)
+    except ValidationError as error:
+        messages.error(request, error.messages[0])
+    else:
+        messages.success(request, "El viaje se marcó como finalizado." if changed else "El viaje ya estaba finalizado.")
+    return redirect("panel:trip_detail", pk=trip_pk)
 
 
 @operations_access(write=True)

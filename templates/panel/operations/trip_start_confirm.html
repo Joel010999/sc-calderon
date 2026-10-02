@@ -1,0 +1,22 @@
+{% extends 'panel/operations/base.html' %}
+{% load tz %}
+{% block operations_content %}
+{% timezone display_timezone %}
+<p><a href="{% url 'panel:trip_detail' trip.pk %}">← Volver al detalle</a></p>
+<section class="ops-card">
+  <h2>Confirmar inicio del viaje</h2>
+  <p>Estás por iniciar el viaje <strong>{{ trip.route.name }}</strong> del {{ trip.departure_at|date:'d/m/Y H:i' }}.</p>
+  <p>Desde este momento no se podrán crear nuevas reservas, asignar butacas ni registrar ventas manuales para este viaje.</p>
+  {% if pending_summary.held_bookings or pending_summary.pending_payments %}
+    <p class="warning">Atención: hay {{ pending_summary.held_bookings }} reserva{{ pending_summary.held_bookings|pluralize }} HELD y {{ pending_summary.pending_payments }} pago{{ pending_summary.pending_payments|pluralize }} pendiente{{ pending_summary.pending_payments|pluralize }}. No se liberarán automáticamente.</p>
+  {% else %}
+    <p class="muted">No hay reservas HELD ni pagos pendientes asociados a este viaje.</p>
+  {% endif %}
+  <form method="post" action="{% url 'panel:trip_start' trip.pk %}">
+    {% csrf_token %}
+    <button class="ops-button" type="submit">Confirmar e iniciar viaje</button>
+    <a class="ops-button secondary" href="{% url 'panel:trip_detail' trip.pk %}">Cancelar</a>
+  </form>
+</section>
+{% endtimezone %}
+{% endblock %}
