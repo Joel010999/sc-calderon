@@ -100,7 +100,7 @@ La app `customers` reutiliza el usuario estándar de Django sin cambiar `AUTH_US
 
 El acceso con Google usa OAuth configurable por variables de entorno y `state` en sesión; la simulación solo se habilita explícitamente para desarrollo y pruebas. No se mezclan cuentas de clientes con Administrador o Vendedor. Los tickets continúan en almacenamiento privado y se autorizan por asociación de cuenta.
 
-Los consentimientos comerciales son eventos auditables separados de la compra y de la creación de cuenta; incluyen versión y origen y pueden revocarse sin borrar datos operativos.\n
+Los consentimientos comerciales son eventos auditables separados de la compra y de la creación de cuenta; incluyen versión y origen y pueden revocarse sin borrar datos operativos.
 La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con el comando `reconcile_fulfillments` o `tickets.services.reconcile_confirmed_fulfillments`. Por lo tanto existe una dependencia explícita y unidireccional `payments -> tickets`; `tickets` no importa `payments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
 
 Los trabajos tienen una concesión temporal (`lease_until`) para evitar doble procesamiento. Un proceso que cae deja el trabajo recuperable después de `TICKETS_FULFILLMENT_STALE_SECONDS`. La operación periódica futura podrá invocar `python manage.py reconcile_fulfillments --limit 100`; esta entrega no instala ni configura un programador.

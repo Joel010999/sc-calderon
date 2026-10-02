@@ -47,7 +47,8 @@ class ProductionHygieneTests(SimpleTestCase):
         offenders = []
         for path in self._text_files():
             content = path.read_text(encoding="utf-8")
-            if MOJIBAKE_RE.search(content):
+            has_literal_newlines = path.suffix.lower() in {".html", ".md"} and r"\n" in content
+            if MOJIBAKE_RE.search(content) or has_literal_newlines:
                 offenders.append(str(path.relative_to(settings.BASE_DIR)))
         self.assertEqual(offenders, [], f"Se encontraron secuencias de codificación: {offenders}")
 

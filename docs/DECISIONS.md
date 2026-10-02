@@ -241,7 +241,7 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - El cliente puede registrarse e iniciar sesión con email y contraseña. Recuperación mediante enlace seguro de Django; no se usan OTP ni códigos.
 - Google queda preparado mediante OAuth con credenciales exclusivamente en entorno y sin secretos versionados. Apple queda pendiente.
 - El reclamo de una compra invitada usa un token aleatorio, guardado como hash, de un solo uso y con vencimiento. La entrega automática por correo queda pendiente de la infraestructura de correo.
-- El consentimiento comercial es opcional, separado, desmarcado por defecto y auditable; retirarlo no elimina reservas ni pasajes. Campañas y envíos masivos quedan pendientes.\n
+- El consentimiento comercial es opcional, separado, desmarcado por defecto y auditable; retirarlo no elimina reservas ni pasajes. Campañas y envíos masivos quedan pendientes.
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 

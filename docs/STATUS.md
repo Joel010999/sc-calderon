@@ -222,7 +222,7 @@ Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendi
 
 Implementado en la rama de trabajo: registro y login local, recuperación por enlace, perfil `customers`, asociación de nuevas reservas autenticadas, reclamo explícito de compras invitadas con token de un solo uso y vencimiento, sección Mis viajes con descarga autorizada de tickets y consentimiento comercial revocable. Google OAuth quedó preparado y simulable sin credenciales reales.
 
-Pendiente: entrega de enlaces de reclamo y recuperación mediante proveedor de correo productivo, configuración/validación de credenciales Google de producción, Apple, campañas comerciales y cualquier cambio de datos personales pendiente.\n
+Pendiente: entrega de enlaces de reclamo y recuperación mediante proveedor de correo productivo, configuración/validación de credenciales Google de producción, Apple, campañas comerciales y cualquier cambio de datos personales pendiente.
 
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
