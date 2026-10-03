@@ -501,6 +501,14 @@ def create_booking(*, channel, email, phone="", seller=None, legs, passengers_da
             raise SeatUnavailableError("Una o más butacas ya están reservadas o no están disponibles.") from exc
         raise
 
+    if channel == BookingChannel.ONLINE:
+        from notifications.models import NotificationType
+        from notifications.services import schedule_notification
+        schedule_notification(
+            booking=booking, notification_type=NotificationType.BOOKING_HELD,
+            event_key=f"booking:{booking.public_id}:held",
+            payload={"booking_ref": str(booking.public_id), "deadline": booking.expires_at.isoformat()},
+        )
     return booking
 
 
@@ -652,6 +660,7 @@ def expire_booking(booking_or_id, now=None):
     validate_aware_datetime(now)
 
     booking_id = booking_or_id.pk if isinstance(booking_or_id, Booking) else booking_or_id
+    transitioned = False
     booking = Booking.objects.select_for_update().get(pk=booking_id)
 
     if booking.status == BookingStatus.CONFIRMED:
@@ -680,11 +689,21 @@ def expire_booking(booking_or_id, now=None):
             status=AssignmentStatus.RELEASED,
             updated_at=now,
         )
+        transitioned = True
     else:
         raise ValidationError("La reserva aún no ha alcanzado su horario de vencimiento.")
 
     if isinstance(booking_or_id, Booking):
         booking_or_id.status = booking.status
         booking_or_id.updated_at = booking.updated_at
+
+    if transitioned:
+        from notifications.models import NotificationType
+        from notifications.services import schedule_notification
+        schedule_notification(
+            booking=booking, notification_type=NotificationType.BOOKING_EXPIRED,
+            event_key=f"booking:{booking.public_id}:expired",
+            payload={"booking_ref": str(booking.public_id)},
+        )
 
     return booking

@@ -272,6 +272,14 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - La bandeja global del panel usa POST+CSRF, roles de Administrador/Vendedor y auditoría. No se habilitan acciones mutables por GET.
 ## Manifiesto operativo de pasajeros (2026-10-01)
 
+## Notificaciones transaccionales (2026-10-02)
+
+- Se adopta un outbox durable en `notifications`, separado del correo único de pasajes y de `TicketEmailAttempt`.
+- La unicidad se define por evento, tipo y destinatario; el payload contiene sólo snapshots mínimos, nunca tokens, comprobantes, contraseñas ni secretos.
+- Los callbacks `transaction.on_commit`, locks de fila y leases evitan crear envíos por transacciones revertidas y permiten recuperar fallos SMTP sin revertir pagos.
+- Los eventos cubren reserva online retenida, transferencia iniciada, comprobante, aprobación/rechazo, vencimiento y confirmación manual con correo válido. Son transaccionales y no dependen del consentimiento comercial.
+- La reconciliación y el reintento del panel usan límites configurables y no configuran proveedores reales.
+
 ## Bandeja operativa (2026-10-02)
 
 Se adopta una bandeja unificada de consulta para Administrador/Vendedor, sin escrituras ni auditoría. Expone referencias públicas, estados y tiempos, no PII, comprobantes, tokens ni datos de pago. No reemplaza caja, contabilidad ni mantenimiento programado.

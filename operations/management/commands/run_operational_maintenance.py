@@ -11,7 +11,7 @@ from collections import Counter
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from django.db import close_old_connections
+from django.db import models
 from django.utils import timezone
 
 from sales.models import Booking, BookingStatus
@@ -23,7 +23,7 @@ from tickets.models import (
 )
 
 
-TASKS = ("expire", "payments", "fulfillment")
+TASKS = ("expire", "payments", "fulfillment", "notifications")
 
 
 class Command(BaseCommand):
@@ -93,6 +93,8 @@ class Command(BaseCommand):
                     result = self._process(task, candidate)
                     if task == "fulfillment" and not self._fulfillment_succeeded(result):
                         raise RuntimeError("fulfillment no completado")
+                    if task == "notifications" and getattr(result, "status", None) != "SENT":
+                        raise RuntimeError("notificación no enviada")
                     counts["succeeded"] += 1
                     details[f"{task}:succeeded"] += 1
                 except Exception:
@@ -176,6 +178,24 @@ class Command(BaseCommand):
                 qs = qs.filter(public_id=booking_id)
             return list(qs.values_list("pk", flat=True))
 
+        if task == "notifications":
+            from notifications.models import NotificationStatus, TransactionalNotification
+            qs = TransactionalNotification.objects.filter(
+                status__in=[NotificationStatus.PENDING, NotificationStatus.FAILED],
+                attempts__lt=int(getattr(settings, "NOTIFICATIONS_MAX_ATTEMPTS", 5)),
+            ).filter(
+                models.Q(next_attempt_at__isnull=True) | models.Q(next_attempt_at__lte=now)
+            ).order_by("pk")
+            qs = qs.filter(booking__status__in=[BookingStatus.HELD, BookingStatus.CONFIRMED, BookingStatus.EXPIRED, BookingStatus.RELEASED])
+            if booking_id:
+                qs = qs.filter(booking__public_id=booking_id)
+            stale = TransactionalNotification.objects.filter(
+                status="PROCESSING", lease_until__lte=now,
+            ).order_by("pk")
+            if booking_id:
+                stale = stale.filter(booking__public_id=booking_id)
+            return list(qs.values_list("pk", flat=True)) + list(stale.values_list("pk", flat=True))
+
         jobs = TicketFulfillment.objects.filter(booking__status=BookingStatus.CONFIRMED)
         if booking_id:
             jobs = jobs.filter(booking__public_id=booking_id)
@@ -206,7 +226,6 @@ class Command(BaseCommand):
 
     @staticmethod
     def _process(task, booking_pk):
-        close_old_connections()
         if task == "expire":
             from sales.services import expire_booking
             expire_booking(booking_pk, now=timezone.now())
@@ -215,6 +234,9 @@ class Command(BaseCommand):
             from payments.services import expire_public_transfer_if_expired
             expire_public_transfer_if_expired(booking_pk, now=timezone.now())
             return
+        if task == "notifications":
+            from notifications.services import process_notification
+            return process_notification(booking_pk, retry=True)
         from tickets.services import process_booking_fulfillment
         job, _ = TicketFulfillment.objects.get_or_create(booking_id=booking_pk)
         return process_booking_fulfillment(job.pk, retry=True)

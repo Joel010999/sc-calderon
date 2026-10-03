@@ -130,6 +130,22 @@ Los consentimientos comerciales son eventos auditables separados de la compra y 
 La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con el comando `reconcile_fulfillments` o `tickets.services.reconcile_confirmed_fulfillments`. Por lo tanto existe una dependencia explícita y unidireccional `payments -> tickets`; `tickets` no importa `payments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
 
 Los trabajos tienen una concesión temporal (`lease_until`) para evitar doble procesamiento. Un proceso que cae deja el trabajo recuperable después de `TICKETS_FULFILLMENT_STALE_SECONDS`. La operación periódica futura podrá invocar `python manage.py reconcile_fulfillments --limit 100`; esta entrega no instala ni configura un programador.
+## Notificaciones transaccionales (2026-10-02)
+
+`notifications.TransactionalNotification` es un outbox durable separado de
+`tickets.TicketEmailAttempt`. Mantiene `PENDING`, `PROCESSING`, `SENT` y
+`FAILED`, con unicidad por evento, tipo y destinatario. Los servicios programan
+filas mediante `transaction.on_commit`, por lo que un rollback no deja correos
+huérfanos y SMTP no revierte pagos, reservas, butacas ni fulfillment.
+
+El procesamiento reclama cada fila con `select_for_update`, asigna un lease y
+envía fuera de la transacción. `SENT` es terminal; leases vencidos se recuperan.
+PostgreSQL serializa procesos mediante el lock de fila. SQLite conserva la
+semántica funcional para desarrollo, sin presentarse como garantía concurrente.
+La tarea `notifications` de `run_operational_maintenance` y el reintento POST
+del panel reutilizan este servicio. No se guardan tokens, comprobantes,
+contraseñas ni secretos y no se registra el destinatario en logs o auditoría.
+
 ## Manifiesto operativo de pasajeros
 
 ## Bandeja operativa de solo lectura (2026-10-02)

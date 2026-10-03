@@ -366,4 +366,12 @@
         {% endif %}
     </section>
 </div>
+<section class="ops-card" aria-label="Notificaciones transaccionales">
+    <h2>Notificaciones transaccionales</h2>
+    {% if notifications %}
+    <table class="data-table"><thead><tr><th>Tipo</th><th>Estado</th><th>Intentos</th><th>Último intento</th><th>Acción</th></tr></thead><tbody>
+    {% for notification in notifications %}<tr><td>{{ notification.get_notification_type_display }}</td><td>{{ notification.get_status_display }}</td><td>{{ notification.attempts }}</td><td>{{ notification.last_attempt_at|date:"d/m/Y H:i"|default:"—" }}</td><td>{% if notification.status != 'SENT' %}<form method="post" action="{% url 'panel:notification_retry' notification.pk %}">{% csrf_token %}<button type="submit" class="ops-button secondary small">Reintentar</button></form>{% else %}—{% endif %}</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="empty-state">No hay notificaciones transaccionales registradas.</p>{% endif %}
+</section>
 {% endblock %}
