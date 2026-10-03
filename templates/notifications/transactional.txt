@@ -1,0 +1,5 @@
+{{ body }}
+
+Referencia de reserva: {{ booking_ref }}
+
+SC Viajes

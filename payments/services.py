@@ -229,6 +229,14 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
 
     _enqueue_ticket_fulfillment(booking)
 
+    from notifications.models import NotificationType
+    from notifications.services import schedule_notification
+    schedule_notification(
+        booking=booking, notification_type=NotificationType.MANUAL_BOOKING_CONFIRMED,
+        event_key=f"booking:{booking.public_id}:manual-confirmed",
+        payload={"booking_ref": str(booking.public_id)},
+    )
+
     return payment, None
 
 
@@ -349,6 +357,14 @@ def _register_transfer_payment_atomic(*, booking_or_id, seller, voucher, referen
             "reference": payment.reference,
             "registered_by": seller.username,
         },
+    )
+
+    from notifications.models import NotificationType
+    from notifications.services import schedule_notification
+    schedule_notification(
+        booking=booking, notification_type=NotificationType.VOUCHER_RECEIVED,
+        event_key=f"payment:{payment.public_id}:voucher-received",
+        payload={"booking_ref": str(booking.public_id)},
     )
 
     return payment, None
@@ -542,6 +558,14 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
             },
         )
 
+    from notifications.models import NotificationType
+    from notifications.services import schedule_notification
+    notification_type = NotificationType.TRANSFER_APPROVED if approved else NotificationType.TRANSFER_REJECTED
+    schedule_notification(
+        booking=booking, notification_type=notification_type,
+        event_key=f"payment:{payment.public_id}:{'approved' if approved else 'rejected'}",
+        payload={"booking_ref": str(booking.public_id)},
+    )
     return payment, None
 
 
@@ -690,6 +714,14 @@ def _initiate_public_transfer_payment_atomic(*, booking_or_id, now=None):
             raise PaymentDuplicateError("Ya existe un pago activo para esta reserva.") from exc
         raise
 
+    from notifications.models import NotificationType
+    from notifications.services import schedule_notification
+    schedule_notification(
+        booking=booking, notification_type=NotificationType.TRANSFER_STARTED,
+        event_key=f"payment:{payment.public_id}:started",
+        payload={"booking_ref": str(booking.public_id), "deadline": payment.proof_deadline_at.isoformat() if payment.proof_deadline_at else ""},
+    )
+
     if isinstance(booking_or_id, Booking):
         booking_or_id.expires_at = booking.expires_at
         booking_or_id.updated_at = booking.updated_at
@@ -811,6 +843,14 @@ def _upload_public_transfer_voucher_atomic(*, booking_or_id, voucher_file, now=N
     booking.full_clean()
     booking.save(update_fields=["expires_at", "updated_at"])
 
+    from notifications.models import NotificationType
+    from notifications.services import schedule_notification
+    schedule_notification(
+        booking=booking, notification_type=NotificationType.VOUCHER_RECEIVED,
+        event_key=f"payment:{payment.public_id}:voucher-received",
+        payload={"booking_ref": str(booking.public_id), "deadline": review_deadline.isoformat()},
+    )
+
     if isinstance(booking_or_id, Booking):
         booking_or_id.expires_at = booking.expires_at
         booking_or_id.updated_at = booking.updated_at
@@ -862,5 +902,12 @@ def expire_public_transfer_if_expired(booking, now=None):
         if isinstance(booking, Booking):
             booking.status = locked_booking.status
             booking.updated_at = locked_booking.updated_at
+        from notifications.models import NotificationType
+        from notifications.services import schedule_notification
+        schedule_notification(
+            booking=locked_booking, notification_type=NotificationType.BOOKING_EXPIRED,
+            event_key=f"booking:{locked_booking.public_id}:expired",
+            payload={"booking_ref": str(locked_booking.public_id)},
+        )
         return True
     return False

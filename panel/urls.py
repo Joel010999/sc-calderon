@@ -9,6 +9,7 @@ from . import report_views as reports
 from . import manifest_views as manifests
 from . import boarding_views as boarding
 from . import inbox_views as inbox
+from . import notification_views as notifications
 
 app_name = 'panel'
 
@@ -35,6 +36,7 @@ urlpatterns = [
     path('embarques/', boarding.boarding_validate, name='boarding_validate'),
     path('embarques/<int:record_pk>/revertir/', boarding.boarding_reverse, name='boarding_reverse'),
     path('bandeja-operativa/', inbox.operational_inbox, name='operational_inbox'),
+    path('notificaciones/<int:notification_pk>/reintentar/', notifications.notification_retry, name='notification_retry'),
 
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),

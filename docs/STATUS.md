@@ -274,6 +274,15 @@ Estado: implementado en `feature/trip-passenger-manifest-20261001`, pendiente de
 
 ## Ciclo de vida de viajes y corte posterior al inicio (2026-10-01)
 
+## Notificaciones transaccionales (2026-10-02)
+
+Estado: implementadas en `feature/transactional-notifications-20261002`, pendientes de PostgreSQL y workflows.
+
+- Nueva app `notifications` con migración `0001_initial.py`, outbox idempotente y estados explícitos.
+- Hooks para reservas online, transferencias, comprobantes, aprobación/rechazo, vencimientos y confirmación manual con correo válido.
+- Mantenimiento y bandeja operativa procesan/reintentan sin PII; el reintento es POST+CSRF y auditado.
+- No se duplicó `TicketEmailAttempt` ni se reemplazó el correo agrupado de pasajes. No se enviaron correos reales ni se ejecutaron migraciones persistentes.
+
 ## Bandeja operativa (2026-10-02)
 
 En implementación en `feature/operations-inbox-20261002`: vista de solo lectura para Administrador/Vendedor con categorías, prioridades server-side, filtros, búsqueda segura, paginación y contadores globales. No crea migraciones. Cámara, offline, polling agresivo, caja, contabilidad y mantenimiento programado quedan fuera de alcance.

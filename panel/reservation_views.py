@@ -170,6 +170,8 @@ def booking_detail(request, public_id):
         booking=booking
     ).select_related("registered_by", "reviewed_by").order_by("-created_at")
     fulfillment = TicketFulfillment.objects.filter(booking=booking).first()
+    from notifications.models import TransactionalNotification
+    notifications = TransactionalNotification.objects.filter(booking=booking).order_by("-created_at")
 
     return render(request, "panel/reservations/detail.html", {
         "booking": booking,
@@ -179,6 +181,7 @@ def booking_detail(request, public_id):
         "active_payment": active_payment,
         "payment_history": payment_history,
         "fulfillment": fulfillment,
+        "notifications": notifications,
     })
 
 

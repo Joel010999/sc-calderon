@@ -86,6 +86,7 @@ INSTALLED_APPS = [
     'payments.apps.PaymentsConfig',
     'tickets.apps.TicketsConfig',
     'customers.apps.CustomersConfig',
+    'notifications.apps.NotificationsConfig',
 ]
 
 MIDDLEWARE = [
@@ -243,6 +244,7 @@ OPERATIONAL_MAINTENANCE_LEASE_SECONDS = int(os.getenv('OPERATIONAL_MAINTENANCE_L
 OPERATIONAL_MAINTENANCE_ENABLE_EXPIRE = os.getenv('OPERATIONAL_MAINTENANCE_ENABLE_EXPIRE', 'True').lower() in ('1', 'true', 'yes')
 OPERATIONAL_MAINTENANCE_ENABLE_PAYMENTS = os.getenv('OPERATIONAL_MAINTENANCE_ENABLE_PAYMENTS', 'True').lower() in ('1', 'true', 'yes')
 OPERATIONAL_MAINTENANCE_ENABLE_FULFILLMENT = os.getenv('OPERATIONAL_MAINTENANCE_ENABLE_FULFILLMENT', 'True').lower() in ('1', 'true', 'yes')
+OPERATIONAL_MAINTENANCE_ENABLE_NOTIFICATIONS = os.getenv('OPERATIONAL_MAINTENANCE_ENABLE_NOTIFICATIONS', 'True').lower() in ('1', 'true', 'yes')
 # Bank transfer configuration
 BANK_TRANSFER_ACCOUNT_HOLDER = os.getenv("BANK_TRANSFER_ACCOUNT_HOLDER", "SC Viajes S.R.L.")
 BANK_TRANSFER_ALIAS = os.getenv("BANK_TRANSFER_ALIAS", "scviajes.mp")
@@ -266,3 +268,9 @@ GOOGLE_OAUTH_ENABLED = bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRE
 GOOGLE_OAUTH_SIMULATION_ENABLED = os.getenv('GOOGLE_OAUTH_SIMULATION_ENABLED', 'False').lower() in ('true', '1', 't')
 
 CUSTOMERS_CLAIM_TOKEN_HOURS = int(os.getenv("CUSTOMERS_CLAIM_TOKEN_HOURS", "24"))
+
+# Notificaciones transaccionales: outbox durable, sin relación con marketing.
+TRANSACTIONAL_NOTIFICATIONS_ENABLED = os.getenv("TRANSACTIONAL_NOTIFICATIONS_ENABLED", "True").lower() in ("1", "true", "yes")
+NOTIFICATIONS_MAX_ATTEMPTS = int(os.getenv("NOTIFICATIONS_MAX_ATTEMPTS", "5"))
+NOTIFICATIONS_RETRY_DELAY_SECONDS = int(os.getenv("NOTIFICATIONS_RETRY_DELAY_SECONDS", "300"))
+NOTIFICATIONS_LEASE_SECONDS = int(os.getenv("NOTIFICATIONS_LEASE_SECONDS", "300"))

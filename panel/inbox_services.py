@@ -11,11 +11,13 @@ from operations.models import Trip
 from payments.models import Payment, PaymentStatus
 from sales.models import Booking, BookingStatus
 from tickets.models import EmailAttemptStatus, FulfillmentEmailStatus, FulfillmentIssueStatus, TicketEmailAttempt, TicketFulfillment, TicketStatus
+from notifications.models import NotificationStatus, TransactionalNotification
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 CATEGORY_CHOICES = (("held", "Reservas retenidas"), ("voucher", "Comprobantes pendientes"), ("review", "Transferencias en revisión"), ("rejected", "Pagos rechazados"), ("fulfillment", "Entrega de pasajes"), ("tickets", "Tickets incompletos"), ("email", "Correo pendiente"), ("trip", "Viajes próximos"), ("lease", "Trabajos abandonados"))
 PRIORITY_CHOICES = (("critical", "Crítica"), ("high", "Alta"), ("medium", "Media"), ("info", "Informativa"))
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "info": 3}
+CATEGORY_CHOICES = CATEGORY_CHOICES + (("notification", "Notificaciones transaccionales"),)
 
 @dataclass(frozen=True)
 class InboxItem:
@@ -62,6 +64,12 @@ def build_inbox(*, params=None, now=None):
     for booking in incomplete if enabled("tickets") else []: items.append(_item("tickets", "high", "Tickets incompletos", str(booking.public_id), booking.confirmed_at, reverse("panel:booking_detail", kwargs={"public_id": booking.public_id}), now, [x.trip_id for x in booking.legs.all()]))
     attempts = TicketEmailAttempt.objects.filter(status=EmailAttemptStatus.PENDING, booking__ticket_fulfillment__isnull=True).select_related("booking").prefetch_related("booking__legs").only("booking__public_id", "attempted_at")
     for attempt in attempts if enabled("email") else []: items.append(_item("email", "medium", "Correo pendiente", str(attempt.booking.public_id), attempt.attempted_at, reverse("panel:booking_detail", kwargs={"public_id": attempt.booking.public_id}), now, [x.trip_id for x in attempt.booking.legs.all()]))
+    notifications = TransactionalNotification.objects.filter(status__in=[NotificationStatus.PENDING, NotificationStatus.FAILED, NotificationStatus.PROCESSING]).select_related("booking").only("pk", "status", "updated_at", "lease_until", "booking__public_id")
+    for notification in notifications if enabled("notification") else []:
+        if notification.status == NotificationStatus.PROCESSING and notification.lease_until and notification.lease_until > now:
+            continue
+        priority = "critical" if notification.status == NotificationStatus.FAILED else "medium"
+        items.append(_item("notification", priority, f"Notificación {notification.get_status_display().lower()}", str(notification.booking.public_id), notification.updated_at, reverse("panel:booking_detail", kwargs={"public_id": notification.booking.public_id}), now))
     trips = Trip.objects.filter(departure_at__gte=now - timedelta(hours=24), status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING, Trip.Status.STARTED]).annotate(held_count=Count("booking_legs", filter=Q(booking_legs__booking__status=BookingStatus.HELD), distinct=True), pending_count=Count("booking_legs__booking__payments", filter=Q(booking_legs__booking__payments__status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW]), distinct=True)).filter(Q(held_count__gt=0) | Q(pending_count__gt=0)).select_related("route").only("departure_at", "route__code", "status", "route_id")
     for trip in trips if enabled("trip") else []:
         ref = f"{trip.route.code} · {_local(trip.departure_at).strftime('%d/%m/%Y %H:%M')}"; items.append(_item("trip", "info", "Pendientes en viaje", ref, trip.departure_at, reverse("panel:trip_manifest", kwargs={"trip_pk": trip.pk}), now, [trip.pk]))
