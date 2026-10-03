@@ -12,7 +12,6 @@ from collections import Counter
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models
-from django.db import close_old_connections
 from django.utils import timezone
 
 from sales.models import Booking, BookingStatus
@@ -227,7 +226,6 @@ class Command(BaseCommand):
 
     @staticmethod
     def _process(task, booking_pk):
-        close_old_connections()
         if task == "expire":
             from sales.services import expire_booking
             expire_booking(booking_pk, now=timezone.now())
