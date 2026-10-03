@@ -295,3 +295,6 @@ Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendient
 - Se agregó `operations/migrations/0002_trip_completed_at_trip_started_at.py`; solo debe aplicarse en bases temporales de pruebas, nunca en bases persistentes durante esta entrega.
 - Se verificaron `check`, `makemigrations --check --dry-run`, `diff --check` y las pruebas afectadas en SQLite.
 - La cancelación de viajes y sus consecuencias económicas siguen pendientes.
+### Módulo de gestión de clientes (2026-10-02)
+
+Implementado en `feature/customer-management-panel-20261002`: listado paginado, búsqueda por nombre/email normalizado, filtros de cuenta/consentimiento/reservas/alta, métricas, detalle de asociaciones explícitas, consentimientos auditables y estado de reclamos. Las vistas son GET-only y no hay migraciones. Pendiente validar workflows PostgreSQL sobre el hash final.
