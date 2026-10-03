@@ -64,6 +64,24 @@ def can_manage_payments(user):
     )
 
 
+def can_manage_customers(user):
+    return user.is_authenticated and user.is_active and (
+        user.is_superuser or user.groups.filter(name__in=["Administrador", "Vendedor"]).exists()
+    )
+
+
+def customers_access():
+    def decorate(view):
+        @login_required(login_url="panel:login")
+        @wraps(view)
+        def wrapped(request, *args, **kwargs):
+            if not can_manage_customers(request.user):
+                raise PermissionDenied("No tenés permiso para acceder a los clientes.")
+            return view(request, *args, **kwargs)
+        return wrapped
+    return decorate
+
+
 def can_access_operational_inbox(user):
     return can_manage_reservations(user)
 

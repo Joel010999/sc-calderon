@@ -287,3 +287,9 @@ Se adopta una bandeja unificada de consulta para Administrador/Vendedor, sin esc
 - No se liberan automáticamente reservas HELD ni pagos en revisión al iniciar o finalizar. Se muestran advertencias operativas para resolverlos manualmente.
 - La venta online conserva el corte configurable de una hora antes de la subida y el servidor rechaza nuevas reservas cuando el viaje ya inició. Las reservas manuales preexistentes tampoco pueden confirmarse mediante nuevos pagos una vez iniciado el viaje.
 - La cancelación de viajes y sus consecuencias económicas (reembolsos, saldos, reubicaciones o liberación de reservas) siguen pendientes de una decisión de negocio.
+### Gestión de clientes en el panel (2026-10-02)
+
+- Se habilita una bandeja de consulta de clientes únicamente para los grupos Administrador y Vendedor.
+- El módulo es inicialmente de solo lectura y no altera cuentas, reservas ni consentimientos.
+- La relación cliente-reserva debe ser explícita mediante `CustomerBooking`; no se permite vinculación automática por email.
+- Se ocultan hashes, tokens de reclamo/OAuth, comprobantes, documentos completos y otros secretos. El historial de consentimiento expone solo estado, versión, origen y fecha.
