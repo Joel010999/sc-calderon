@@ -1,0 +1,23 @@
+{% extends 'panel/base.html' %}
+{% block content %}
+<div class="container customer-panel">
+  <h1 class="dashboard-title">Clientes</h1>
+  <p class="read-only">Consulta interna de solo lectura. Las reservas solo se muestran cuando existe una asociación explícita.</p>
+  <section class="stats-grid" aria-label="Indicadores de clientes">
+    <div class="stat-card"><div class="stat-label">Clientes totales</div><div class="stat-value">{{ metrics.total }}</div></div>
+    <div class="stat-card"><div class="stat-label">Con consentimiento comercial</div><div class="stat-value">{{ metrics.consented }}</div></div>
+    <div class="stat-card"><div class="stat-label">Con compras</div><div class="stat-value">{{ metrics.with_purchases }}</div></div>
+    <div class="stat-card"><div class="stat-label">Altas últimos {{ recent_days }} días</div><div class="stat-value">{{ metrics.recent }}</div></div>
+  </section>
+  <section class="ops-card"><h2>Buscar y filtrar</h2><form method="get" class="filters-grid">
+    <label>Nombre o email normalizado<input name="q" value="{{ selected.q }}" maxlength="120"></label>
+    <label>Cuenta<select name="active"><option value="">Todas</option><option value="active" {% if selected.active == 'active' %}selected{% endif %}>Activa</option><option value="inactive" {% if selected.active == 'inactive' %}selected{% endif %}>Inactiva</option></select></label>
+    <label>Consentimiento<select name="consent"><option value="">Todos</option><option value="active" {% if selected.consent == 'active' %}selected{% endif %}>Activo</option><option value="inactive" {% if selected.consent == 'inactive' %}selected{% endif %}>Inactivo</option></select></label>
+    <label>Reservas<select name="reservations"><option value="">Todas</option><option value="with" {% if selected.reservations == 'with' %}selected{% endif %}>Con reservas</option><option value="without" {% if selected.reservations == 'without' %}selected{% endif %}>Sin reservas</option></select></label>
+    <label>Alta desde<input type="date" name="date_from" value="{{ selected.date_from }}"></label><label>Alta hasta<input type="date" name="date_to" value="{{ selected.date_to }}"></label><button type="submit">Aplicar filtros</button>
+  </form></section>
+  <section class="ops-card"><h2>{{ total }} resultado{{ total|pluralize }}</h2><div class="table-scroll"><table class="table-audit"><thead><tr><th>Cliente</th><th>Estado</th><th>Consentimiento</th><th>Reservas</th><th>Alta</th><th></th></tr></thead><tbody>
+  {% for customer in page.object_list %}<tr><td><strong>{{ customer.user.get_full_name|default:'Sin nombre' }}</strong><br><span class="muted">{{ customer.normalized_email }}</span></td><td>{{ customer.user.is_active|yesno:'Activa,Inactiva' }}</td><td>{% if customer.current_consent %}Activo{% else %}Inactivo{% endif %}</td><td>{{ customer.reservation_count }}</td><td>{{ customer.created_at|date:'d/m/Y H:i' }}</td><td><a href="{% url 'panel:customer_detail' customer.pk %}">Ver detalle</a></td></tr>{% empty %}<tr><td colspan="6" class="empty-state">No hay clientes con estos filtros.</td></tr>{% endfor %}
+  </tbody></table></div>{% if page.has_other_pages %}<nav class="pagination" aria-label="Paginación"><span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ selected.q|urlencode }}&active={{ selected.active }}&consent={{ selected.consent }}&reservations={{ selected.reservations }}&date_from={{ selected.date_from }}&date_to={{ selected.date_to }}">Anterior</a>{% endif %}{% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ selected.q|urlencode }}&active={{ selected.active }}&consent={{ selected.consent }}&reservations={{ selected.reservations }}&date_from={{ selected.date_from }}&date_to={{ selected.date_to }}">Siguiente</a>{% endif %}</nav>{% endif %}</section>
+</div>
+{% endblock %}

@@ -9,6 +9,7 @@ def panel_permissions(request):
             "can_manage_operations": False,
             "can_manage_payments": False,
             "can_access_operational_inbox": False,
+            "can_manage_customers": False,
         }
     can_access_reservations = can_manage_reservations(user)
     return {
@@ -16,4 +17,7 @@ def panel_permissions(request):
         "can_manage_operations": can_manage_operations(user),
         "can_manage_payments": can_manage_payments(user),
         "can_access_operational_inbox": can_access_reservations,
+        # Es el mismo conjunto explícito de roles que las reservas; reutilizar el
+        # resultado evita una consulta adicional en cada pantalla del panel.
+        "can_manage_customers": can_access_reservations,
     }
