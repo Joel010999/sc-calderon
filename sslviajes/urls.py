@@ -15,9 +15,13 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.urls import path, include
+from core.errors import error_400, error_403, error_404, error_500
+from core.health import live_check, ready_check
 from core.views import health_check
 
 urlpatterns = [
+    path('health/live/', live_check, name='health_live'),
+    path('health/ready/', ready_check, name='health_ready'),
     path('health/', health_check, name='health_check'),
     path('panel/', include('panel.urls')),
     path('payments/', include('payments.urls')),
@@ -25,3 +29,8 @@ urlpatterns = [
     path('cliente/', include('customers.urls')),
     path('', include('core.urls')),
 ]
+
+handler400 = 'core.errors.error_400'
+handler403 = 'core.errors.error_403'
+handler404 = 'core.errors.error_404'
+handler500 = 'core.errors.error_500'

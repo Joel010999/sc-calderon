@@ -305,3 +305,8 @@ Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendient
 ### Módulo de gestión de clientes (2026-10-02)
 
 Implementado en `feature/customer-management-panel-20261002`: listado paginado, búsqueda por nombre/email normalizado, filtros de cuenta/consentimiento/reservas/alta, métricas, detalle de asociaciones explícitas, consentimientos auditables y estado de reclamos. Las vistas son GET-only y no hay migraciones. Pendiente validar workflows PostgreSQL sobre el hash final.
+## Preparación verificable para producción (2026-10-05)
+
+En implementación en `feature/production-readiness-preflight-20261005`. Incluye `/health/live/`, `/health/ready/`, el comando `production_preflight`, request IDs, logging configurable y páginas de error 400/403/404/500. La entrega no despliega, no accede a Railway, no ejecuta migraciones persistentes y no conecta proveedores reales.
+
+Checklist: configurar variables sin secretos en el repositorio; aplicar `migrate` únicamente en la base objetivo autorizada; ejecutar `collectstatic --noinput`; ejecutar `production_preflight --json`; comprobar readiness; y recién después arrancar el proceso. Ante fallo se conserva la versión anterior como rollback básico y se revierte el release sin borrar datos ni ejecutar migraciones destructivas.

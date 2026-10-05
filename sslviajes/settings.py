@@ -45,6 +45,8 @@ CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORI
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+LOG_FORMAT = os.getenv('LOG_FORMAT', 'text' if DEBUG else 'json').lower()
+
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -53,19 +55,19 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False').lower() in ('true', '1', 't')
     SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'False').lower() in ('true', '1', 't')
 
-    LOGGING = {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'handlers': {
-            'console': {
-                'class': 'logging.StreamHandler',
-            },
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'request': {
+            '()': 'core.request_context.RequestJSONFormatter' if LOG_FORMAT == 'json' else 'core.request_context.RequestTextFormatter',
         },
-        'root': {
-            'handlers': ['console'],
-            'level': 'WARNING',
-        },
-    }
+    },
+    'filters': {'request_id': {'()': 'core.request_context.RequestIDFilter'}},
+    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'request', 'filters': ['request_id']}},
+    'loggers': {'django.request.safe': {'handlers': ['console'], 'level': 'INFO', 'propagate': False}},
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+}
 
 LOGIN_URL = '/panel/login/'
 
@@ -92,6 +94,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'core.middleware.RequestLoggingMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

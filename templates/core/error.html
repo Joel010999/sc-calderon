@@ -1,0 +1,10 @@
+{% extends "core/base.html" %}
+{% block content %}
+<section class="container" style="max-width: 760px; margin: 5rem auto; text-align: center;">
+  <p class="section-head__tag">{{ status_code }}</p>
+  <h1>{{ title }}</h1>
+  <p>{{ message }}</p>
+  {% if request_id %}<p style="font-size: .85rem; color: #64748b;">ID de solicitud: {{ request_id }}</p>{% endif %}
+  <a class="button button--primary" href="/">Volver al inicio</a>
+</section>
+{% endblock %}
