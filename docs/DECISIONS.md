@@ -301,3 +301,9 @@ Se adopta una bandeja unificada de consulta para Administrador/Vendedor, sin esc
 - El módulo es inicialmente de solo lectura y no altera cuentas, reservas ni consentimientos.
 - La relación cliente-reserva debe ser explícita mediante `CustomerBooking`; no se permite vinculación automática por email.
 - Se ocultan hashes, tokens de reclamo/OAuth, comprobantes, documentos completos y otros secretos. El historial de consentimiento expone solo estado, versión, origen y fecha.
+## Preflight de producción (2026-10-05)
+
+- Se agregan endpoints separados de liveness y readiness. Liveness no consulta base ni proveedores; readiness responde 503 ante una dependencia crítica no disponible.
+- `production_preflight` es una validación previa, no un despliegue: no conecta proveedores reales, no ejecuta migraciones y no imprime secretos. La salida distingue `PASS`, `WARNING` y `FAIL`, y `--json` es estable para automatización.
+- El request ID puede venir de un header solo si cumple un formato seguro; de lo contrario se genera. Los logs omiten query strings, payloads, credenciales, tokens, comprobantes y PII.
+- HSTS `includeSubDomains` y `preload` permanecen desactivados hasta una decisión explícita de despliegue.

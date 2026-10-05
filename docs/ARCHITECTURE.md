@@ -158,3 +158,8 @@ Las paradas y el resumen se calculan con la fotografía real de `TripStop`; nunc
 ### Gestión interna de clientes
 
 El panel personalizado incorpora una consulta GET-only para Administrador y Vendedor. La lista y el detalle parten de `customers.Customer` y solo recorren asociaciones explícitas `CustomerBooking`; nunca enlazan reservas por coincidencia de email. Las reservas muestran estado, tramos, pasajes, pagos, fulfillment, estados de correo y reclamos únicamente como pendiente/consumido, sin tokens, hashes, comprobantes ni PII innecesaria. Los indicadores usan agregaciones y subconsultas de consentimiento actual para evitar N+1.
+## Preparación verificable para producción
+
+`/health/live/` confirma que el proceso responde y no consulta dependencias. `/health/ready/` verifica configuración crítica y una consulta mínima a la base; devuelve 200 solo si está listo y 503 cuando una dependencia crítica falla. Ambos contratos son mínimos y devuelven un `request_id` sin secretos.
+
+El comando `production_preflight` clasifica configuración, base, migraciones, estáticos, WhiteNoise, storage privado, URLs firmadas, SMTP, OAuth, mantenimiento, outbox y directorios locales como `PASS`, `WARNING` o `FAIL`. `--json` permite automatización y un `FAIL` devuelve código distinto de cero. El request ID se acepta solo con formato seguro o se genera internamente; el logging no serializa query strings, payloads, credenciales ni datos personales.
