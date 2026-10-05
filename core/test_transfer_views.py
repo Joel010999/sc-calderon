@@ -7,7 +7,9 @@ import uuid
 from zoneinfo import ZoneInfo
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import Client, TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -323,6 +325,57 @@ class PublicTransferViewsTestCase(TestCase):
         self.assertEqual(payment.status, PaymentStatus.AWAITING_VOUCHER)
         sa = SeatAssignment.objects.get(leg__booking=booking)
         self.assertEqual(sa.status, AssignmentStatus.HELD)
+
+    def test_transfer_query_count_does_not_grow_per_leg(self):
+        booking = self.create_held_booking()
+        self.client.post(reverse("iniciar_transferencia", kwargs={"public_id": booking.public_id}))
+        url = reverse("pantalla_transferencia", kwargs={"public_id": booking.public_id})
+
+        with CaptureQueriesContext(connection) as one_leg_queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+        second_leg = BookingLeg.objects.create(
+            booking=booking,
+            sequence=2,
+            trip=self.trip,
+            origin_stop=self.ts_orig,
+            destination_stop=self.ts_dest,
+            origin_stop_name=self.stop_cba.name,
+            destination_stop_name=self.stop_ssj.name,
+            departure_at=self.ts_orig.scheduled_at,
+            arrival_at=self.ts_dest.scheduled_at,
+        )
+        second_passenger = BookingPassenger.objects.create(
+            booking=booking,
+            position=2,
+            first_name="Ana",
+            last_name="Gomez",
+            document_type="DNI",
+            document_number="28123457",
+            birth_date=date(1982, 7, 11),
+            nationality="Argentina",
+        )
+        SeatAssignment.objects.create(
+            leg=second_leg,
+            passenger=second_passenger,
+            trip=self.trip,
+            seat=self.seat_semi,
+            status=AssignmentStatus.HELD,
+            seat_number=2,
+            category=SeatCategory.SEMI_CAMA,
+            price=Decimal("10000.00"),
+            currency="ARS",
+        )
+
+        with CaptureQueriesContext(connection) as two_leg_queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(
+            len(two_leg_queries),
+            len(one_leg_queries) + 1,
+            "La pantalla de transferencia no debe consultar una vez por tramo.",
+        )
 
     # --- ESTADO EN PÁGINA DE RESUMEN ---
 

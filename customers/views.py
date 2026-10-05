@@ -291,17 +291,6 @@ def customer_ticket_download(request, public_id):
     if not storage.exists(ticket.pdf_path):
         raise Http404("El archivo de pasaje no fue encontrado en el almacenamiento.")
 
-    # Registrar auditoría de descarga
-    if False:  # Las descargas GET no generan efectos secundarios.
-        TicketAuditEvent.objects.create(
-        actor=request.user,
-        action=TicketAuditEvent.Action.DOWNLOAD,
-        ticket=ticket,
-        booking=ticket.booking,
-        description=f"Descarga de pasaje {ticket.ticket_code} por el cliente {customer.email}",
-        metadata={"customer_id": customer.id, "email": customer.email},
-    )
-
     file_handle = storage.open(ticket.pdf_path, "rb")
     response = FileResponse(file_handle, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="pasaje-{ticket.ticket_code}.pdf"'
