@@ -1,5 +1,12 @@
 # Arquitectura de SC Viajes
 
+## Escenario demo sintetico (2026-10-05)
+
+`core.demo_scenario` compone un escenario local usando los servicios de dominio
+existentes para reservas, pagos y tickets. Su identificacion se limita a prefijos y
+dominio `.invalid`; el comando no conoce secretos, no usa proveedores externos y el
+reset opera sobre conjuntos explicitamente identificados.
+
 ## Fundación de validación de embarque
 
 `tickets.BoardingRecord` es el registro durable del embarque. Cada fila conserva el pasaje, pasajero, viaje, asignación de butaca, operador y fecha/hora consciente de zona horaria; una restricción única condicional permite un solo registro `ACTIVE` por pasaje y conserva las filas `REVERSED` como historial.

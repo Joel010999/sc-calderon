@@ -1,5 +1,13 @@
 # Estado de SC Viajes
 
+## Escenario demo y aceptacion E2E (2026-10-05)
+
+Implementado en `feature/demo-acceptance-e2e-20261005`: `seed_demo_scenario` con
+`--dry-run` y `--reset`, cuentas `.invalid`, operaciones, reservas, pagos, tickets,
+fulfillment, notificaciones, manifiesto, embarque, reportes, bandeja y clientes.
+Las pruebas usan bases temporales, no imprimen secretos, no envian correos reales,
+no escriben S3 y no agregan bypasses de permisos.
+
 ## Fundación de validación de embarque (2026-10-01)
 
 Estado: implementada, integrada con el ciclo de vida de viajes, validada y publicada en `feature/boarding-validation-20261001`.
