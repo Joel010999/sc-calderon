@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import validate_email
 from django.db import connection, transaction
+from django.db.models import Prefetch
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -49,13 +50,36 @@ from payments.exceptions import (
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import (
     calculate_booking_total,
-    expire_public_transfer_if_expired,
     initiate_public_transfer_payment,
     upload_public_transfer_voucher,
 )
 
 logger = logging.getLogger(__name__)
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def _booking_effectively_expired(booking, now):
+    return booking.status == BookingStatus.HELD and booking.expires_at <= now
+
+
+def _payment_effectively_expired(payment, booking, now):
+    if not payment or payment.status not in (PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW):
+        return False
+    deadline = payment.proof_deadline_at if payment.status == PaymentStatus.AWAITING_VOUCHER else payment.review_deadline_at
+    return bool((deadline or booking.expires_at) <= now)
+
+
+def _booking_read_queryset():
+    assignment_qs = SeatAssignment.objects.select_related("passenger", "seat").order_by("seat_number")
+    return Booking.objects.select_related().prefetch_related(
+        "legs__trip__bus",
+        "legs__trip__route",
+        "legs__origin_stop__stop",
+        "legs__destination_stop__stop",
+        Prefetch("legs__seat_assignments", queryset=assignment_qs),
+        "passengers",
+        "tickets",
+    )
 
 
 def _get_active_stops():
@@ -730,13 +754,7 @@ def booking_summary(request, public_id):
         return HttpResponseForbidden("No tenés permiso para acceder al resumen de esta reserva.")
 
     booking = get_object_or_404(
-        Booking.objects.prefetch_related(
-            "legs__trip__bus",
-            "legs__trip__route",
-            "legs__origin_stop__stop",
-            "legs__destination_stop__stop",
-            "legs__seat_assignments__seat",
-            "passengers",
+        _booking_read_queryset().filter(
         ),
         public_id=public_id,
         channel=BookingChannel.ONLINE,
@@ -745,8 +763,6 @@ def booking_summary(request, public_id):
     now = timezone.now()
 
     # Expiración oportunista si venció el plazo
-    expire_public_transfer_if_expired(booking, now=now)
-    booking.refresh_from_db()
 
     # Buscar pago activo o último para vincular estado
     active_payment = Payment.objects.filter(
@@ -758,10 +774,11 @@ def booking_summary(request, public_id):
             PaymentStatus.REJECTED,
         ],
     ).order_by("-created_at", "-pk").first()
+    effectively_expired = _booking_effectively_expired(booking, now)
 
     # Cálculo de segundos restantes para el temporizador regresivo
     remaining_seconds = 0
-    if booking.status == BookingStatus.HELD:
+    if booking.status == BookingStatus.HELD and not effectively_expired:
         diff = (booking.expires_at - now).total_seconds()
         remaining_seconds = max(0, int(diff))
 
@@ -776,7 +793,7 @@ def booking_summary(request, public_id):
     for leg in booking.legs.all():
         orig_local = timezone.localtime(leg.departure_at, AR_TZ)
         dest_local = timezone.localtime(leg.arrival_at, AR_TZ)
-        assignments = list(leg.seat_assignments.select_related("passenger", "seat").order_by("seat_number"))
+        assignments = list(leg.seat_assignments.all())
         legs_data.append({
             "leg": leg,
             "origin_local": orig_local,
@@ -790,8 +807,8 @@ def booking_summary(request, public_id):
         "legs_data": legs_data,
         "total": total,
         "remaining_seconds": remaining_seconds,
-        "is_held": (booking.status == BookingStatus.HELD),
-        "is_expired": (booking.status == BookingStatus.EXPIRED),
+        "is_held": (booking.status == BookingStatus.HELD and not effectively_expired),
+        "is_expired": (booking.status == BookingStatus.EXPIRED or effectively_expired),
         "is_released": (booking.status == BookingStatus.RELEASED),
         "is_confirmed": (booking.status == BookingStatus.CONFIRMED),
         "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ),
@@ -834,20 +851,14 @@ def payment_pending(request, public_id):
         return HttpResponseForbidden("No tenés permiso para acceder a esta reserva.")
 
     booking = get_object_or_404(
-        Booking.objects.prefetch_related(
-            "legs__trip__bus",
-            "legs__trip__route",
-            "legs__origin_stop__stop",
-            "legs__destination_stop__stop",
-            "legs__seat_assignments__seat",
-            "passengers",
+        _booking_read_queryset().filter(
         ),
         public_id=public_id,
         channel=BookingChannel.ONLINE,
     )
 
     now = timezone.now()
-    if expire_public_transfer_if_expired(booking, now=now) or booking.status != BookingStatus.HELD:
+    if _booking_effectively_expired(booking, now) or booking.status != BookingStatus.HELD:
         return redirect("resumen_reserva", public_id=booking.public_id)
 
     # Si ya tiene una transferencia en curso, redirigir a la pantalla de transferencia
@@ -929,20 +940,13 @@ def pantalla_transferencia(request, public_id):
         return HttpResponseForbidden("No tenés permiso para acceder a esta reserva.")
 
     booking = get_object_or_404(
-        Booking.objects.prefetch_related(
-            "legs__trip__bus",
-            "legs__trip__route",
-            "legs__origin_stop__stop",
-            "legs__destination_stop__stop",
-            "legs__seat_assignments__seat",
-            "passengers",
+        _booking_read_queryset().filter(
         ),
         public_id=public_id,
         channel=BookingChannel.ONLINE,
     )
 
     now = timezone.now()
-    expire_public_transfer_if_expired(booking, now=now)
 
     payment = Payment.objects.filter(
         booking=booking,
@@ -952,6 +956,8 @@ def pantalla_transferencia(request, public_id):
     if not payment:
         return redirect("pago_pendiente", public_id=booking.public_id)
 
+    payment_expired = _payment_effectively_expired(payment, booking, now)
+
     total = payment.amount
 
     # Tramos formateados
@@ -959,7 +965,7 @@ def pantalla_transferencia(request, public_id):
     for leg in booking.legs.all():
         orig_local = timezone.localtime(leg.departure_at, AR_TZ)
         dest_local = timezone.localtime(leg.arrival_at, AR_TZ)
-        assignments = list(leg.seat_assignments.select_related("passenger", "seat").order_by("seat_number"))
+        assignments = list(leg.seat_assignments.all())
         legs_data.append({
             "leg": leg,
             "origin_local": orig_local,
@@ -970,11 +976,11 @@ def pantalla_transferencia(request, public_id):
     # Plazos y temporizador
     remaining_seconds = 0
     deadline_local = None
-    if payment.status == PaymentStatus.AWAITING_VOUCHER:
+    if payment.status == PaymentStatus.AWAITING_VOUCHER and not payment_expired:
         deadline = payment.proof_deadline_at or booking.expires_at
         deadline_local = timezone.localtime(deadline, AR_TZ)
         remaining_seconds = max(0, int((deadline - now).total_seconds()))
-    elif payment.status == PaymentStatus.UNDER_REVIEW:
+    elif payment.status == PaymentStatus.UNDER_REVIEW and not payment_expired:
         deadline = payment.review_deadline_at or booking.expires_at
         deadline_local = timezone.localtime(deadline, AR_TZ)
         remaining_seconds = max(0, int((deadline - now).total_seconds()))
@@ -995,11 +1001,11 @@ def pantalla_transferencia(request, public_id):
         "bank_config": bank_config,
         "remaining_seconds": remaining_seconds,
         "deadline_local": deadline_local,
-        "is_awaiting_voucher": (payment.status == PaymentStatus.AWAITING_VOUCHER and booking.status == BookingStatus.HELD),
-        "is_under_review": (payment.status == PaymentStatus.UNDER_REVIEW),
+        "is_awaiting_voucher": (payment.status == PaymentStatus.AWAITING_VOUCHER and booking.status == BookingStatus.HELD and not payment_expired),
+        "is_under_review": (payment.status == PaymentStatus.UNDER_REVIEW and not payment_expired),
         "is_approved": (payment.status == PaymentStatus.APPROVED or booking.status == BookingStatus.CONFIRMED),
         "is_rejected": (payment.status == PaymentStatus.REJECTED),
-        "is_expired": (payment.status == PaymentStatus.EXPIRED or booking.status == BookingStatus.EXPIRED),
+        "is_expired": (payment.status == PaymentStatus.EXPIRED or booking.status == BookingStatus.EXPIRED or payment_expired),
     })
 
 

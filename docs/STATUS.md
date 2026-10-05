@@ -1,5 +1,12 @@
 # Estado de SC Viajes
 
+## Hardening de pureza GET y transferencia (2026-10-05)
+
+Implementado: expiración virtual en lecturas públicas, persistencia sólo por POST
+o mantenimiento, QR y descargas sin auditoría GET, y prefetch de asignaciones de
+transferencia para evitar N+1 conservando el orden de tramo/pasajero/butaca.
+Pendiente: validación integral PostgreSQL/CI por el coordinador.
+
 ## Fundación de validación de embarque (2026-10-01)
 
 Estado: implementada, integrada con el ciclo de vida de viajes, validada y publicada en `feature/boarding-validation-20261001`.

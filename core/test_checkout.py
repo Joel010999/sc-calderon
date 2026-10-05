@@ -599,10 +599,10 @@ class BookingSummaryViewTests(CheckoutBaseTestCase):
         self.assertContains(response, "El plazo de retención ha expirado")
 
         self.booking.refresh_from_db()
-        self.assertEqual(self.booking.status, BookingStatus.EXPIRED)
+        self.assertEqual(self.booking.status, BookingStatus.HELD)
         self.assertEqual(
             SeatAssignment.objects.filter(leg__booking=self.booking).first().status,
-            AssignmentStatus.RELEASED
+            AssignmentStatus.HELD
         )
 
     def test_expire_public_booking_action_releases_hold(self):

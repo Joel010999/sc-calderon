@@ -1,5 +1,14 @@
 # Arquitectura de SC Viajes
 
+## Pureza de lecturas públicas y transferencias (2026-10-05)
+
+Las vistas GET de resumen, pago pendiente y seguimiento de transferencia calculan
+el vencimiento efectivo en memoria. No cambian estados, timestamps, butacas,
+auditorías ni contadores; la expiración durable queda exclusivamente en servicios
+POST de operación o en `run_operational_maintenance`. La verificación QR pública y
+las descargas autorizadas son lecturas/streaming puros: conservan token, permisos,
+IDOR y almacenamiento privado sin crear auditorías por GET.
+
 ## Fundación de validación de embarque
 
 `tickets.BoardingRecord` es el registro durable del embarque. Cada fila conserva el pasaje, pasajero, viaje, asignación de butaca, operador y fecha/hora consciente de zona horaria; una restricción única condicional permite un solo registro `ACTIVE` por pasaje y conserva las filas `REVERSED` como historial.

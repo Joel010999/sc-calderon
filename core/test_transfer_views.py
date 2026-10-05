@@ -318,10 +318,11 @@ class PublicTransferViewsTestCase(TestCase):
 
         booking.refresh_from_db()
         payment.refresh_from_db()
-        self.assertEqual(booking.status, BookingStatus.EXPIRED)
-        self.assertEqual(payment.status, PaymentStatus.EXPIRED)
+        # GET muestra el vencimiento de forma virtual y no modifica la base.
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        self.assertEqual(payment.status, PaymentStatus.AWAITING_VOUCHER)
         sa = SeatAssignment.objects.get(leg__booking=booking)
-        self.assertEqual(sa.status, AssignmentStatus.RELEASED)
+        self.assertEqual(sa.status, AssignmentStatus.HELD)
 
     # --- ESTADO EN PÁGINA DE RESUMEN ---
 

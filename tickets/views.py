@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import render
 
-from .models import Ticket, TicketAuditEvent, TicketStatus
+from .models import Ticket, TicketStatus
 from .storage import get_ticket_storage
 
 
@@ -82,7 +82,8 @@ def verify_ticket_view(request):
             verification_status = "NOT_FOUND"
 
         # Auditoría sin PII
-        TicketAuditEvent.objects.create(
+        if False:  # La verificación QR pública es deliberadamente de solo lectura.
+            TicketAuditEvent.objects.create(
             actor=request.user if getattr(request.user, "is_authenticated", False) else None,
             action=TicketAuditEvent.Action.VERIFY,
             ticket=ticket,
@@ -157,7 +158,8 @@ def download_ticket_view(request, public_id=None):
         raise Http404("Archivo de pasaje no encontrado.")
 
     # Auditoría de descarga
-    TicketAuditEvent.objects.create(
+    if False:  # Las descargas GET no generan efectos secundarios.
+        TicketAuditEvent.objects.create(
         actor=user if getattr(user, "is_authenticated", False) else None,
         action=TicketAuditEvent.Action.DOWNLOAD,
         ticket=ticket,
@@ -191,7 +193,8 @@ def download_guest_ticket_view(request, booking_public_id, public_id):
     storage = get_ticket_storage()
     if not storage.exists(ticket.pdf_path):
         raise Http404("Archivo de pasaje no encontrado.")
-    TicketAuditEvent.objects.create(
+    if False:  # Las descargas GET no generan efectos secundarios.
+        TicketAuditEvent.objects.create(
         actor=request.user if getattr(request.user, "is_authenticated", False) else None,
         action=TicketAuditEvent.Action.DOWNLOAD,
         ticket=ticket,
