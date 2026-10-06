@@ -317,3 +317,14 @@ Implementado en `feature/customer-management-panel-20261002`: listado paginado, 
 En implementación en `feature/production-readiness-preflight-20261005`. Incluye `/health/live/`, `/health/ready/`, el comando `production_preflight`, request IDs, logging configurable y páginas de error 400/403/404/500. La entrega no despliega, no accede a Railway, no ejecuta migraciones persistentes y no conecta proveedores reales.
 
 Checklist: configurar variables sin secretos en el repositorio; aplicar `migrate` únicamente en la base objetivo autorizada; ejecutar `collectstatic --noinput`; ejecutar `production_preflight --json`; comprobar readiness; y recién después arrancar el proceso. Ante fallo se conserva la versión anterior como rollback básico y se revierte el release sin borrar datos ni ejecutar migraciones destructivas.
+## Preparación de backup y restore (2026-10-06)
+
+Implementado en esta rama: `backup_preflight`, `create_database_backup` y
+`verify_database_backup`. Las copias son PostgreSQL-only, formato custom, con
+`shell=False`, salida absoluta externa, permisos privados, temporal atómico,
+no-sobrescritura, checksum SHA-256 y errores sanitizados. Se incorporó inventario
+agregado de storage privado, configuración de retención, advertencias al
+`production_preflight`, `.gitignore` y [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+
+No se ejecutan backups/restores reales, no se accede a proveedores y el restore
+queda documentado como drill manual en una base temporal aislada.

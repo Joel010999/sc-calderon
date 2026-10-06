@@ -114,6 +114,10 @@ def collect_preflight():
     base_url = urlparse(getattr(settings, "TICKETS_VERIFICATION_BASE_URL", ""))
     url_ok = base_url.scheme in {"http", "https"} and bool(base_url.netloc) and (not prod or base_url.scheme == "https")
     results.append(_result("required_variables", "PASS" if url_ok else "FAIL", "Las variables esenciales tienen valores consistentes." if url_ok else "Hay variables esenciales vacías o inconsistentes."))
+    from core.backup import backup_preflight
+    for item in backup_preflight()["results"]:
+        # Backup readiness informs production preflight without invoking pg_dump.
+        results.append(_result(f"backup_{item['key']}", item["status"], item["message"]))
     return results
 
 
