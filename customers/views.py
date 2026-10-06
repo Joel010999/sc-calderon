@@ -23,7 +23,7 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_http_methods, require_POST
 
 from sales.models import Booking, BookingStatus
-from tickets.models import Ticket, TicketAuditEvent, TicketStatus
+from tickets.models import Ticket, TicketStatus
 from tickets.storage import get_ticket_storage
 
 from .models import (
@@ -290,16 +290,6 @@ def customer_ticket_download(request, public_id):
     storage = get_ticket_storage()
     if not storage.exists(ticket.pdf_path):
         raise Http404("El archivo de pasaje no fue encontrado en el almacenamiento.")
-
-    # Registrar auditoría de descarga
-    TicketAuditEvent.objects.create(
-        actor=request.user,
-        action=TicketAuditEvent.Action.DOWNLOAD,
-        ticket=ticket,
-        booking=ticket.booking,
-        description=f"Descarga de pasaje {ticket.ticket_code} por el cliente {customer.email}",
-        metadata={"customer_id": customer.id, "email": customer.email},
-    )
 
     file_handle = storage.open(ticket.pdf_path, "rb")
     response = FileResponse(file_handle, content_type="application/pdf")

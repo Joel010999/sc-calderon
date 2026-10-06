@@ -1,5 +1,14 @@
 # Decisiones de SC Viajes
 
+## Pureza de GET y auditoría de descargas (2026-10-05)
+
+Se confirma que una solicitud GET no debe persistir expiraciones oportunistas ni
+crear auditoría. Resumen, pago pendiente y transferencia muestran el vencimiento
+virtualmente; un POST de operación o mantenimiento persiste la transición y
+mantiene el rechazo atómico de acciones vencidas. QR público y descargas mantienen
+sus controles de autorización, pero no registran eventos por lectura; la auditoría
+de acciones mutables continúa en POST autenticado.
+
 ## Validación segura de embarque (2026-10-01)
 
 - El dominio de embarque pertenece a `tickets` porque el pasaje ya vincula el token QR seguro con su reserva, tramo, pasajero y asignación de butaca.
