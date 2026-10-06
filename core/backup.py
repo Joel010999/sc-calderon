@@ -134,9 +134,6 @@ def _safe_error(_exc):
 def create_database_backup(output, *, dry_run=False):
     if not str(database_config().get("ENGINE", "")).endswith("postgresql"):
         return {"ok": False, "error": "La creación de backups requiere PostgreSQL; SQLite no está permitido."}
-    preflight = backup_preflight()
-    if not preflight["ok"]:
-        return {"ok": False, "error": "La configuración de backup no está lista.", "preflight": preflight["results"]}
     destination = Path(output).expanduser()
     manifest = _manifest_path(destination)
     if not destination.is_absolute() or _repo_path(destination) or _repo_path(manifest):
@@ -145,6 +142,9 @@ def create_database_backup(output, *, dry_run=False):
         return {"ok": False, "error": "No se sobrescribe un backup ni su manifest existente."}
     if dry_run:
         return {"ok": True, "dry_run": True, "path": str(destination), "manifest": str(manifest), "format": "custom"}
+    preflight = backup_preflight()
+    if not preflight["ok"]:
+        return {"ok": False, "error": "La configuración de backup no está lista.", "preflight": preflight["results"]}
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
     os.close(fd)
