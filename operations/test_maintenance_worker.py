@@ -12,6 +12,8 @@ from .management.commands.run_maintenance_worker import Command, _lock_key, advi
 
 
 class MaintenanceWorkerTests(SimpleTestCase):
+    databases = {"default"}
+
     @override_settings(MAINTENANCE_WORKER_INTERVAL_SECONDS=0.001, MAINTENANCE_WORKER_JITTER_SECONDS=0)
     @patch.object(Command, "_run_cycle", return_value={"processed": 1, "succeeded": 1})
     def test_once_executes_one_cycle_and_emits_sanitized_metrics(self, cycle):
