@@ -1,5 +1,11 @@
 # Arquitectura de SC Viajes
 
+## Escenario demo sintetico (2026-10-05)
+
+`core.demo_scenario` compone un escenario local usando los servicios de dominio
+existentes para reservas, pagos y tickets. Su identificacion se limita a prefijos y
+dominio `.invalid`; el comando no conoce secretos, no usa proveedores externos y el
+reset opera sobre conjuntos explicitamente identificados.
 ## Pureza de lecturas públicas y transferencias (2026-10-05)
 
 Las vistas GET de resumen, pago pendiente y seguimiento de transferencia calculan

@@ -1,5 +1,11 @@
 # Decisiones de SC Viajes
 
+## Escenario reproducible de aceptacion (2026-10-05)
+
+Se adopta `seed_demo_scenario` solo para DEBUG, tests o entorno demo explicito.
+`--dry-run` no escribe y `--reset` solo elimina registros marcados por prefijo o
+dominio reservado. No se agregan bypasses de permisos, migraciones ni integraciones
+reales; passwords y tokens se generan fuera del repositorio y nunca se imprimen.
 ## Pureza de GET y auditoría de descargas (2026-10-05)
 
 Se confirma que una solicitud GET no debe persistir expiraciones oportunistas ni

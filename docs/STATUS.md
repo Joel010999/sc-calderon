@@ -1,5 +1,12 @@
 # Estado de SC Viajes
 
+## Escenario demo y aceptacion E2E (2026-10-05)
+
+Implementado en `feature/demo-acceptance-e2e-20261005`: `seed_demo_scenario` con
+`--dry-run` y `--reset`, cuentas `.invalid`, operaciones, reservas, pagos, tickets,
+fulfillment, notificaciones, manifiesto, embarque, reportes, bandeja y clientes.
+Las pruebas usan bases temporales, no imprimen secretos, no envian correos reales,
+no escriben S3 y no agregan bypasses de permisos.
 ## Hardening de pureza GET y transferencia (2026-10-05)
 
 Implementado: expiración virtual en lecturas públicas, persistencia sólo por POST
