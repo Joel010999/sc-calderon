@@ -6,6 +6,14 @@
 existentes para reservas, pagos y tickets. Su identificacion se limita a prefijos y
 dominio `.invalid`; el comando no conoce secretos, no usa proveedores externos y el
 reset opera sobre conjuntos explicitamente identificados.
+## Pureza de lecturas públicas y transferencias (2026-10-05)
+
+Las vistas GET de resumen, pago pendiente y seguimiento de transferencia calculan
+el vencimiento efectivo en memoria. No cambian estados, timestamps, butacas,
+auditorías ni contadores; la expiración durable queda exclusivamente en servicios
+POST de operación o en `run_operational_maintenance`. La verificación QR pública y
+las descargas autorizadas son lecturas/streaming puros: conservan token, permisos,
+IDOR y almacenamiento privado sin crear auditorías por GET.
 
 ## Fundación de validación de embarque
 

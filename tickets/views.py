@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import render
 
-from .models import Ticket, TicketAuditEvent, TicketStatus
+from .models import Ticket, TicketStatus
 from .storage import get_ticket_storage
 
 
@@ -81,16 +81,6 @@ def verify_ticket_view(request):
         else:
             verification_status = "NOT_FOUND"
 
-        # Auditoría sin PII
-        TicketAuditEvent.objects.create(
-            actor=request.user if getattr(request.user, "is_authenticated", False) else None,
-            action=TicketAuditEvent.Action.VERIFY,
-            ticket=ticket,
-            booking=ticket.booking,
-            description=f"Verificación de pasaje {ticket.ticket_code}: {verification_status}",
-            metadata={"status": ticket.status, "verification_status": verification_status},
-        )
-
     context = {
         "verification_status": verification_status,
         "ticket": ticket,
@@ -156,16 +146,6 @@ def download_ticket_view(request, public_id=None):
     if not storage.exists(ticket.pdf_path):
         raise Http404("Archivo de pasaje no encontrado.")
 
-    # Auditoría de descarga
-    TicketAuditEvent.objects.create(
-        actor=user if getattr(user, "is_authenticated", False) else None,
-        action=TicketAuditEvent.Action.DOWNLOAD,
-        ticket=ticket,
-        booking=ticket.booking,
-        description=f"Descarga de pasaje {ticket.ticket_code}",
-        metadata={"is_internal": getattr(user, "is_authenticated", False)},
-    )
-
     file_handle = storage.open(ticket.pdf_path, "rb")
     filename = f"pasaje-{ticket.ticket_code}.pdf"
     response = FileResponse(file_handle, as_attachment=True, filename=filename, content_type="application/pdf")
@@ -191,14 +171,6 @@ def download_guest_ticket_view(request, booking_public_id, public_id):
     storage = get_ticket_storage()
     if not storage.exists(ticket.pdf_path):
         raise Http404("Archivo de pasaje no encontrado.")
-    TicketAuditEvent.objects.create(
-        actor=request.user if getattr(request.user, "is_authenticated", False) else None,
-        action=TicketAuditEvent.Action.DOWNLOAD,
-        ticket=ticket,
-        booking=ticket.booking,
-        description=f"Descarga de pasaje {ticket.ticket_code} desde resumen protegido",
-        metadata={"is_guest_session": True},
-    )
     response = FileResponse(
         storage.open(ticket.pdf_path, "rb"),
         as_attachment=True,

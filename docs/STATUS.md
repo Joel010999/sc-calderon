@@ -7,6 +7,12 @@ Implementado en `feature/demo-acceptance-e2e-20261005`: `seed_demo_scenario` con
 fulfillment, notificaciones, manifiesto, embarque, reportes, bandeja y clientes.
 Las pruebas usan bases temporales, no imprimen secretos, no envian correos reales,
 no escriben S3 y no agregan bypasses de permisos.
+## Hardening de pureza GET y transferencia (2026-10-05)
+
+Implementado: expiración virtual en lecturas públicas, persistencia sólo por POST
+o mantenimiento, QR y descargas sin auditoría GET, y prefetch de asignaciones de
+transferencia para evitar N+1 conservando el orden de tramo/pasajero/butaca.
+Pendiente: validación integral PostgreSQL/CI por el coordinador.
 
 ## Fundación de validación de embarque (2026-10-01)
 

@@ -640,6 +640,17 @@ class TicketVerificationViewTests(TicketBaseMixin, TransactionTestCase):
         html_empty = response_empty.content.decode("utf-8")
         self.assertIn("Pasaje No Encontrado", html_empty)
 
+    def test_public_qr_get_does_not_create_audit_event(self):
+        booking = self.create_confirmed_booking(passenger_count=1)
+        ticket = issue_tickets_for_booking(booking)[0]
+        before = TicketAuditEvent.objects.filter(ticket=ticket).count()
+
+        for _ in range(3):
+            response = self.client.get(f"/tickets/verify/?token={ticket._raw_verification_token}")
+            self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(TicketAuditEvent.objects.filter(ticket=ticket).count(), before)
+
     @override_settings(TICKETS_RATE_LIMIT_PER_MINUTE=3)
     def test_rate_limiting_by_hashed_ip(self):
         booking = self.create_confirmed_booking(passenger_count=1)
@@ -715,6 +726,16 @@ class TicketDownloadAccessTests(TicketBaseMixin, TransactionTestCase):
             HTTP_AUTHORIZATION=f"Bearer {raw_download_token}",
         )
         self.assertEqual(res_bearer.status_code, 200)
+
+    def test_authorized_download_get_does_not_create_audit_event(self):
+        booking = self.create_confirmed_booking(passenger_count=1)
+        ticket = issue_tickets_for_booking(booking)[0]
+        before = TicketAuditEvent.objects.filter(ticket=ticket).count()
+
+        response = self.client.get(f"/tickets/download/{ticket.public_id}/?token={ticket._raw_download_token}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(TicketAuditEvent.objects.filter(ticket=ticket).count(), before)
 
     def test_qr_verification_token_cannot_download_pdf(self):
         booking = self.create_confirmed_booking(passenger_count=1)
