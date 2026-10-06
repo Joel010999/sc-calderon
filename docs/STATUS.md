@@ -1,5 +1,16 @@
 # Estado de SC Viajes
 
+## Worker persistente de mantenimiento (2026-10-06)
+
+Implementado `run_maintenance_worker`, proceso separado de `web` en `Procfile`.
+Ejecuta ciclos reutilizando `run_operational_maintenance`; admite `--once`,
+`--max-cycles` y `--max-seconds`, maneja SIGTERM/SIGINT con apagado ordenado y
+emite métricas JSON sin datos sensibles. PostgreSQL usa un advisory lock de
+sesión para impedir dos workers simultáneos y lo libera al salir; SQLite no
+ofrece lock advisory entre procesos y se considera sólo modo local/tests.
+Los límites e intervalo se validan al iniciar. No agrega modelos, migraciones,
+Celery, Redis ni arranque automático desde web, collectstatic, migrate o tests.
+
 ## Escenario demo y aceptacion E2E (2026-10-05)
 
 Implementado en `feature/demo-acceptance-e2e-20261005`: `seed_demo_scenario` con
@@ -308,6 +319,22 @@ Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendient
 - La creación de reservas, asignaciones y confirmaciones de pagos manuales continúa bloqueada server-side desde `STARTED`; el corte online configurable de una hora permanece vigente.
 - Se agregó `operations/migrations/0002_trip_completed_at_trip_started_at.py`; solo debe aplicarse en bases temporales de pruebas, nunca en bases persistentes durante esta entrega.
 - Se verificaron `check`, `makemigrations --check --dry-run`, `diff --check` y las pruebas afectadas en SQLite.
+
+## Worker productivo de mantenimiento (2026-10-06)
+
+Implementado `run_maintenance_worker` en un proceso separado de Gunicorn.
+Admite `--once`, `--max-cycles` y `--max-seconds`, ejecuta ciclos mediante
+`run_operational_maintenance`, maneja SIGTERM/SIGINT con apagado ordenado y
+emite métricas JSON sin PII. PostgreSQL usa advisory lock de sesión; SQLite
+mantiene sólo comportamiento de desarrollo sin garantía de exclusión.
+
+Configuración: `MAINTENANCE_WORKER_INTERVAL_SECONDS`,
+`MAINTENANCE_WORKER_JITTER_SECONDS`, `MAINTENANCE_WORKER_MAX_CYCLE_SECONDS`,
+`MAINTENANCE_WORKER_LOCK_WAIT_SECONDS`, `MAINTENANCE_WORKER_ENABLED` y
+`MAINTENANCE_WORKER_MODE`. Se documentan dos alternativas: proceso residente
+`python manage.py run_maintenance_worker` o cron externo con `--once`; sólo una
+debe activarse por entorno. El rollback consiste en detener el proceso worker
+y volver a la versión anterior, sin borrar datos ni ejecutar migraciones.
 - La cancelación de viajes y sus consecuencias económicas siguen pendientes.
 ### Módulo de gestión de clientes (2026-10-02)
 
