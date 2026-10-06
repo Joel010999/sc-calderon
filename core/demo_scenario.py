@@ -8,6 +8,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db.models import Q
 from django.utils import timezone
 
 from customers.models import Customer, CustomerBooking, CustomerConsent
@@ -164,7 +165,9 @@ def seed_demo(*, dry_run=False):
 def reset_demo():
     assert_demo_environment()
     booking_qs = Booking.objects.filter(email__endswith=f"@{DEMO_DOMAIN}")
-    user_qs = get_user_model().objects.filter(username__startswith=DEMO_PREFIX.lower())
+    user_qs = get_user_model().objects.filter(
+        Q(username__startswith=DEMO_PREFIX.lower()) | Q(email__iexact=f"cliente@{DEMO_DOMAIN}")
+    )
     route_qs = Route.objects.filter(code__startswith=f"{DEMO_PREFIX}-")
     bus_qs = Bus.objects.filter(code__startswith=f"{DEMO_PREFIX}-")
     result = {"bookings": booking_qs.count(), "users": user_qs.count(), "routes": route_qs.count(), "buses": bus_qs.count()}

@@ -3,6 +3,7 @@ from io import StringIO
 from unittest.mock import patch
 from django.core import management
 from django.core.management.base import CommandError
+from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 from customers.models import Customer
 from notifications.models import NotificationStatus, TransactionalNotification
@@ -28,6 +29,7 @@ class DemoScenarioCommandTests(TransactionTestCase):
         self.assertEqual(first, Booking.objects.filter(email__endswith="@demo.scviajes.invalid").count())
         management.call_command("seed_demo_scenario", "--reset", stdout=StringIO())
         self.assertEqual(Booking.objects.filter(email__endswith="@demo.scviajes.invalid").count(), 0)
+        self.assertEqual(get_user_model().objects.filter(email__endswith="@demo.scviajes.invalid").count(), 0)
 
     def test_seed_covers_acceptance_surfaces(self):
         management.call_command("seed_demo_scenario", stdout=StringIO())
