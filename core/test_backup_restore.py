@@ -7,7 +7,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase, override_settings
 from django.core.management import call_command
 
-from core.backup import checksum, create_database_backup, verify_database_backup
+from core.backup import backup_preflight, checksum, create_database_backup, verify_database_backup
 
 
 class BackupReadinessTests(SimpleTestCase):
@@ -92,3 +92,8 @@ class BackupReadinessTests(SimpleTestCase):
         output.seek(0)
         payload = json.load(output)
         self.assertIn("private_files", payload)
+
+    @patch("core.backup.subprocess.run")
+    def test_development_preflight_does_not_execute_postgres_tools(self, run):
+        backup_preflight()
+        run.assert_not_called()

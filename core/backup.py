@@ -47,9 +47,11 @@ def _add(results, key, status, message):
     results.append({"key": key, "status": status, "message": message})
 
 
-def backup_preflight():
+def backup_preflight(*, probe_versions=None):
     """Comprueba preparación sin conectar a PostgreSQL ni crear una copia."""
     prod = _production()
+    if probe_versions is None:
+        probe_versions = prod
     postgres = str(database_config().get("ENGINE", "")).endswith("postgresql")
     results = []
     _add(results, "database_engine", "PASS" if postgres else ("FAIL" if prod else "WARNING"), "La base es PostgreSQL." if postgres else "Las copias de producción requieren PostgreSQL.")
@@ -66,8 +68,8 @@ def backup_preflight():
     if output.exists() and os.name != "nt":
         private = (output.stat().st_mode & 0o077) == 0
         _add(results, "backup_output_permissions", "PASS" if private else "FAIL", "El destino tiene permisos privados." if private else "El destino debe tener permisos privados.")
-    dump_version = _tool_version("pg_dump")
-    restore_version = _tool_version("pg_restore")
+    dump_version = _tool_version("pg_dump") if probe_versions else ("available" if shutil.which("pg_dump") else None)
+    restore_version = _tool_version("pg_restore") if probe_versions else ("available" if shutil.which("pg_restore") else None)
     _add(results, "pg_dump", "PASS" if dump_version else ("FAIL" if prod else "WARNING"), "pg_dump está disponible." if dump_version else "pg_dump no está disponible.")
     _add(results, "pg_restore", "PASS" if restore_version else ("FAIL" if prod else "WARNING"), "pg_restore está disponible." if restore_version else "pg_restore no está disponible.")
     compatible = bool(dump_version and restore_version) and dump_version.split()[2:3] == restore_version.split()[2:3]
@@ -142,7 +144,7 @@ def create_database_backup(output, *, dry_run=False):
         return {"ok": False, "error": "No se sobrescribe un backup ni su manifest existente."}
     if dry_run:
         return {"ok": True, "dry_run": True, "path": str(destination), "manifest": str(manifest), "format": "custom"}
-    preflight = backup_preflight()
+    preflight = backup_preflight(probe_versions=True)
     if not preflight["ok"]:
         return {"ok": False, "error": "La configuración de backup no está lista.", "preflight": preflight["results"]}
     destination.parent.mkdir(parents=True, exist_ok=True)
