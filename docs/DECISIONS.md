@@ -321,4 +321,19 @@ Se adopta una bandeja unificada de consulta para Administrador/Vendedor, sin esc
 - Se agregan endpoints separados de liveness y readiness. Liveness no consulta base ni proveedores; readiness responde 503 ante una dependencia crítica no disponible.
 - `production_preflight` es una validación previa, no un despliegue: no conecta proveedores reales, no ejecuta migraciones y no imprime secretos. La salida distingue `PASS`, `WARNING` y `FAIL`, y `--json` es estable para automatización.
 - El request ID puede venir de un header solo si cumple un formato seguro; de lo contrario se genera. Los logs omiten query strings, payloads, credenciales, tokens, comprobantes y PII.
+
+## Worker de mantenimiento (2026-10-06)
+
+Se adopta un worker residente opcional, separado del proceso web, que reutiliza
+`run_operational_maintenance`. Para un cron externo se usa exclusivamente
+`python manage.py run_maintenance_worker --once`; no se deben activar ambas
+estrategias en el mismo entorno. El worker no introduce Celery, Redis, tablas de
+heartbeat ni proveedores externos.
+
+La exclusión entre procesos productivos se implementa con un advisory lock de
+sesión PostgreSQL. La espera está limitada por configuración y la pérdida de la
+conexión libera el lock; SQLite queda explícitamente limitado a comportamiento
+funcional de desarrollo sin garantía de concurrencia. Las señales no cancelan
+el trabajo actual: sólo impiden iniciar un ciclo nuevo y restauran los handlers
+al salir.
 - HSTS `includeSubDomains` y `preload` permanecen desactivados hasta una decisión explícita de despliegue.

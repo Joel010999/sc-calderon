@@ -6,6 +6,25 @@
 existentes para reservas, pagos y tickets. Su identificacion se limita a prefijos y
 dominio `.invalid`; el comando no conoce secretos, no usa proveedores externos y el
 reset opera sobre conjuntos explicitamente identificados.
+
+## Worker de mantenimiento productivo (2026-10-06)
+
+`run_maintenance_worker` es un proceso separado de Gunicorn que sólo coordina
+ciclos de `run_operational_maintenance`; no duplica expiraciones, fulfillment ni
+notificaciones. `--once` ejecuta exactamente un ciclo para un cron externo, y el
+modo `resident` repite ciclos con intervalo y jitter configurables. SIGTERM y
+SIGINT impiden iniciar otro ciclo y permiten terminar el ciclo actual.
+
+En PostgreSQL el worker adquiere `pg_try_advisory_lock` de sesión con una clave
+estable y espera como máximo `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS`. El lock se
+libera explícitamente al finalizar y PostgreSQL también lo libera al morir la
+conexión; una segunda instancia emite un resumen sanitizado y termina sin
+procesar trabajos. SQLite usa un no-op sólo para desarrollo/tests y no promete
+exclusión entre procesos.
+
+La configuración `MAINTENANCE_WORKER_*` valida modo, intervalo, jitter, límite
+de espera, tiempo máximo por ciclo y habilitación. `Procfile` conserva `web` y
+agrega `worker` como procesos separados.
 ## Pureza de lecturas públicas y transferencias (2026-10-05)
 
 Las vistas GET de resumen, pago pendiente y seguimiento de transferencia calculan

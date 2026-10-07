@@ -105,6 +105,14 @@ def collect_preflight():
     results.append(_result("google_oauth", "PASS" if oauth_ok and settings.GOOGLE_OAUTH_ENABLED else ("WARNING" if oauth_ok else "FAIL"), "Google OAuth está configurado o deshabilitado explícitamente." if oauth_ok else "Google OAuth tiene una configuración inconsistente."))
     maintenance_ok = all(getattr(settings, name, 0) > 0 for name in ("OPERATIONAL_MAINTENANCE_MAX_LIMIT", "OPERATIONAL_MAINTENANCE_MAX_SECONDS", "OPERATIONAL_MAINTENANCE_LEASE_SECONDS"))
     results.append(_result("operational_maintenance", "PASS" if maintenance_ok else "FAIL", "Mantenimiento operacional tiene límites seguros." if maintenance_ok else "Mantenimiento operacional tiene límites inválidos."))
+    worker_ok = (
+        getattr(settings, "MAINTENANCE_WORKER_MODE", "") in {"resident", "cron"}
+        and getattr(settings, "MAINTENANCE_WORKER_INTERVAL_SECONDS", 0) > 0
+        and getattr(settings, "MAINTENANCE_WORKER_MAX_CYCLE_SECONDS", 0) > 0
+        and 0 <= getattr(settings, "MAINTENANCE_WORKER_JITTER_SECONDS", -1) <= 3600
+        and 0 <= getattr(settings, "MAINTENANCE_WORKER_LOCK_WAIT_SECONDS", -1) <= 300
+    )
+    results.append(_result("maintenance_worker", "PASS" if worker_ok else "FAIL", "Worker de mantenimiento tiene configuracion segura." if worker_ok else "La configuracion del worker es invalida."))
     outbox_ok = getattr(settings, "TRANSACTIONAL_NOTIFICATIONS_ENABLED", False) and all(getattr(settings, name, 0) > 0 for name in ("NOTIFICATIONS_MAX_ATTEMPTS", "NOTIFICATIONS_RETRY_DELAY_SECONDS", "NOTIFICATIONS_LEASE_SECONDS"))
     results.append(_result("notifications_outbox", "PASS" if outbox_ok else "FAIL", "Outbox transaccional está configurado." if outbox_ok else "Outbox transaccional incompleto."))
 
