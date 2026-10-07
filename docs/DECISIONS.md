@@ -337,3 +337,8 @@ funcional de desarrollo sin garantía de concurrencia. Las señales no cancelan
 el trabajo actual: sólo impiden iniciar un ciclo nuevo y restauran los handlers
 al salir.
 - HSTS `includeSubDomains` y `preload` permanecen desactivados hasta una decisión explícita de despliegue.
+
+## Explorador central de auditoría (2026-10-07)
+
+Se reutilizan las bitácoras existentes mediante un servicio de lectura normalizado, sin nueva tabla ni duplicación. El acceso queda restringido a Administrador y superusuario; bandeja, detalle firmado y CSV son GET-only, con referencias públicas UUID únicamente. La retención legal y toda purga permanecen fuera de alcance.
+Los campos privados excluidos son descripciones, IDs internos, contactos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. `operations`, `sales`, `payments` y notificaciones se observan desde `panel.AuditEvent`; pasajes y embarques desde `tickets.TicketAuditEvent`; consentimientos desde `customers.CustomerConsent`.

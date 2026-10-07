@@ -11,6 +11,7 @@ from . import boarding_views as boarding
 from . import inbox_views as inbox
 from . import notification_views as notifications
 from . import customer_views as customers
+from . import audit_views as audit
 
 app_name = 'panel'
 
@@ -40,6 +41,9 @@ urlpatterns = [
     path('notificaciones/<int:notification_pk>/reintentar/', notifications.notification_retry, name='notification_retry'),
     path('clientes/', customers.customer_list, name='customer_list'),
     path('clientes/<int:customer_pk>/', customers.customer_detail, name='customer_detail'),
+    path('auditoria/', audit.audit_list, name='audit_list'),
+    path('auditoria.csv', audit.audit_csv, name='audit_csv'),
+    path('auditoria/<str:token>/', audit.audit_detail, name='audit_detail'),
 
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),

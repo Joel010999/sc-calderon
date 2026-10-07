@@ -192,6 +192,12 @@ Las paradas y el resumen se calculan con la fotografía real de `TripStop`; nunc
 ### Gestión interna de clientes
 
 El panel personalizado incorpora una consulta GET-only para Administrador y Vendedor. La lista y el detalle parten de `customers.Customer` y solo recorren asociaciones explícitas `CustomerBooking`; nunca enlazan reservas por coincidencia de email. Las reservas muestran estado, tramos, pasajes, pagos, fulfillment, estados de correo y reclamos únicamente como pendiente/consumido, sin tokens, hashes, comprobantes ni PII innecesaria. Los indicadores usan agregaciones y subconsultas de consentimiento actual para evitar N+1.
+## Explorador central de auditoría (2026-10-07)
+
+`panel.audit_services` normaliza en memoria `panel.AuditEvent`, `tickets.TicketAuditEvent` y `customers.CustomerConsent` sin crear eventos, modelos ni migraciones. La bandeja, detalle firmado y CSV son GET-only para Administrador/superusuario; filtran server-side, ordenan globalmente, paginan y omiten PII, secretos, tokens, hashes, comprobantes, credenciales, rutas privadas e IP/User-Agent.
+
+El inventario confirma que `operations`, `sales`, `payments` y los reintentos de `notifications` ya registran en `panel.AuditEvent`; `tickets` y `boarding` reutilizan `tickets.TicketAuditEvent`; y los otorgamientos/retiros de consentimiento viven en `customers.CustomerConsent`. No se inventan eventos para lecturas. El actor se presenta como categoría no identificable (`Sistema`, `Usuario interno` o `Cliente`), nunca como username/email; las referencias son UUID públicos validados.
+
 ## Preparación verificable para producción
 
 `/health/live/` confirma que el proceso responde y no consulta dependencias. `/health/ready/` verifica configuración crítica y una consulta mínima a la base; devuelve 200 solo si está listo y 503 cuando una dependencia crítica falla. Ambos contratos son mínimos y devuelven un `request_id` sin secretos.

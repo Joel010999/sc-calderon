@@ -355,3 +355,8 @@ agregado de storage privado, configuración de retención, advertencias al
 
 No se ejecutan backups/restores reales, no se accede a proveedores y el restore
 queda documentado como drill manual en una base temporal aislada.
+
+## Explorador central de auditoría (2026-10-07)
+
+Implementado `/panel/auditoria/`, detalle firmado y CSV UTF-8 BOM. Inventario: `panel.AuditEvent` (operaciones, ventas, pagos y reintentos de notificaciones), `tickets.TicketAuditEvent` (pasajes/embarques) y `customers.CustomerConsent`; no hay bitácora propia en notificaciones. No se agregaron migraciones ni se ejecutaron cambios persistentes; `check`, `makemigrations --check --dry-run` y `git diff --check` están correctos.
+La vista es exclusiva de Administrador/superusuario, con filtros server-side, orden cronológico, paginación y contadores globales. Muestra categorías de actor y UUID públicos validados; excluye usernames/emails, descripciones, IDs internos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. HTML, detalle firmado y CSV son GET-only y no generan auditorías nuevas.
