@@ -70,6 +70,25 @@ def can_manage_customers(user):
     )
 
 
+def can_access_audit_explorer(user):
+    """La bitácora central es exclusivamente administrativa y de sólo lectura."""
+    return user.is_authenticated and user.is_active and (
+        user.is_superuser or user.groups.filter(name="Administrador").exists()
+    )
+
+
+def audit_explorer_access():
+    def decorate(view):
+        @login_required(login_url="panel:login")
+        @wraps(view)
+        def wrapped(request, *args, **kwargs):
+            if not can_access_audit_explorer(request.user):
+                raise PermissionDenied("No tenés permiso para consultar la auditoría central.")
+            return view(request, *args, **kwargs)
+        return wrapped
+    return decorate
+
+
 def customers_access():
     def decorate(view):
         @login_required(login_url="panel:login")

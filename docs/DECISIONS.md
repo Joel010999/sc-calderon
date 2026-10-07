@@ -338,6 +338,11 @@ el trabajo actual: sólo impiden iniciar un ciclo nuevo y restauran los handlers
 al salir.
 - HSTS `includeSubDomains` y `preload` permanecen desactivados hasta una decisión explícita de despliegue.
 
+## Explorador central de auditoría (2026-10-07)
+
+Se reutilizan las bitácoras existentes mediante un servicio de lectura normalizado, sin nueva tabla ni duplicación. El acceso queda restringido a Administrador y superusuario; bandeja, detalle firmado y CSV son GET-only, con referencias públicas UUID únicamente. La retención legal y toda purga permanecen fuera de alcance.
+Los campos privados excluidos son descripciones, IDs internos, contactos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. `operations`, `sales`, `payments`, `cash_register` y notificaciones se observan desde `panel.AuditEvent`; pasajes y embarques desde `tickets.TicketAuditEvent`; consentimientos desde `customers.CustomerConsent`. La caja conserva su auditoría de dominio, pero el explorador sólo muestra su módulo, acción, resultado y referencia pública segura, nunca importes, motivos ni snapshots.
+
 ## Fundación de caja diaria (2026-10-07)
 
 - Se adopta un módulo separado `cash_register`; `Payment` permanece como fuente
