@@ -22,9 +22,9 @@ jobs:
       DEMO_ADMIN_PASSWORD: e2e-only-admin-password-20261007
       DEMO_SELLER_PASSWORD: e2e-only-seller-password-20261007
       DEMO_CUSTOMER_PASSWORD: e2e-only-customer-password-20261007
-      MEDIA_ROOT: ${{ runner.temp }}/scviajes-media
-      PROTECTED_MEDIA_ROOT: ${{ runner.temp }}/scviajes-protected-media
-      TICKETS_STORAGE_ROOT: ${{ runner.temp }}/scviajes-tickets
+      MEDIA_ROOT: ${{ github.workspace }}/.e2e-media
+      PROTECTED_MEDIA_ROOT: ${{ github.workspace }}/.e2e-protected-media
+      TICKETS_STORAGE_ROOT: ${{ github.workspace }}/.e2e-tickets
       PRIVATE_STORAGE_BACKEND: filesystem
     steps:
       - uses: actions/checkout@v4
