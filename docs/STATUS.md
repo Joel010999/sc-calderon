@@ -359,4 +359,21 @@ queda documentado como drill manual en una base temporal aislada.
 ## Explorador central de auditoría (2026-10-07)
 
 Implementado `/panel/auditoria/`, detalle firmado y CSV UTF-8 BOM. Inventario: `panel.AuditEvent` (operaciones, ventas, pagos y reintentos de notificaciones), `tickets.TicketAuditEvent` (pasajes/embarques) y `customers.CustomerConsent`; no hay bitácora propia en notificaciones. No se agregaron migraciones ni se ejecutaron cambios persistentes; `check`, `makemigrations --check --dry-run` y `git diff --check` están correctos.
-La vista es exclusiva de Administrador/superusuario, con filtros server-side, orden cronológico, paginación y contadores globales. Muestra categorías de actor y UUID públicos validados; excluye usernames/emails, descripciones, IDs internos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. HTML, detalle firmado y CSV son GET-only y no generan auditorías nuevas.
+La vista es exclusiva de Administrador/superusuario, con filtros server-side, orden cronológico, paginación y contadores globales. Muestra categorías de actor y UUID públicos validados; excluye usernames/emails, descripciones, IDs internos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. HTML, detalle firmado y CSV son GET-only y no generan auditorías nuevas. La fundación `cash_register` reutiliza `panel.AuditEvent`; sus eventos aparecen sin duplicación y se proyectan sin importes, motivos ni snapshots de caja.
+
+## Fundacion de caja (2026-10-07)
+
+Implementado en esta rama el modulo `cash_register`: sesiones con apertura y cierre
+atomicos, restriccion PostgreSQL de una sola caja abierta, movimientos inmutables
+con clave idempotente, auditoria y enlace de cobros en efectivo APPROVED cuando
+existe una caja abierta. El panel personalizado ofrece apertura y cierre mediante
+POST+CSRF para Administradores y Vendedores; no se ejecutaron migraciones en bases
+persistentes ni se conectaron proveedores reales.
+
+La apertura, consulta y cierre de la caja propia están disponibles para
+Administradores y Vendedores mediante POST+CSRF. Los Administradores pueden
+consultar cajas y registrar ajustes excepcionales con motivo; las cajas cerradas
+no reciben movimientos. Los pagos manuales en efectivo APPROVED exigen una caja
+abierta del vendedor y se enlazan una sola vez; las transferencias no generan
+movimientos de efectivo. El módulo no implementa devoluciones, saldos a favor,
+comisiones, impuestos, Mercado Pago, Payway ni conciliación bancaria.

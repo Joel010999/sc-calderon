@@ -12,6 +12,7 @@ from . import inbox_views as inbox
 from . import notification_views as notifications
 from . import customer_views as customers
 from . import audit_views as audit
+from . import cash_views as cash
 
 app_name = 'panel'
 
@@ -31,6 +32,11 @@ urlpatterns = [
     path('pagos/<uuid:public_id>/', payments.payment_detail, name='payment_detail'),
     path('pagos/<uuid:public_id>/revisar/', payments.transfer_review, name='transfer_review'),
     path('pagos/<uuid:public_id>/comprobante/', payments.download_voucher, name='payment_voucher'),
+    path('caja/', cash.cash_detail, name='cash_detail'),
+    path('caja/<int:session_pk>/', cash.cash_session_detail, name='cash_session_detail'),
+    path('caja/abrir/', cash.cash_open, name='cash_open'),
+    path('caja/cerrar/', cash.cash_close, name='cash_close'),
+    path('caja/ajuste/', cash.cash_adjustment, name='cash_adjustment'),
     path('fulfillment/', fulfillment.fulfillment_list, name='fulfillment_list'),
     path('fulfillment/reconciliar/', fulfillment.fulfillment_reconcile, name='fulfillment_reconcile'),
     path('reportes/ventas/', reports.sales_report, name='sales_report'),

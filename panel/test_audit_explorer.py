@@ -1,10 +1,13 @@
 import csv
 import io
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
+
+from cash_register.services import open_cash
 
 from .models import AuditEvent
 from .audit_views import _csv_safe
@@ -50,6 +53,14 @@ class AuditExplorerTests(TestCase):
         body = response.content.decode("utf-8-sig")
         self.assertIn("Usuario interno", body)
         self.assertNotIn("audit-admin", body)
+
+    def test_cash_audit_is_reused_without_exposing_amounts(self):
+        open_cash(operator=self.seller, opening_amount=Decimal("125.00"))
+        self.client.login(username="audit-admin", password="pass")
+        response = self.client.get(reverse("panel:audit_list"), {"modulo": "cash_register"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "cash_register")
+        self.assertNotContains(response, "125.00")
 
     def test_get_and_csv_are_read_only_and_csv_has_bom(self):
         self.client.login(username="audit-admin", password="pass")

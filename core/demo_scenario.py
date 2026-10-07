@@ -18,6 +18,7 @@ from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, T
 from operations.services import schedule_trip
 from payments.models import PaymentStatus
 from payments.services import initiate_public_transfer_payment, register_cash_payment, register_transfer_payment, review_transfer_payment
+from cash_register.services import current_cash, open_cash
 from sales.models import Booking, BookingChannel, BookingStatus, SeatAssignment
 from sales.services import create_manual_booking, create_online_booking
 from tickets.models import BoardingRecord, BoardingStatus, FulfillmentEmailStatus, FulfillmentIssueStatus, Ticket, TicketFulfillment
@@ -102,6 +103,8 @@ def seed_demo(*, dry_run=False):
     now = timezone.now()
     admin = _user("admin", f"admin@{DEMO_DOMAIN}", "Administrador")
     seller = _user("vendedor", f"vendedor@{DEMO_DOMAIN}", "Vendedor")
+    if not current_cash(operator=seller):
+        open_cash(operator=seller, opening_amount=Decimal("0.00"))
     customer = Customer.objects.filter(normalized_email=f"cliente@{DEMO_DOMAIN}").first()
     if not customer:
         customer = register_customer(f"cliente@{DEMO_DOMAIN}", os.getenv("DEMO_CUSTOMER_PASSWORD") or secrets.token_urlsafe(32), "Cliente Demo", "Sintetico", commercial_consent=True)
@@ -176,6 +179,8 @@ def reset_demo():
     from notifications.models import TransactionalNotification
     from panel.models import AuditEvent
     from payments.models import Payment
+    from cash_register.models import CashMovement, CashSession
+    demo_session_ids = list(CashSession.objects.filter(opened_by__in=user_qs).values_list("pk", flat=True))
     from sales.models import BookingLeg, BookingPassenger, SeatAssignment
     from tickets.models import BoardingRecord, Ticket, TicketAuditEvent, TicketEmailAttempt, TicketFulfillment
     BoardingRecord.objects.filter(ticket__booking_id__in=booking_ids).delete()
@@ -184,6 +189,7 @@ def reset_demo():
     Ticket.objects.filter(booking_id__in=booking_ids).delete()
     TicketFulfillment.objects.filter(booking_id__in=booking_ids).delete()
     TransactionalNotification.objects.filter(booking_id__in=booking_ids).delete()
+    CashMovement.objects.filter(session_id__in=demo_session_ids).delete()
     Payment.objects.filter(booking_id__in=booking_ids).delete()
     CustomerBooking.objects.filter(booking_id__in=booking_ids).delete()
     BookingClaimToken.objects.filter(booking_id__in=booking_ids).delete()
@@ -192,6 +198,7 @@ def reset_demo():
     BookingLeg.objects.filter(booking_id__in=booking_ids).delete()
     AuditEvent.objects.filter(entity_id__in=[str(item) for item in booking_ids]).delete()
     booking_qs.delete()
+    CashSession.objects.filter(pk__in=demo_session_ids).delete()
     CustomerConsent.objects.filter(customer__normalized_email=f"cliente@{DEMO_DOMAIN}").delete()
     Customer.objects.filter(normalized_email=f"cliente@{DEMO_DOMAIN}").delete()
     user_qs.delete()

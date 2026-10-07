@@ -196,10 +196,25 @@ El panel personalizado incorpora una consulta GET-only para Administrador y Vend
 
 `panel.audit_services` normaliza en memoria `panel.AuditEvent`, `tickets.TicketAuditEvent` y `customers.CustomerConsent` sin crear eventos, modelos ni migraciones. La bandeja, detalle firmado y CSV son GET-only para Administrador/superusuario; filtran server-side, ordenan globalmente, paginan y omiten PII, secretos, tokens, hashes, comprobantes, credenciales, rutas privadas e IP/User-Agent.
 
-El inventario confirma que `operations`, `sales`, `payments` y los reintentos de `notifications` ya registran en `panel.AuditEvent`; `tickets` y `boarding` reutilizan `tickets.TicketAuditEvent`; y los otorgamientos/retiros de consentimiento viven en `customers.CustomerConsent`. No se inventan eventos para lecturas. El actor se presenta como categoría no identificable (`Sistema`, `Usuario interno` o `Cliente`), nunca como username/email; las referencias son UUID públicos validados.
+El inventario confirma que `operations`, `sales`, `payments`, `cash_register` y los reintentos de `notifications` ya registran en `panel.AuditEvent`; `tickets` y `boarding` reutilizan `tickets.TicketAuditEvent`; y los otorgamientos/retiros de consentimiento viven en `customers.CustomerConsent`. No se inventan eventos para lecturas. El actor se presenta como categoría no identificable (`Sistema`, `Usuario interno` o `Cliente`), nunca como username/email; las referencias son UUID públicos validados. Los importes, motivos y snapshots de caja no se proyectan en el explorador.
 
 ## Preparación verificable para producción
 
 `/health/live/` confirma que el proceso responde y no consulta dependencias. `/health/ready/` verifica configuración crítica y una consulta mínima a la base; devuelve 200 solo si está listo y 503 cuando una dependencia crítica falla. Ambos contratos son mínimos y devuelven un `request_id` sin secretos.
 
 El comando `production_preflight` clasifica configuración, base, migraciones, estáticos, WhiteNoise, storage privado, URLs firmadas, SMTP, OAuth, mantenimiento, outbox y directorios locales como `PASS`, `WARNING` o `FAIL`. `--json` permite automatización y un `FAIL` devuelve código distinto de cero. El request ID se acepta solo con formato seguro o se genera internamente; el logging no serializa query strings, payloads, credenciales ni datos personales.
+
+## Fundación de caja diaria (2026-10-07)
+
+`cash_register` mantiene separadas las sesiones de caja de `payments`: `Payment`
+continúa siendo la fuente de verdad del cobro y cada pago `CASH/APPROVED` crea
+un único `CashMovement` enlazado por `OneToOneField` y clave de idempotencia.
+Cada vendedor puede tener una sola sesión abierta; PostgreSQL lo impide con una
+restricción parcial por `opened_by`, mientras que los servicios bloquean la
+sesión con `select_for_update()` durante cobros, ajustes y cierres.
+
+Los movimientos son inmutables. Aperturas, cierres y ajustes se auditan; los
+ajustes solo están disponibles para Administradores, exigen motivo y no cambian
+pagos, reservas, pasajes ni fulfillment. El panel es personalizado y todas las
+acciones mutables usan POST+CSRF. SQLite se mantiene para desarrollo y tests,
+sin presentarse como garantía de concurrencia equivalente a PostgreSQL.

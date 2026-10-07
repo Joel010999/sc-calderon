@@ -341,4 +341,20 @@ al salir.
 ## Explorador central de auditoría (2026-10-07)
 
 Se reutilizan las bitácoras existentes mediante un servicio de lectura normalizado, sin nueva tabla ni duplicación. El acceso queda restringido a Administrador y superusuario; bandeja, detalle firmado y CSV son GET-only, con referencias públicas UUID únicamente. La retención legal y toda purga permanecen fuera de alcance.
-Los campos privados excluidos son descripciones, IDs internos, contactos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. `operations`, `sales`, `payments` y notificaciones se observan desde `panel.AuditEvent`; pasajes y embarques desde `tickets.TicketAuditEvent`; consentimientos desde `customers.CustomerConsent`.
+Los campos privados excluidos son descripciones, IDs internos, contactos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. `operations`, `sales`, `payments`, `cash_register` y notificaciones se observan desde `panel.AuditEvent`; pasajes y embarques desde `tickets.TicketAuditEvent`; consentimientos desde `customers.CustomerConsent`. La caja conserva su auditoría de dominio, pero el explorador sólo muestra su módulo, acción, resultado y referencia pública segura, nunca importes, motivos ni snapshots.
+
+## Fundación de caja diaria (2026-10-07)
+
+- Se adopta un módulo separado `cash_register`; `Payment` permanece como fuente
+  de verdad y los pagos en efectivo `APPROVED` requieren una caja abierta del
+  vendedor para crear exactamente un movimiento de ingreso.
+- La unicidad de caja abierta es por vendedor, no global: PostgreSQL aplica una
+  restricción parcial sobre `opened_by` y los servicios usan `select_for_update`.
+  SQLite conserva el comportamiento funcional de desarrollo, sin garantía de
+  exclusión entre procesos.
+- Los movimientos son inmutables, con idempotencia por pago y auditoría. Los
+  ajustes solo pueden registrarlos Administradores y requieren motivo. El cierre
+  calcula total esperado, importe contado y diferencia sin alterar entidades de
+  pagos, reservas, tickets o fulfillment.
+- Caja diaria, devoluciones, saldos a favor, comisiones, impuestos, Mercado Pago,
+  Payway y conciliación bancaria siguen fuera de alcance.
