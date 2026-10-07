@@ -52,6 +52,7 @@ from tickets.services import (
     void_ticket,
 )
 from tickets.storage import get_ticket_storage
+from cash_register.services import open_cash
 
 User = get_user_model()
 
@@ -139,6 +140,7 @@ class TicketBaseMixin:
 
         self.seller_user = User.objects.create_user("seller_user", "seller@test.com", "pass1234")
         self.seller_user.groups.add(self.seller_group)
+        open_cash(operator=self.seller_user, opening_amount=Decimal("0.00"))
 
         self.plain_user = User.objects.create_user("plain_user", "plain@test.com", "pass1234")
         self.staff_no_role = User.objects.create_user("staff_no_role", "staff@test.com", "pass1234", is_staff=True)

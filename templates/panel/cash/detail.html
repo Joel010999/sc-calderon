@@ -1,0 +1,67 @@
+{% extends "panel/base.html" %}
+{% block content %}
+<h1>Caja diaria</h1>
+<p>Los movimientos son inmutables y los cobros en efectivo provienen de pagos APPROVED.</p>
+{% if session %}
+<section>
+  <h2>Mi caja abierta</h2>
+  <p>Fondo inicial: $ {{ session.opening_amount }} · Apertura: {{ session.opened_at }}</p>
+  <form method="post" action="{% url 'panel:cash_close' %}">
+    {% csrf_token %}
+    <label>Dinero contado <input name="closing_amount" inputmode="decimal" required></label>
+    <label>Observaciones <input name="note" maxlength="255"></label>
+    <button type="submit">Cerrar caja</button>
+  </form>
+  <h3>Movimientos recientes</h3>
+  <ul>
+    {% for movement in recent_movements %}
+      <li>{{ movement.created_at }} — {{ movement.get_kind_display }} — $ {{ movement.amount }}{% if movement.reason %} — {{ movement.reason }}{% endif %}</li>
+    {% empty %}<li>No hay movimientos.</li>{% endfor %}
+  </ul>
+{% else %}
+  <p>No tenés una caja abierta.</p>
+  <form method="post" action="{% url 'panel:cash_open' %}">
+    {% csrf_token %}
+    <label>Fondo inicial <input name="opening_amount" value="0" inputmode="decimal" required></label>
+    <button type="submit">Abrir caja</button>
+  </form>
+{% endif %}
+</section>
+
+{% if is_admin %}
+<section>
+  <h2>Consulta de cajas</h2>
+  <form method="get">
+    <label>Estado <select name="status"><option value="">Todos</option><option value="OPEN"{% if filter_status == 'OPEN' %} selected{% endif %}>Abiertas</option><option value="CLOSED"{% if filter_status == 'CLOSED' %} selected{% endif %}>Cerradas</option></select></label>
+    <label>Vendedor <input name="seller" value="{{ filter_seller }}" maxlength="150"></label>
+    <button type="submit">Filtrar</button>
+  </form>
+  <table>
+    <thead><tr><th>Vendedor</th><th>Estado</th><th>Apertura</th><th>Cierre</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr></thead>
+    <tbody>
+    {% for item in sessions %}
+      <tr>
+        <td><a href="{% url 'panel:cash_session_detail' item.pk %}">{{ item.opened_by.get_username }}</a></td>
+        <td>{{ item.get_status_display }}</td>
+        <td>$ {{ item.opening_amount }}</td>
+        <td>{% if item.closing_amount %}$ {{ item.closing_amount }}{% else %}—{% endif %}</td>
+        <td>{% if item.expected_amount %}$ {{ item.expected_amount }}{% else %}—{% endif %}</td>
+        <td>{% if item.closing_amount %}$ {{ item.closing_amount }}{% else %}—{% endif %}</td>
+        <td>{% if item.closing_amount and item.expected_amount %}$ {{ item.difference }}{% else %}—{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="7">No hay cajas registradas.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <h2>Ajuste excepcional</h2>
+  <p>Los ajustes requieren motivo y solo se admiten en cajas abiertas.</p>
+  <form method="post" action="{% url 'panel:cash_adjustment' %}">
+    {% csrf_token %}
+    <label>Caja <select name="session_id" required>{% for item in sessions %}{% if item.status == 'OPEN' %}<option value="{{ item.pk }}">{{ item.opened_by.get_username }} — #{{ item.pk }}</option>{% endif %}{% endfor %}</select></label>
+    <label>Tipo <select name="kind"><option value="ADJUSTMENT_IN">Ingreso</option><option value="ADJUSTMENT_OUT">Egreso</option></select></label>
+    <label>Importe <input name="amount" inputmode="decimal" required></label>
+    <label>Motivo <input name="reason" maxlength="255" required></label>
+    <button type="submit">Registrar ajuste</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

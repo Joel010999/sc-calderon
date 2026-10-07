@@ -355,3 +355,20 @@ agregado de storage privado, configuración de retención, advertencias al
 
 No se ejecutan backups/restores reales, no se accede a proveedores y el restore
 queda documentado como drill manual en una base temporal aislada.
+
+## Fundacion de caja (2026-10-07)
+
+Implementado en esta rama el modulo `cash_register`: sesiones con apertura y cierre
+atomicos, restriccion PostgreSQL de una sola caja abierta, movimientos inmutables
+con clave idempotente, auditoria y enlace de cobros en efectivo APPROVED cuando
+existe una caja abierta. El panel personalizado ofrece apertura y cierre mediante
+POST+CSRF para Administradores y Vendedores; no se ejecutaron migraciones en bases
+persistentes ni se conectaron proveedores reales.
+
+La apertura, consulta y cierre de la caja propia están disponibles para
+Administradores y Vendedores mediante POST+CSRF. Los Administradores pueden
+consultar cajas y registrar ajustes excepcionales con motivo; las cajas cerradas
+no reciben movimientos. Los pagos manuales en efectivo APPROVED exigen una caja
+abierta del vendedor y se enlazan una sola vez; las transferencias no generan
+movimientos de efectivo. El módulo no implementa devoluciones, saldos a favor,
+comisiones, impuestos, Mercado Pago, Payway ni conciliación bancaria.

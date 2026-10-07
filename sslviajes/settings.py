@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     'tickets.apps.TicketsConfig',
     'customers.apps.CustomersConfig',
     'notifications.apps.NotificationsConfig',
+    'cash_register.apps.CashRegisterConfig',
 ]
 
 MIDDLEWARE = [

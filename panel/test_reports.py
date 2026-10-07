@@ -20,6 +20,8 @@ from panel.models import AuditEvent
 from panel.report_views import _safe_csv
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import register_cash_payment, register_transfer_payment, review_transfer_payment
+from cash_register.services import open_cash
+from cash_register.models import CashMovement
 from sales.models import AssignmentStatus, Booking, BookingChannel, BookingLeg, BookingPassenger, BookingStatus, SeatAssignment
 
 
@@ -36,6 +38,7 @@ class SalesReportTests(TestCase):
         cls.admin.groups.add(cls.admin_group)
         cls.seller = User.objects.create_user(username="report-seller", password="pass")
         cls.seller.groups.add(cls.seller_group)
+        open_cash(operator=cls.seller, opening_amount=Decimal("0.00"))
         cls.staff = User.objects.create_user(username="report-staff", password="pass", is_staff=True)
         cls.common = User.objects.create_user(username="report-common", password="pass")
         cls.stop_a = Stop.objects.create(name="Córdoba Capital", code="RPT-CBA")
@@ -118,6 +121,7 @@ class SalesReportTests(TestCase):
         bank_booking = self.booking(seller=self.seller, status=BookingStatus.HELD, confirmed_at=self.local(2026, 9, 11))
         bank = register_transfer_payment(booking_or_id=bank_booking, seller=self.seller, voucher=self.voucher())
         review_transfer_payment(payment_or_id=bank, reviewer=self.admin, approved=True)
+        self.assertEqual(CashMovement.objects.filter(payment=bank).count(), 0)
         public_booking = self.booking(channel=BookingChannel.ONLINE, seller=None, confirmed_at=self.local(2026, 9, 12))
         public = self.approved_payment(public_booking, PaymentMethod.BANK_TRANSFER, Decimal("1000.00"))
 

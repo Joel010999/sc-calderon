@@ -18,6 +18,7 @@ from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, T
 from panel.models import AuditEvent
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import register_cash_payment, register_transfer_payment
+from cash_register.services import open_cash
 from sales.exceptions import InvalidBookingError
 from sales.models import (
     AssignmentStatus,
@@ -64,6 +65,7 @@ class PanelPaymentsTestCase(TestCase):
         self.staff_user = User.objects.create_user(username="staff_only", password="password123", is_staff=True)
         self.common_user = User.objects.create_user(username="common_user", password="password123")
         self.superuser = User.objects.create_superuser(username="super_p", password="password123")
+        open_cash(operator=self.seller_user, opening_amount=Decimal("0.00"))
 
         # Estructura operativa
         self.stop_cba = Stop.objects.create(name="Córdoba Capital", code="CBA")

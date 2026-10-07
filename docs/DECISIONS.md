@@ -337,3 +337,19 @@ funcional de desarrollo sin garantía de concurrencia. Las señales no cancelan
 el trabajo actual: sólo impiden iniciar un ciclo nuevo y restauran los handlers
 al salir.
 - HSTS `includeSubDomains` y `preload` permanecen desactivados hasta una decisión explícita de despliegue.
+
+## Fundación de caja diaria (2026-10-07)
+
+- Se adopta un módulo separado `cash_register`; `Payment` permanece como fuente
+  de verdad y los pagos en efectivo `APPROVED` requieren una caja abierta del
+  vendedor para crear exactamente un movimiento de ingreso.
+- La unicidad de caja abierta es por vendedor, no global: PostgreSQL aplica una
+  restricción parcial sobre `opened_by` y los servicios usan `select_for_update`.
+  SQLite conserva el comportamiento funcional de desarrollo, sin garantía de
+  exclusión entre procesos.
+- Los movimientos son inmutables, con idempotencia por pago y auditoría. Los
+  ajustes solo pueden registrarlos Administradores y requieren motivo. El cierre
+  calcula total esperado, importe contado y diferencia sin alterar entidades de
+  pagos, reservas, tickets o fulfillment.
+- Caja diaria, devoluciones, saldos a favor, comisiones, impuestos, Mercado Pago,
+  Payway y conciliación bancaria siguen fuera de alcance.
