@@ -1,0 +1,56 @@
+name: Browser acceptance E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    env:
+      DEBUG: 'True'
+      SECRET_KEY: e2e-only-secret-not-for-production
+      ALLOWED_HOSTS: 127.0.0.1,localhost
+      DATABASE_URL: sqlite:///e2e.sqlite3
+      EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+      DEMO_ADMIN_PASSWORD: e2e-only-admin-password-20261007
+      DEMO_SELLER_PASSWORD: e2e-only-seller-password-20261007
+      DEMO_CUSTOMER_PASSWORD: e2e-only-customer-password-20261007
+      MEDIA_ROOT: ${{ runner.temp }}/scviajes-media
+      PROTECTED_MEDIA_ROOT: ${{ runner.temp }}/scviajes-protected-media
+      TICKETS_STORAGE_ROOT: ${{ runner.temp }}/scviajes-tickets
+      PRIVATE_STORAGE_BACKEND: filesystem
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Instalar dependencias Python y Playwright
+        run: |
+          python -m pip install -r requirements.txt
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Preparar base temporal y escenario demo
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py migrate --noinput
+          python manage.py seed_demo_scenario
+          python manage.py collectstatic --noinput
+      - name: Ejecutar aceptación en navegador
+        run: npm run test:e2e
+      - name: Publicar artefactos sólo si falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e-failure
+          path: |
+            test-results/
+            e2e-report/
