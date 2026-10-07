@@ -175,9 +175,8 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
             raise PaymentDuplicateError("Ya existe un pago en revisión o aprobado para esta reserva.") from exc
         raise
 
-    # Si existe una caja abierta, el movimiento queda enlazado dentro de esta
-    # misma transacción. La ausencia de caja no altera la confirmación histórica
-    # de pagos y permite migrar la operación gradualmente.
+    # Todo cobro CASH APPROVED exige una caja abierta y queda enlazado dentro de
+    # esta misma transacción; si no existe, la operación completa se revierte.
     from cash_register.services import record_cash_sale
     record_cash_sale(payment=payment, operator=seller)
 
