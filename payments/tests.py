@@ -640,6 +640,7 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
 
         self.seller = User.objects.create_user(username="pg_seller", password="password123")
         self.seller.groups.add(self.seller_group)
+        open_cash(operator=self.seller, opening_amount=Decimal("0.00"))
 
         self.admin = User.objects.create_user(username="pg_admin", password="password123")
         self.admin.groups.add(self.admin_group)
