@@ -739,6 +739,37 @@ class CustomerAuthenticationAndRegistrationTests(BaseCustomerTestCase):
 
         self.assertTrue(response.url.startswith(reverse("login_cliente")))
 
+    def test_login_rejects_backslash_based_external_redirect(self):
+        """El parametro next no puede convertirse en un open redirect."""
+        customer = register_customer(
+            email="redirect@ejemplo.com",
+            password="StrongPassword123!",
+        )
+
+        response = self.client.post(
+            reverse("login_cliente"),
+            {
+                "email": customer.user.email,
+                "password": "StrongPassword123!",
+                "next": r"/\\evil.example/",
+            },
+        )
+
+        self.assertRedirects(response, reverse("mis_viajes"))
+
+    def test_registration_rejects_external_redirect(self):
+        response = self.client.post(
+            reverse("registro_cliente"),
+            {
+                "email": "redirect-register@ejemplo.com",
+                "password": "StrongPassword123!",
+                "password_confirm": "StrongPassword123!",
+                "next": "https://evil.example/",
+            },
+        )
+
+        self.assertRedirects(response, reverse("mis_viajes"))
+
 
 
 
