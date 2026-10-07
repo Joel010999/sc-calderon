@@ -43,6 +43,8 @@ from payments.storage import (
     validate_voucher_file,
     voucher_upload_path,
 )
+from cash_register.services import open_cash
+from cash_register.models import CashMovement
 from sales.exceptions import BookingExpiredError, InvalidBookingError
 from sales.models import (
     AssignmentStatus,
@@ -87,6 +89,7 @@ class PaymentsBaseTestCase(TestCase):
         self.staff_user = User.objects.create_user(username="staff_only", password="password123", is_staff=True)
         self.common_user = User.objects.create_user(username="common_user", password="password123")
         self.superuser = User.objects.create_superuser(username="super_user", password="password123")
+        open_cash(operator=self.seller_user, opening_amount=Decimal("0.00"))
 
         # Estructura operativa mínima
         self.stop_cba = Stop.objects.create(name="Córdoba Capital", code="CBA")
@@ -411,6 +414,8 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         self.assertEqual(payment.registered_by, self.seller_user)
         self.assertEqual(payment.reviewed_by, self.seller_user)
         self.assertIsNotNone(payment.reviewed_at)
+        self.assertEqual(CashMovement.objects.filter(payment=payment).count(), 1)
+        self.assertEqual(CashMovement.objects.get(payment=payment).amount, payment.amount)
 
         # Reserva y butacas confirmadas atómicamente
         booking.refresh_from_db()
@@ -635,6 +640,7 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
 
         self.seller = User.objects.create_user(username="pg_seller", password="password123")
         self.seller.groups.add(self.seller_group)
+        open_cash(operator=self.seller, opening_amount=Decimal("0.00"))
 
         self.admin = User.objects.create_user(username="pg_admin", password="password123")
         self.admin.groups.add(self.admin_group)
