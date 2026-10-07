@@ -221,6 +221,15 @@ try:
 except (TypeError, ValueError):
     PRIVATE_STORAGE_S3_QUERYSTRING_EXPIRE = 300
 
+# Backups: la salida productiva debe ser un directorio externo y privado.
+BACKUP_OUTPUT_ROOT = Path(os.getenv('BACKUP_OUTPUT_ROOT', os.getenv('BACKUP_OUTPUT_DIR', str(BASE_DIR.parent / 'scviajes-backups'))))
+BACKUP_OUTPUT_DIR = BACKUP_OUTPUT_ROOT  # Compatibilidad con la primera configuración del preflight.
+BACKUP_MINIMUM_COPIES = int(os.getenv('BACKUP_MINIMUM_COPIES', os.getenv('BACKUP_RETENTION_COUNT', 7)))
+BACKUP_RETENTION_COUNT = BACKUP_MINIMUM_COPIES  # Alias de compatibilidad documental.
+BACKUP_RETENTION_DAYS = int(os.getenv('BACKUP_RETENTION_DAYS', 30))
+BACKUP_REQUIRE_ENCRYPTION = os.getenv('BACKUP_REQUIRE_ENCRYPTION', 'False').lower() in ('1', 'true', 'yes')
+BACKUP_ENCRYPTION_TOOL = os.getenv('BACKUP_ENCRYPTION_TOOL', '')
+
 # Sales configuration
 SALES_MAX_PASSENGERS_PER_BOOKING = int(os.getenv('SALES_MAX_PASSENGERS_PER_BOOKING', 4))
 SALES_ONLINE_HOLD_MINUTES = int(os.getenv('SALES_ONLINE_HOLD_MINUTES', 15))

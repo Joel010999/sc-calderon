@@ -5,3 +5,10 @@ __pycache__/
 db.sqlite3
 staticfiles/
 .DS_Store
+# Nunca versionar copias, manifiestos ni temporales de backup.
+*.dump
+*.backup
+*.bak
+*.manifest.json
+*.sha256
+.backup-*
