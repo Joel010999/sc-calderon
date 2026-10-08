@@ -1,4 +1,5 @@
 from decimal import Decimal
+import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -112,7 +113,7 @@ def record_adjustment(*, operator, session_id, amount, kind, reason):
         created_by=operator,
         reference=reason,
         reason=reason,
-        idempotency_key=f"adjustment:{session.pk}:{timezone.now().isoformat()}:{operator.pk}",
+        idempotency_key=f"adjustment:{session.pk}:{operator.pk}:{uuid.uuid4().hex}",
     )
     _audit(operator, AuditEvent.Action.CREATE, movement, "Ajuste excepcional de caja", {
         "kind": kind,

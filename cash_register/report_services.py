@@ -6,12 +6,14 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from panel.models import AuditEvent
 from panel.permissions import can_manage_operations
 
-from .models import CashSession
+from .models import CashMovement, CashSession
 
 REPORT_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 DEFAULT_MAX_RANGE_DAYS = 366
@@ -40,7 +42,19 @@ def build_cash_report(params, user):
             error = "La fecha hasta debe ser igual o posterior a la fecha desde."
         elif (end_date - start_date).days + 1 > max_days:
             error = f"El rango no puede superar {max_days} días."
-    qs = CashSession.objects.select_related("opened_by", "closed_by", "reviewed_by").prefetch_related("movements")
+    money = DecimalField(max_digits=12, decimal_places=2)
+    zero = Value(Decimal("0.00"), output_field=money)
+    qs = CashSession.objects.select_related("opened_by", "closed_by", "reviewed_by").annotate(
+        cash_income=Coalesce(Sum("movements__amount", filter=Q(movements__kind=CashMovement.Kind.CASH_SALE)), zero),
+        adjustment_income=Coalesce(Sum("movements__amount", filter=Q(movements__kind=CashMovement.Kind.ADJUSTMENT_IN)), zero),
+        adjustment_out=Coalesce(Sum("movements__amount", filter=Q(movements__kind=CashMovement.Kind.ADJUSTMENT_OUT)), zero),
+    ).annotate(
+        calculated_expected=ExpressionWrapper(
+            F("opening_amount") + F("cash_income") + F("adjustment_income") - F("adjustment_out"),
+            output_field=money,
+        ),
+        report_difference=ExpressionWrapper(F("closing_amount") - F("expected_amount"), output_field=money),
+    )
     if not can_manage_operations(user):
         qs = qs.filter(opened_by=user)
     start, finish = _bounds(start_date, end_date)
@@ -55,13 +69,14 @@ def build_cash_report(params, user):
     if can_manage_operations(user) and seller.isdigit():
         qs = qs.filter(opened_by_id=int(seller))
     difference = (params.get("diferencia") or "").strip().lower()
-    sessions = list(qs.order_by("-opened_at", "-pk"))
-    # Difference is a Decimal property; retaining this filter in Python also works on SQLite
-    # and never casts money to float.
     if difference in {"positiva", "negativa", "cero"}:
-        sessions = [s for s in sessions if (s.difference is not None and (s.difference > 0 if difference == "positiva" else s.difference < 0 if difference == "negativa" else s.difference == 0))]
+        qs = qs.filter(
+            **({"report_difference__gt": 0} if difference == "positiva" else
+               {"report_difference__lt": 0} if difference == "negativa" else
+               {"report_difference": 0})
+        )
     sellers = CashSession.objects.filter(opened_by__is_active=True).values_list("opened_by_id", flat=True).distinct().order_by("opened_by_id")
-    return {"sessions": sessions, "error": error, "start_date": start_date, "end_date": end_date,
+    return {"sessions": qs.order_by("-opened_at", "-pk"), "error": error, "start_date": start_date, "end_date": end_date,
             "sellers": sellers, "max_range_days": max_days, "is_admin": can_manage_operations(user),
             "filter_status": status, "filter_difference": difference, "filter_seller": seller}
 
