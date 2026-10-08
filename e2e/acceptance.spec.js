@@ -4,6 +4,9 @@ const adminUser = process.env.DEMO_ADMIN_USERNAME || 'demo-20261005-admin';
 const sellerUser = process.env.DEMO_SELLER_USERNAME || 'demo-20261005-vendedor';
 const adminPassword = process.env.DEMO_ADMIN_PASSWORD || 'e2e-only-admin-password-20261007';
 const sellerPassword = process.env.DEMO_SELLER_PASSWORD || 'e2e-only-seller-password-20261007';
+const customerEmail = process.env.DEMO_CUSTOMER_EMAIL || 'cliente@demo.scviajes.invalid';
+const customerPassword = process.env.DEMO_CUSTOMER_PASSWORD || 'e2e-only-customer-password-20261007';
+const customerHome = '/cliente/mis-viajes/';
 
 async function panelLogin(page, username = sellerUser) {
   const password = username === adminUser ? adminPassword : sellerPassword;
@@ -16,6 +19,14 @@ async function panelLogin(page, username = sellerUser) {
   ]);
 }
 
+async function customerLogin(page, next) {
+  await page.goto(`/login/?next=${encodeURIComponent(next)}`);
+  await expect(page.locator('form[action="/login/"]')).toBeVisible();
+  await page.locator('#email').fill(customerEmail);
+  await page.locator('#password').fill(customerPassword);
+  await page.locator('form[action="/login/"] button[type="submit"]').click();
+}
+
 async function createGuestBooking(page, email) {
   await page.goto('/');
   const originValue = await page.locator('#origin option').filter({ hasText: 'Cordoba Demo' }).first().getAttribute('value');
@@ -23,11 +34,21 @@ async function createGuestBooking(page, email) {
   expect(originValue).toBeTruthy();
   expect(destinationValue).toBeTruthy();
   const travelDate = new Date();
-  travelDate.setDate(travelDate.getDate() + 7);
-  const dateValue = travelDate.toISOString().slice(0, 10);
-  await page.goto(`/buscar/?trip_type=oneway&origin=${originValue}&destination=${destinationValue}&date=${dateValue}&passengers=1`);
-  await expect(page.getByText(/Resultados de búsqueda|Buscador de viajes/)).toBeVisible();
-  await page.locator('form[action*="/checkout/"]').first().locator('button').click();
+  let checkoutForm = page.locator('form[action*="/checkout/"]');
+  let foundTrip = false;
+  for (let offset = 0; offset <= 14; offset += 1) {
+    const candidate = new Date(travelDate);
+    candidate.setDate(candidate.getDate() + offset);
+    const dateValue = candidate.toISOString().slice(0, 10);
+    await page.goto(`/buscar/?trip_type=oneway&origin=${originValue}&destination=${destinationValue}&date=${dateValue}&passengers=1`);
+    checkoutForm = page.locator('form[action*="/checkout/"]');
+    if (await checkoutForm.count()) {
+      foundTrip = true;
+      break;
+    }
+  }
+  expect(foundTrip).toBe(true);
+  await checkoutForm.first().locator('button').click();
   await page.locator('input[name="outbound_seats"]:not([disabled])').first().check({ force: true });
   await page.locator('#p_1_first_name').fill('E2E');
   await page.locator('#p_1_last_name').fill('Invitado');
@@ -74,5 +95,25 @@ test.describe('aceptación pública y panel interno', () => {
     await expect(page.getByText(/Trabajos recientes/)).toBeVisible();
     await page.goto('/panel/auditoria/');
     await expect(page.getByRole('heading', { name: /Auditoría central|Auditoria central/ })).toBeVisible();
+  });
+
+  test('login y registro de cliente son navegables con next interno', async ({ page }) => {
+    await page.goto(`/registro/?next=${encodeURIComponent(customerHome)}`);
+    await expect(page.locator('form[action="/registro/"]')).toBeVisible();
+    await expect(page.locator('#first_name')).toBeVisible();
+
+    await customerLogin(page, customerHome);
+    await expect(page).toHaveURL(/\/cliente\/mis-viajes\/$/);
+  });
+
+  test('login rechaza next externo y variante con backslash', async ({ page }) => {
+    await customerLogin(page, 'https://evil.example/');
+    await expect(page).toHaveURL(/\/cliente\/mis-viajes\/$/);
+    expect(page.url()).not.toContain('evil.example');
+
+    await page.context().clearCookies();
+    await customerLogin(page, '/\\\\evil.example/');
+    await expect(page).toHaveURL(/\/cliente\/mis-viajes\/$/);
+    expect(page.url()).not.toContain('evil.example');
   });
 });
