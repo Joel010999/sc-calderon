@@ -35,3 +35,34 @@ Limpiar exclusivamente con `python manage.py seed_demo_scenario --reset`. El res
 usa prefijos y el dominio reservado, una colección explícita de Django y aborta ante
 referencias protegidas ajenas; no borra filtros generales ni toca almacenamiento
 productivo.
+
+## Aceptación en navegador
+
+La suite Playwright vive en `e2e/acceptance.spec.js` y usa únicamente Chromium
+instalado por Playwright. En Windows PowerShell, desde la raíz del proyecto:
+
+```powershell
+$env:DEBUG = "True"
+$env:SECRET_KEY = "e2e-local-only"
+$env:ALLOWED_HOSTS = "127.0.0.1,localhost"
+$env:DATABASE_URL = "sqlite:///e2e.sqlite3"
+$env:EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+$env:DEMO_ADMIN_PASSWORD = "e2e-only-admin-password-20261007"
+$env:DEMO_SELLER_PASSWORD = "e2e-only-seller-password-20261007"
+$env:DEMO_CUSTOMER_PASSWORD = "e2e-only-customer-password-20261007"
+python -m pip install -r requirements.txt
+npm ci
+npx playwright install chromium
+python manage.py migrate --noinput
+python manage.py seed_demo_scenario
+npm run test:e2e
+```
+
+La base `e2e.sqlite3` y las raíces de archivos privados son temporales y nunca
+deben apuntar a producción. La suite cubre búsqueda y reserva como invitado,
+inicio de transferencia pública, acceso Vendedor a caja/embarque, restricción de
+auditoría por rol y navegación Administrador por reservas y fulfillment. QR
+público, descarga autenticada con token opaco, aprobación de transferencia y
+reversión de embarque no se fuerzan desde navegador porque el seed no expone
+tokens ni se deben crear bypasses; continúan cubiertos por tests Django. Los
+artefactos de Playwright se conservan sólo cuando falla la ejecución.

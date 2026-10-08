@@ -1,6 +1,15 @@
 venv/
 __pycache__/
 *.pyc
+e2e.sqlite3
+test-results/
+e2e-report/
+node_modules/
+private_tickets/
+protected_media/
+.e2e-media/
+.e2e-protected-media/
+.e2e-tickets/
 .env
 db.sqlite3
 staticfiles/

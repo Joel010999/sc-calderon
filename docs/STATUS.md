@@ -363,6 +363,15 @@ La vista es exclusiva de Administrador/superusuario, con filtros server-side, or
 
 ## Fundacion de caja (2026-10-07)
 
+## Aceptación E2E de navegador (2026-10-07)
+
+Implementada suite Playwright reproducible con seed demo, SQLite temporal, SMTP
+locmem y storage privado efímero. El workflow separado
+`.github/workflows/browser-e2e.yml` instala Chromium y publica artefactos sólo en
+fallos; QR, descarga por token, aprobación de transferencia y reversión de
+embarque quedan documentados como limitaciones de navegador y siguen cubiertos
+por tests Django.
+
 Implementado en esta rama el modulo `cash_register`: sesiones con apertura y cierre
 atomicos, restriccion PostgreSQL de una sola caja abierta, movimientos inmutables
 con clave idempotente, auditoria y enlace de cobros en efectivo APPROVED cuando
