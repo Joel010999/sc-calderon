@@ -369,3 +369,15 @@ aplica a bases reales.
 ## Accesibilidad y responsive (2026-10-08)
 
 Se adopta `@axe-core/playwright` como dependencia de desarrollo para detectar regresiones WCAG en páginas representativas. Las excepciones no se silencian: cualquier violación del análisis axe hace fallar la prueba y las correcciones de contraste, landmarks, headings y mapa de butacas se mantienen en CSS/HTML local. La base E2E se elimina y recrea antes de migrar y sembrar el escenario sintético; no se usan datos reales ni se relajan permisos, CSRF o reglas comerciales.
+## Gestión de usuarios internos (2026-10-08)
+
+- Se mantiene el `AUTH_USER_MODEL` existente para usuarios internos y se conserva
+  la separación estricta de `Customer`.
+- El panel no usa Django Admin: la gestión se realiza mediante servicios y vistas
+  personalizadas, con roles limitados a `Administrador` y `Vendedor`.
+- Las invitaciones de Administrador requieren un superusuario autorizado; las de
+  Vendedor pueden ser emitidas por un Administrador. No se gestionan superusuarios.
+- No se eligen ni almacenan contraseñas por otro administrador. El enlace de
+  establecimiento es de un solo uso, con expiración, y sólo se persiste su hash.
+- El último Administrador activo queda protegido mediante bloqueos de filas
+  PostgreSQL. Las sesiones se revocan al desactivar o cambiar el rol.

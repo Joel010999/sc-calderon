@@ -14,6 +14,7 @@ from . import customer_views as customers
 from . import audit_views as audit
 from . import cash_views as cash
 from . import cash_report_views as cash_reports
+from . import staff_views as staff
 
 app_name = 'panel'
 
@@ -55,6 +56,10 @@ urlpatterns = [
     path('auditoria/', audit.audit_list, name='audit_list'),
     path('auditoria.csv', audit.audit_csv, name='audit_csv'),
     path('auditoria/<str:token>/', audit.audit_detail, name='audit_detail'),
+    path('usuarios/', staff.staff_list, name='staff_list'),
+    path('usuarios/invitar/', staff.staff_invite, name='staff_invite'),
+    path('usuarios/<int:user_id>/actualizar/', staff.staff_update, name='staff_update'),
+    path('invitacion/<str:token>/', staff.staff_accept, name='staff_accept'),
 
     path('operaciones/', operations.overview, name='operations'),
     path('operaciones/viajes/', trips.trips, name='trips'),

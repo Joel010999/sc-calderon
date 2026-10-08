@@ -22,4 +22,5 @@ def panel_permissions(request):
         # resultado evita una consulta adicional en cada pantalla del panel.
         "can_manage_customers": can_access_reservations,
         "can_access_audit_explorer": user.is_superuser or "Administrador" in group_names,
+        "can_manage_staff": user.is_superuser or "Administrador" in group_names,
     }

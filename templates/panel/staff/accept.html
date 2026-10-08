@@ -1,0 +1,1 @@
+{% extends "panel/base.html" %}{% block content %}<h1>Establecer contraseña</h1><form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><label>Contraseña<input type="password" name="password" minlength="8" required></label><button>Guardar contraseña</button></form>{% endblock %}
