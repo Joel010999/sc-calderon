@@ -19,7 +19,7 @@ from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequ
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_http_methods, require_POST
 
 from sales.models import Booking, BookingStatus
@@ -56,7 +56,13 @@ def is_safe_redirect(url: str, request) -> bool:
     """Valida que una URL de redirección sea local y segura."""
     if not url:
         return False
-    return url.startswith("/") and not url.startswith("//")
+    # La comprobacion manual no contempla variantes con backslash que algunos
+    # navegadores normalizan como URL externa.
+    return url_has_allowed_host_and_scheme(
+        url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    )
 
 
 # ══════════════════════════════════════════════════════════════

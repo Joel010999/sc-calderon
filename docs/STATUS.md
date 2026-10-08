@@ -386,3 +386,9 @@ no reciben movimientos. Los pagos manuales en efectivo APPROVED exigen una caja
 abierta del vendedor y se enlazan una sola vez; las transferencias no generan
 movimientos de efectivo. El módulo no implementa devoluciones, saldos a favor,
 comisiones, impuestos, Mercado Pago, Payway ni conciliación bancaria.
+## Endurecimiento de redirecciones (2026-10-07)
+
+Se corrigió la validación de `next` en login y registro de clientes: ahora usa
+`url_has_allowed_host_and_scheme` de Django y rechaza variantes con backslash o
+hosts externos que pueden convertirse en open redirects. Se agregaron pruebas de
+regresión para login y registro; no se modificaron modelos ni migraciones.
