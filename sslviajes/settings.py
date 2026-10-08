@@ -286,6 +286,23 @@ GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
 GOOGLE_OAUTH_ENABLED = bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET)
 GOOGLE_OAUTH_SIMULATION_ENABLED = os.getenv('GOOGLE_OAUTH_SIMULATION_ENABLED', 'False').lower() in ('true', '1', 't')
 
+# Apple OIDC: todas las credenciales y la clave privada viven exclusivamente en el entorno.
+APPLE_OIDC_CLIENT_ID = os.getenv('APPLE_OIDC_CLIENT_ID', '')
+APPLE_OIDC_TEAM_ID = os.getenv('APPLE_OIDC_TEAM_ID', '')
+APPLE_OIDC_KEY_ID = os.getenv('APPLE_OIDC_KEY_ID', '')
+APPLE_OIDC_PRIVATE_KEY = os.getenv('APPLE_OIDC_PRIVATE_KEY', '')
+APPLE_OIDC_ENABLED = (
+    os.getenv('APPLE_OIDC_ENABLED', 'False').lower() in ('1', 'true', 'yes', 'on')
+    and all((APPLE_OIDC_CLIENT_ID, APPLE_OIDC_TEAM_ID, APPLE_OIDC_KEY_ID, APPLE_OIDC_PRIVATE_KEY))
+)
+APPLE_OIDC_SIMULATION_ENABLED = os.getenv('APPLE_OIDC_SIMULATION_ENABLED', 'False').lower() in ('true', '1', 't')
+APPLE_OIDC_AUTHORIZATION_URL = os.getenv('APPLE_OIDC_AUTHORIZATION_URL', 'https://appleid.apple.com/auth/authorize')
+APPLE_OIDC_TOKEN_URL = os.getenv('APPLE_OIDC_TOKEN_URL', 'https://appleid.apple.com/auth/token')
+APPLE_OIDC_JWKS_URL = os.getenv('APPLE_OIDC_JWKS_URL', 'https://appleid.apple.com/auth/keys')
+APPLE_OIDC_ISSUER = os.getenv('APPLE_OIDC_ISSUER', 'https://appleid.apple.com')
+APPLE_OIDC_JWKS_CACHE_SECONDS = int(os.getenv('APPLE_OIDC_JWKS_CACHE_SECONDS', '3600'))
+APPLE_OIDC_STATE_TTL_SECONDS = int(os.getenv('APPLE_OIDC_STATE_TTL_SECONDS', '600'))
+
 CUSTOMERS_CLAIM_TOKEN_HOURS = int(os.getenv("CUSTOMERS_CLAIM_TOKEN_HOURS", "24"))
 
 # Notificaciones transaccionales: outbox durable, sin relación con marketing.
