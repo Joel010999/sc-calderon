@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class AuditEvent(models.Model):
@@ -28,3 +29,17 @@ class AuditEvent(models.Model):
 
     def __str__(self):
         return self.description
+
+class StaffInvitation(models.Model):
+    email = models.EmailField("correo", db_index=True)
+    normalized_email = models.EmailField("correo normalizado", unique=True)
+    role = models.CharField("rol", max_length=20, choices=(("Administrador", "Administrador"), ("Vendedor", "Vendedor")))
+    token_hash = models.CharField("hash del token", max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    class Meta:
+        ordering = ["-created_at"]
+    @property
+    def is_available(self):
+        return self.used_at is None and self.expires_at > timezone.now()

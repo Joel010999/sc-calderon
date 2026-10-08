@@ -1,0 +1,1 @@
+{% extends "panel/base.html" %}{% block content %}<h1>Invitar usuario interno</h1><form method="post">{% csrf_token %}<label>Correo<input type="email" name="email" required></label><label>Rol<select name="role">{% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select></label><button>Enviar invitación</button></form>{% endblock %}
