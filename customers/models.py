@@ -36,6 +36,14 @@ class Customer(models.Model):
         default="",
         db_index=True,
     )
+    apple_sub = models.CharField(
+        "identificador de Apple",
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+    )
     created_at = models.DateTimeField("fecha de creación", auto_now_add=True)
     updated_at = models.DateTimeField("última actualización", auto_now=True)
 

@@ -4,8 +4,11 @@ import hashlib
 import json
 import logging
 import secrets
+import time
 import urllib.parse
 import urllib.request
+import base64
+import hashlib
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
@@ -21,6 +24,7 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.csrf import csrf_exempt
 
 from sales.models import Booking, BookingStatus
 from tickets.models import Ticket, TicketStatus
@@ -41,6 +45,7 @@ from .services import (
     record_consent,
     register_customer,
 )
+from . import apple_oidc
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,16 @@ def is_safe_redirect(url: str, request) -> bool:
         url,
         allowed_hosts={request.get_host()},
         require_https=request.is_secure(),
+    )
+
+
+def _apple_login_enabled():
+    return bool(
+        getattr(settings, "APPLE_OIDC_ENABLED", False)
+        or (
+            getattr(settings, "APPLE_OIDC_SIMULATION_ENABLED", False)
+            and getattr(settings, "DEBUG", False)
+        )
     )
 
 
@@ -160,16 +175,16 @@ def customer_login(request):
         user = authenticate(request, username=email_or_username, password=password)
         if user is None:
             messages.error(request, "Credenciales incorrectas. Verificá tu correo y contraseña.")
-            return render(request, "customers/login.html", {"email": email_or_username, "next": next_url})
+            return render(request, "customers/login.html", {"email": email_or_username, "next": next_url, "apple_login_enabled": _apple_login_enabled()})
 
         if not user.is_active or user.is_staff or user.is_superuser:
             messages.error(request, "No se pudo iniciar sesi?n como cliente con esas credenciales.")
-            return render(request, "customers/login.html", {"email": email_or_username, "next": next_url})
+            return render(request, "customers/login.html", {"email": email_or_username, "next": next_url, "apple_login_enabled": _apple_login_enabled()})
 
         customer = get_customer_for_user(user)
         if not customer:
             messages.error(request, "No se pudo iniciar sesi?n como cliente con esas credenciales.")
-            return render(request, "customers/login.html", {"email": email_or_username, "next": next_url})
+            return render(request, "customers/login.html", {"email": email_or_username, "next": next_url, "apple_login_enabled": _apple_login_enabled()})
 
         login(request, user, backend="customers.backends.EmailAuthBackend")
 
@@ -188,7 +203,7 @@ def customer_login(request):
             return redirect(next_url)
         return redirect("mis_viajes")
 
-    return render(request, "customers/login.html", {"next": next_url})
+    return render(request, "customers/login.html", {"next": next_url, "apple_login_enabled": _apple_login_enabled()})
 
 
 @require_POST
@@ -588,4 +603,113 @@ def google_callback(request):
             logger.exception("Error al auto-asociar reserva tras login con Google")
 
     messages.success(request, f"¡Bienvenido/a {user.first_name or user.email}!")
+    return redirect("mis_viajes")
+
+
+def _pkce_challenge(verifier):
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def apple_login(request):
+    """Inicia Apple OIDC con state, nonce y PKCE generados por solicitud."""
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(48)
+    request.session["apple_oidc_state"] = state
+    request.session["apple_oidc_nonce"] = nonce
+    request.session["apple_oidc_verifier"] = verifier
+    request.session["apple_oidc_state_created_at"] = int(time.time())
+    if getattr(settings, "APPLE_OIDC_ENABLED", False):
+        params = {
+            "client_id": settings.APPLE_OIDC_CLIENT_ID, "response_type": "code",
+            "response_mode": "form_post", "scope": "openid email name", "state": state,
+            "nonce": nonce, "code_challenge": _pkce_challenge(verifier), "code_challenge_method": "S256",
+            "redirect_uri": request.build_absolute_uri(reverse("apple_callback")),
+        }
+        return redirect(f"{settings.APPLE_OIDC_AUTHORIZATION_URL}?{urllib.parse.urlencode(params)}")
+    if getattr(settings, "APPLE_OIDC_SIMULATION_ENABLED", False) and getattr(settings, "DEBUG", False):
+        return redirect(f"{request.build_absolute_uri(reverse('apple_callback'))}?state={state}&code=simulated:apple-sub:apple@ejemplo.invalid")
+    messages.error(request, "El inicio de sesión con Apple no está configurado en este entorno.")
+    return redirect("login_cliente")
+
+
+@csrf_exempt
+@require_POST
+def apple_callback(request):
+    """Callback Apple: rechaza replay, verifica nonce y nunca persiste tokens."""
+    state = request.POST.get("state", request.GET.get("state", ""))
+    session_state = request.session.pop("apple_oidc_state", "")
+    nonce = request.session.pop("apple_oidc_nonce", "")
+    verifier = request.session.pop("apple_oidc_verifier", "")
+    state_created_at = request.session.pop("apple_oidc_state_created_at", 0)
+    state_valid = (
+        bool(state and session_state)
+        and secrets.compare_digest(state, session_state)
+        and isinstance(state_created_at, int)
+        and 0 <= time.time() - state_created_at <= settings.APPLE_OIDC_STATE_TTL_SECONDS
+    )
+    if not state_valid:
+        return HttpResponseBadRequest("Estado OIDC no válido o expirado.")
+    code = request.POST.get("code", request.GET.get("code", ""))
+    if not code:
+        messages.error(request, "No se pudo iniciar sesión con Apple.")
+        return redirect("login_cliente")
+    claims = None
+    try:
+        if code.startswith("simulated:"):
+            if not (getattr(settings, "APPLE_OIDC_SIMULATION_ENABLED", False) and getattr(settings, "DEBUG", False)):
+                raise ValueError("simulación deshabilitada")
+            _, apple_sub, email = code.split(":", 2)
+            claims = {"sub": apple_sub, "email": email, "email_verified": True, "nonce": nonce}
+        elif getattr(settings, "APPLE_OIDC_ENABLED", False):
+            tokens = apple_oidc.exchange_code(code, request.build_absolute_uri(reverse("apple_callback")), verifier)
+            id_token = tokens.get("id_token", "")
+            if not id_token:
+                raise ValueError("respuesta OIDC sin id_token")
+            claims = apple_oidc.verify_id_token(id_token)
+            if not claims.get("nonce") or not secrets.compare_digest(str(claims["nonce"]), nonce):
+                raise ValueError("nonce OIDC inválido")
+        else:
+            raise ValueError("Apple no configurado")
+        apple_sub = str(claims.get("sub", "")).strip()
+        email = normalize_email(claims.get("email", ""))
+        if not apple_sub:
+            raise ValueError("claims OIDC incompletos")
+
+        # Apple entrega el nombre como JSON POST sólo durante el primer consentimiento.
+        first_consent_name = {}
+        raw_user = request.POST.get("user", "")
+        if raw_user:
+            first_consent_name = json.loads(raw_user).get("name", {})
+    except Exception:
+        logger.warning("Falló autenticación OIDC de Apple")
+        messages.error(request, "No se pudo iniciar sesión con Apple. Intentá nuevamente.")
+        return redirect("login_cliente")
+
+    User = get_user_model()
+    customer = Customer.objects.select_related("user").filter(apple_sub=apple_sub).first()
+    if customer:
+        user = customer.user
+    else:
+        # No se vincula por email: un correo existente no revela si la cuenta existe.
+        if not email:
+            raise ValueError("Apple no entregó un correo para una identidad nueva")
+        if Customer.objects.filter(normalized_email=email).exists() or User.objects.filter(email__iexact=email).exists():
+            messages.error(request, "No se pudo iniciar sesión con Apple. Usá el método con el que creaste tu cuenta.")
+            return redirect("login_cliente")
+        first_name = str(first_consent_name.get("firstName", claims.get("name", ""))).strip()[:150]
+        last_name = str(first_consent_name.get("lastName", "")).strip()[:150]
+        user = User.objects.create_user(username=f"apple_{hashlib.sha256(apple_sub.encode()).hexdigest()[:32]}", email=email)
+        user.set_unusable_password()
+        user.first_name = first_name
+        user.last_name = last_name
+        user.is_staff = False
+        user.is_superuser = False
+        user.save(update_fields=["password", "first_name", "last_name", "is_staff", "is_superuser"])
+        customer = Customer.objects.create(user=user, email=email, normalized_email=email, apple_sub=apple_sub)
+    if not user.is_active or user.is_staff or user.is_superuser:
+        return redirect("login_cliente")
+    login(request, user, backend="customers.backends.EmailAuthBackend")
+    messages.success(request, "¡Bienvenido/a! Ya podés ver y gestionar tus viajes.")
     return redirect("mis_viajes")

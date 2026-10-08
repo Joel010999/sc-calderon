@@ -17,4 +17,6 @@ urlpatterns = [
     path("recuperar-clave/completado/", views.customer_password_reset_complete, name="password_reset_complete"),
     path("google/login/", views.google_login, name="google_login"),
     path("google/callback/", views.google_callback, name="google_callback"),
+    path("apple/login/", views.apple_login, name="apple_login"),
+    path("apple/callback/", views.apple_callback, name="apple_callback"),
 ]
