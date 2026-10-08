@@ -249,6 +249,10 @@ Implementado en la rama de trabajo: registro y login local, recuperación por en
 
 Pendiente: entrega de enlaces de reclamo y recuperación mediante proveedor de correo productivo, configuración/validación de credenciales Google de producción, Apple, campañas comerciales y cualquier cambio de datos personales pendiente.
 
+### Login Apple OIDC (2026-10-08)
+
+Implementado en `feature/apple-customer-login-20261008`: login Apple configurable por entorno, con state/nonce/PKCE, callback form-post protegido por validaciones OIDC, verificación RS256 contra JWKS cacheado en memoria y simulación exclusivamente para desarrollo/tests. La identidad se guarda separada mediante `apple_sub`; no se persisten tokens, no se registran credenciales y los conflictos con cuentas existentes no enumeran ni vinculan por email. Se conserva login local, Google, compra invitada, reclamo explícito y asociación de reservas; la migración se generó pero no se ejecutó contra bases persistentes.
+
 ## Endurecimiento operativo de fulfillment (2026-09-21)
 
 ## Almacenamiento privado y correo SMTP (2026-10-02)

@@ -254,7 +254,7 @@ No resolver estas decisiones por suposición. Registrar la respuesta aprobada an
 - Se mantiene el usuario estándar de Django; no se reemplaza `AUTH_USER_MODEL`.
 - Comprar como invitado sigue permitido y no vincula reservas por coincidencia de email.
 - El cliente puede registrarse e iniciar sesión con email y contraseña. Recuperación mediante enlace seguro de Django; no se usan OTP ni códigos.
-- Google queda preparado mediante OAuth con credenciales exclusivamente en entorno y sin secretos versionados. Apple queda pendiente.
+- Google queda preparado mediante OAuth con credenciales exclusivamente en entorno y sin secretos versionados. Apple OIDC usa Authorization Code + PKCE, `state` y `nonce` de un solo uso, validación RS256 de issuer/audience/expiración contra JWKS cacheado en memoria y credenciales exclusivamente en entorno. Nunca se persisten ni registran tokens; una identidad Apple no se vincula automáticamente por email a una cuenta existente.
 - El reclamo de una compra invitada usa un token aleatorio, guardado como hash, de un solo uso y con vencimiento. La entrega automática por correo queda pendiente de la infraestructura de correo.
 - El consentimiento comercial es opcional, separado, desmarcado por defecto y auditable; retirarlo no elimina reservas ni pasajes. Campañas y envíos masivos quedan pendientes.
 
