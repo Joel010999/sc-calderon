@@ -37,6 +37,7 @@
                     {% if can_access_operational_inbox %}<a href="{% url 'panel:operational_inbox' %}" class="sidebar-link">Bandeja operativa</a>{% endif %}
                     {% if can_manage_customers %}<a href="{% url 'panel:customer_list' %}" class="sidebar-link">Clientes</a>{% endif %}
                     {% if can_access_audit_explorer %}<a href="{% url 'panel:audit_list' %}" class="sidebar-link">Auditoría central</a>{% endif %}
+                    {% if can_manage_staff %}<a href="{% url 'panel:staff_list' %}" class="sidebar-link">Usuarios internos</a>{% endif %}
                     {% if can_access_reservations %}<a href="{% url 'panel:boarding_validate' %}" class="sidebar-link">Validar embarque</a>{% endif %}
                 </div>
                 {% if can_access_reservations %}

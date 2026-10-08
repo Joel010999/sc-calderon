@@ -405,3 +405,12 @@ semántica ARIA para navegación y pasos del checkout, y cierre del menú móvil
 Escape y retorno de foco. Se ajustó el panel para viewport estrecho (incluido
 360px) sin cambiar rutas, permisos, CSRF ni reglas de negocio; no se agregaron
 modelos, migraciones, dependencias remotas ni se ejecutaron migraciones persistentes.
+## GestiÃ³n de usuarios internos (2026-10-08)
+
+Implementada la base del panel personalizado para Administradores y Vendedores:
+invitaciones con token hash-only de un solo uso, contraseÃ±a validada, grupos exactos,
+listado paginado/filtros, acciones POST+CSRF, protecciÃ³n de superusuarios y del Ãºltimo
+Administrador activo, revocaciÃ³n de sesiones y auditorÃ­a sanitizada. Se agregÃ³ la
+migraciÃ³n `panel.0002_staffinvitation`; no se ejecutaron migraciones persistentes ni
+se enviaron correos reales. `check`, `makemigrations --check --dry-run` y `git diff
+--check` pasan; la suite `panel` fue interrumpida durante la ejecuciÃ³n.

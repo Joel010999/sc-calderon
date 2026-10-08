@@ -240,3 +240,18 @@ sin presentarse como garantía de concurrencia equivalente a PostgreSQL.
 ## Accesibilidad y responsive (2026-10-08)
 
 Las plantillas públicas, de clientes y del panel mantienen landmarks, salto al contenido, foco visible, navegación de menú con teclado y `prefers-reduced-motion`. El mapa de butacas conserva controles checkbox nativos operables por teclado con etiquetas accesibles para disponibilidad, ocupación y tarifa; el CSS usa `focus-visible` sin cambiar la lógica comercial. Las auditorías axe-core y Playwright se ejecutan sobre Chromium a 360px y escritorio; sus artefactos solo se publican ante fallos. No se agregan dependencias frontend remotas de ejecución ni migraciones.
+## Gestión de usuarios internos
+
+El panel personalizado administra exclusivamente usuarios internos con los grupos
+`Administrador` y `Vendedor`; `Customer` permanece separado y los superusuarios no
+se editan desde esta interfaz. Las invitaciones crean usuarios inactivos con
+contraseña inutilizable, almacenan únicamente el hash SHA-256 del token de un solo
+uso y vencen después de 24 horas. El correo de invitación reutiliza el backend de
+correo configurado y cualquier error revierte la transacción completa.
+
+Las mutaciones usan POST con CSRF y servicios transaccionales. El servicio bloquea
+ordenadamente los Administradores activos con `select_for_update` antes de cambiar
+roles o estados, evitando dejar cero Administradores activos bajo concurrencia de
+PostgreSQL. La desactivación o cambio de rol revoca sesiones existentes y cada
+cambio real genera una auditoría con datos mínimos, sin contraseñas, tokens ni
+contenido sensible.
