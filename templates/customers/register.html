@@ -9,6 +9,12 @@
       <p style="color: #64748b; font-size: 0.95rem;">Registrate con tu correo para acceder a tus pasajes, consultar tus viajes y viajar conectado.</p>
     </div>
 
+    {% if apple_login_enabled %}
+      <div style="margin-bottom: 1.75rem;">
+        <a href="{% url 'apple_login' %}" class="button oauth-button oauth-button--apple" style="display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;padding:.75rem 1rem;background:#000;color:#fff;border-radius:8px;text-decoration:none;">Continuar con Apple</a>
+      </div>
+    {% endif %}
+
     <!-- Botón Google OAuth (solo configurable por env y con callback simulado seguro) -->
     <div style="margin-bottom: 1.75rem;">
       <a href="{% url 'google_login' %}" class="button" style="display: flex; align-items: center; justify-content: center; gap: 0.75rem; width: 100%; padding: 0.75rem 1rem; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; font-weight: 500; border-radius: 8px; text-decoration: none; transition: background 0.2s;">

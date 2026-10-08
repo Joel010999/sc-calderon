@@ -47,6 +47,10 @@ jobs:
           python manage.py collectstatic --noinput
       - name: Ejecutar aceptación en navegador
         run: npm run test:e2e
+      - name: Auditar Apple ficticio sin navegar al proveedor
+        env:
+          APPLE_OIDC_SIMULATION_ENABLED: 'True'
+        run: npm run test:e2e -- e2e/accessibility.spec.js -g "Apple habilitado ficticiamente"
       - name: Publicar artefactos sólo si falla
         if: failure()
         uses: actions/upload-artifact@v4

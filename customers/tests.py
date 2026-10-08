@@ -1667,6 +1667,8 @@ class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
     def test_apple_state_expires_and_button_is_hidden_when_disabled(self):
         login_page = self.client.get(reverse("login_cliente"))
         self.assertNotContains(login_page, "Continuar con Apple")
+        register_page = self.client.get(reverse("registro_cliente"))
+        self.assertNotContains(register_page, "Continuar con Apple")
         with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True, APPLE_OIDC_STATE_TTL_SECONDS=60):
             start = self.client.get(reverse("apple_login"))
             session = self.client.session
@@ -1677,6 +1679,14 @@ class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
                 "code": "simulated:expired-sub:expired@ejemplo.invalid",
             })
             self.assertEqual(response.status_code, 400)
+
+    def test_apple_button_is_exposed_accessibly_when_simulation_is_enabled(self):
+        with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):
+            for url in (reverse("login_cliente"), reverse("registro_cliente")):
+                response = self.client.get(url)
+                self.assertContains(response, 'class="button oauth-button oauth-button--apple"')
+                self.assertContains(response, 'href="/cliente/apple/login/"')
+                self.assertContains(response, "Continuar con Apple")
 
     def test_apple_preserves_existing_profile_when_email_is_omitted(self):
         with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):

@@ -29,6 +29,28 @@ test.describe('accesibilidad y responsive', () => {
     }
   });
 
+  test('Apple permanece oculto sin configuración', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    for (const path of ['/login/', '/registro/']) {
+      await page.goto(path);
+      await expect(page.getByRole('link', { name: 'Continuar con Apple' })).toHaveCount(0);
+    }
+  });
+
+  test('Apple habilitado ficticiamente conserva semántica y foco accesible', async ({ page }) => {
+    test.skip(!/^(1|true|yes|on)$/i.test(process.env.APPLE_OIDC_SIMULATION_ENABLED || ''));
+    await page.setViewportSize({ width: 360, height: 800 });
+    for (const path of ['/login/', '/registro/']) {
+      await page.goto(path);
+      const apple = page.getByRole('link', { name: 'Continuar con Apple' });
+      await expect(apple).toBeVisible();
+      await expect(apple).toHaveAttribute('href', /\/cliente\/apple\/login\/$/);
+      await apple.focus();
+      await expect(apple).toBeFocused();
+      await audit(page, `${path} Apple habilitado`);
+    }
+  });
+
   test('menú móvil y skip link son operables con teclado', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto('/');
