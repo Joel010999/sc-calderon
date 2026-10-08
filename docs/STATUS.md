@@ -390,6 +390,15 @@ no reciben movimientos. Los pagos manuales en efectivo APPROVED exigen una caja
 abierta del vendedor y se enlazan una sola vez; las transferencias no generan
 movimientos de efectivo. El módulo no implementa devoluciones, saldos a favor,
 comisiones, impuestos, Mercado Pago, Payway ni conciliación bancaria.
+## Reporte y conciliación interna de caja (2026-10-08)
+
+Implementado `/panel/reportes/caja/` con fecha operativa `America/Argentina/Buenos_Aires`,
+filtros seguros, detalle paginado y CSV UTF-8 BOM con protección contra fórmulas.
+La revisión idempotente de cierres usa POST+CSRF, lock transaccional y auditoría
+central sanitizada; no modifica movimientos ni pagos. Se generó la migración
+`cash_register.0004` para persistir actor, fecha y observación, sin ejecutarla en
+bases persistentes.
+
 ## Endurecimiento de redirecciones (2026-10-07)
 
 Se corrigió la validación de `next` en login y registro de clientes: ahora usa

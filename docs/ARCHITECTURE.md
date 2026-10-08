@@ -214,6 +214,12 @@ restricción parcial por `opened_by`, mientras que los servicios bloquean la
 sesión con `select_for_update()` durante cobros, ajustes y cierres.
 
 Los movimientos son inmutables. Aperturas, cierres y ajustes se auditan; los
+ reportes diarios se calculan por fecha operativa en `America/Argentina/Buenos_Aires`,
+ muestran únicamente cajas propias a vendedores y permiten filtros server-side,
+ paginación y CSV BOM sin fórmulas. La revisión de cierre administrativa es
+ idempotente y conserva actor, fecha y observación en la sesión sin alterar
+ movimientos ni pagos; estos campos requieren la migración `0004` (no aplicada
+ en bases persistentes).
 
 ## Login de clientes con Apple (2026-10-08)
 
