@@ -214,6 +214,24 @@ restricción parcial por `opened_by`, mientras que los servicios bloquean la
 sesión con `select_for_update()` durante cobros, ajustes y cierres.
 
 Los movimientos son inmutables. Aperturas, cierres y ajustes se auditan; los
+
+## Login de clientes con Apple (2026-10-08)
+
+Apple se integra como proveedor OIDC opcional, separado de login local, Google y
+la compra como invitado. La identidad se vincula exclusivamente por el `sub`
+estable de Apple mediante `Customer.apple_sub`; nunca se vincula una cuenta por
+coincidencia de correo. Los correos relay se conservan como correo normalizado y
+el nombre que Apple entrega solo durante el primer consentimiento se guarda en
+ese momento sin sobrescribir datos posteriores.
+
+El flujo web usa `response_mode=form_post`, `state` de un solo uso con TTL
+configurable, `nonce`, PKCE S256 y un client secret ES256 generado en memoria
+desde variables de entorno. La firma RS256 del `id_token` se valida contra JWKS
+cacheado por tiempo acotado, exigiendo `iss`, `aud`, `sub` y `exp`; tokens,
+secretos y payloads no se persisten ni se registran. La simulación solo existe
+en DEBUG/tests, el botón se oculta cuando Apple no está configurado y el
+callback POST está exento de CSRF únicamente porque Apple entrega el formulario
+desde su origen, quedando protegido por state y nonce.
 ajustes solo están disponibles para Administradores, exigen motivo y no cambian
 pagos, reservas, pasajes ni fulfillment. El panel es personalizado y todas las
 acciones mutables usan POST+CSRF. SQLite se mantiene para desarrollo y tests,

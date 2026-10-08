@@ -20,6 +20,7 @@ import hashlib
 
 
 import json
+import time
 
 
 from decimal import Decimal
@@ -1635,6 +1636,78 @@ class GoogleOAuthConfigurationAndSimulationTests(BaseCustomerTestCase):
 
 
             self.assertFalse(customer.user.is_staff)
+
+
+class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
+    """Apple OIDC se prueba sin credenciales ni llamadas al proveedor."""
+
+    def test_apple_requires_state_and_creates_customer_in_simulation(self):
+        with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):
+            start = self.client.get(reverse("apple_login"))
+            self.assertEqual(start.status_code, 302)
+            state = self.client.session["apple_oidc_state"]
+            bad = self.client.post(reverse("apple_callback"), {"state": "incorrecto", "code": "simulated:sub-1:apple@ejemplo.invalid"})
+            self.assertEqual(bad.status_code, 400)
+            start = self.client.get(reverse("apple_login"))
+            state = self.client.session["apple_oidc_state"]
+            ok = self.client.post(reverse("apple_callback"), {"state": state, "code": "simulated:sub-1:apple@ejemplo.invalid"})
+            self.assertRedirects(ok, reverse("mis_viajes"))
+            customer = Customer.objects.get(apple_sub="sub-1")
+            self.assertEqual(customer.normalized_email, "apple@ejemplo.invalid")
+            self.assertTrue(customer.user.has_usable_password() is False)
+
+    def test_apple_does_not_link_existing_email_or_enumerate_account(self):
+        register_customer(email="existente@ejemplo.invalid", password="StrongPassword123!")
+        with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):
+            start = self.client.get(reverse("apple_login"))
+            response = self.client.post(reverse("apple_callback"), {"state": self.client.session["apple_oidc_state"], "code": "simulated:sub-2:existente@ejemplo.invalid"})
+            self.assertRedirects(response, reverse("login_cliente"))
+            self.assertFalse(Customer.objects.filter(apple_sub="sub-2").exists())
+
+    def test_apple_state_expires_and_button_is_hidden_when_disabled(self):
+        login_page = self.client.get(reverse("login_cliente"))
+        self.assertNotContains(login_page, "Continuar con Apple")
+        with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True, APPLE_OIDC_STATE_TTL_SECONDS=60):
+            start = self.client.get(reverse("apple_login"))
+            session = self.client.session
+            session["apple_oidc_state_created_at"] = int(time.time()) - 61
+            session.save()
+            response = self.client.post(reverse("apple_callback"), {
+                "state": session["apple_oidc_state"],
+                "code": "simulated:expired-sub:expired@ejemplo.invalid",
+            })
+            self.assertEqual(response.status_code, 400)
+
+    def test_apple_preserves_existing_profile_when_email_is_omitted(self):
+        with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):
+            self.client.get(reverse("apple_login"))
+            state = self.client.session["apple_oidc_state"]
+            first = self.client.post(reverse("apple_callback"), {
+                "state": state,
+                "code": "simulated:stable-sub:relay@privaterelay.appleid.com",
+            })
+            self.assertRedirects(first, reverse("mis_viajes"))
+            self.client.get(reverse("apple_login"))
+            state = self.client.session["apple_oidc_state"]
+            second = self.client.post(reverse("apple_callback"), {
+                "state": state,
+                "code": "simulated:stable-sub:",
+            })
+            self.assertRedirects(second, reverse("mis_viajes"))
+            self.assertEqual(Customer.objects.get(apple_sub="stable-sub").email, "relay@privaterelay.appleid.com")
+
+    def test_apple_first_consent_preserves_name_payload(self):
+        with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):
+            self.client.get(reverse("apple_login"))
+            response = self.client.post(reverse("apple_callback"), {
+                "state": self.client.session["apple_oidc_state"],
+                "code": "simulated:name-sub:name@privaterelay.appleid.com",
+                "user": json.dumps({"name": {"firstName": "Ana", "lastName": "Relay"}}),
+            })
+            self.assertRedirects(response, reverse("mis_viajes"))
+            user = Customer.objects.get(apple_sub="name-sub").user
+            self.assertEqual(user.first_name, "Ana")
+            self.assertEqual(user.last_name, "Relay")
 
 
 

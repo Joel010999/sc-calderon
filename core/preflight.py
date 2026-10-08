@@ -103,6 +103,12 @@ def collect_preflight():
 
     oauth_ok = (not getattr(settings, "GOOGLE_OAUTH_ENABLED", False) or bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET)) and not (prod and getattr(settings, "GOOGLE_OAUTH_SIMULATION_ENABLED", False))
     results.append(_result("google_oauth", "PASS" if oauth_ok and settings.GOOGLE_OAUTH_ENABLED else ("WARNING" if oauth_ok else "FAIL"), "Google OAuth está configurado o deshabilitado explícitamente." if oauth_ok else "Google OAuth tiene una configuración inconsistente."))
+    apple_values = [getattr(settings, name, "") for name in ("APPLE_OIDC_CLIENT_ID", "APPLE_OIDC_TEAM_ID", "APPLE_OIDC_KEY_ID", "APPLE_OIDC_PRIVATE_KEY")]
+    apple_partial = any(apple_values) and not all(apple_values)
+    apple_ok = not apple_partial and not (prod and getattr(settings, "APPLE_OIDC_SIMULATION_ENABLED", False))
+    apple_ttl_ok = 60 <= getattr(settings, "APPLE_OIDC_STATE_TTL_SECONDS", 0) <= 3600
+    apple_ok = apple_ok and apple_ttl_ok
+    results.append(_result("apple_oidc", "PASS" if apple_ok and getattr(settings, "APPLE_OIDC_ENABLED", False) else ("WARNING" if apple_ok else "FAIL"), "Apple OIDC está configurado o deshabilitado explícitamente." if apple_ok else "Apple OIDC tiene una configuración inconsistente."))
     maintenance_ok = all(getattr(settings, name, 0) > 0 for name in ("OPERATIONAL_MAINTENANCE_MAX_LIMIT", "OPERATIONAL_MAINTENANCE_MAX_SECONDS", "OPERATIONAL_MAINTENANCE_LEASE_SECONDS"))
     results.append(_result("operational_maintenance", "PASS" if maintenance_ok else "FAIL", "Mantenimiento operacional tiene límites seguros." if maintenance_ok else "Mantenimiento operacional tiene límites inválidos."))
     worker_ok = (
