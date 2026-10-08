@@ -300,8 +300,18 @@ document.addEventListener('DOMContentLoaded', () => {
      10. SCREEN NAVIGATION
      ═══════════════════════════════════════════════════ */
   function openScreen(name) {
-    tabs.forEach(tab => tab.classList.toggle('is-active', tab.dataset.screenTarget === name));
-    screens.forEach(s => s.classList.toggle('is-active', s.id === `screen-${name}`));
+    tabs.forEach(tab => {
+      const selected = tab.dataset.screenTarget === name;
+      tab.classList.toggle('is-active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
+    screens.forEach(s => {
+      const active = s.id === `screen-${name}`;
+      s.classList.toggle('is-active', active);
+      s.toggleAttribute('hidden', !active);
+      s.setAttribute('aria-hidden', String(!active));
+    });
 
     const flowEl = $('.booking-flow');
     if (flowEl) {
@@ -310,6 +320,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (name === 'detail') renderDetail();
     if (name === 'confirmation') renderConfirmation();
+    const heading = document.getElementById(`screen-${name}`)?.querySelector('h3, h2');
+    if (heading) {
+      heading.setAttribute('tabindex', '-1');
+      heading.focus({ preventScroll: true });
+    }
   }
 
   function resetFlow() {
@@ -454,16 +469,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Mobile menu
   if (menuToggle && siteNav) {
+    const setMenu = (open, moveFocus = false) => {
+      menuToggle.setAttribute('aria-expanded', String(open));
+      menuToggle.setAttribute('aria-label', open ? 'Cerrar menú principal' : 'Abrir menú principal');
+      siteNav.classList.toggle('is-open', open);
+      if (open && moveFocus) siteNav.querySelector('a, button')?.focus();
+    };
     menuToggle.addEventListener('click', () => {
       const expanded = menuToggle.getAttribute('aria-expanded') === 'true';
-      menuToggle.setAttribute('aria-expanded', String(!expanded));
-      siteNav.classList.toggle('is-open', !expanded);
+      setMenu(!expanded, !expanded);
     });
 
     siteNav.addEventListener('click', (e) => {
       if (e.target.tagName === 'A' || e.target.classList.contains('nav-cta')) {
-        siteNav.classList.remove('is-open');
-        menuToggle.setAttribute('aria-expanded', 'false');
+        setMenu(false);
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menuToggle.getAttribute('aria-expanded') === 'true') {
+        setMenu(false);
+        menuToggle.focus();
       }
     });
   }

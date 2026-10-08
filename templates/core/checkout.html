@@ -15,7 +15,7 @@
     <div class="itinerary-leg">
       <div class="leg-tag">Viaje de ida</div>
       <div class="leg-info">
-        <h3>{{ outbound_orig.stop.name }} → {{ outbound_dest.stop.name }}</h3>
+        <h2>{{ outbound_orig.stop.name }} → {{ outbound_dest.stop.name }}</h2>
         <p>Salida: <strong>{{ outbound_orig_local|date:"d/m/Y H:i" }} hs</strong> · Llegada: <strong>{{ outbound_dest_local|date:"d/m/Y H:i" }} hs</strong></p>
         <span class="bus-badge">Colectivo: {{ outbound_trip.bus.display_name }} ({{ outbound_trip.bus.code }})</span>
       </div>
@@ -32,7 +32,7 @@
       <div class="itinerary-leg">
         <div class="leg-tag leg-tag--return">Viaje de regreso</div>
         <div class="leg-info">
-          <h3>{{ return_orig.stop.name }} → {{ return_dest.stop.name }}</h3>
+        <h2>{{ return_orig.stop.name }} → {{ return_dest.stop.name }}</h2>
           <p>Salida: <strong>{{ return_orig_local|date:"d/m/Y H:i" }} hs</strong> · Llegada: <strong>{{ return_dest_local|date:"d/m/Y H:i" }} hs</strong></p>
           <span class="bus-badge">Colectivo: {{ return_trip.bus.display_name }} ({{ return_trip.bus.code }})</span>
         </div>
@@ -108,11 +108,13 @@
                   <label class="seat-card {% if item.is_occupied %}is-occupied{% elif not item.has_fare %}is-no-fare{% else %}is-available{% endif %}"
                          style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
                     {% if item.is_available %}
-                      <input type="checkbox" name="outbound_seats" value="{{ item.seat.pk }}"
+                        <input type="checkbox" name="outbound_seats" value="{{ item.seat.pk }}"
                              class="seat-checkbox outbound-seat-cb" data-seat-number="{{ item.seat.number }}"
-                             data-category="{{ item.seat.category }}" data-price="{{ item.fare_amount }}">
+                             data-category="{{ item.seat.category }}" data-price="{{ item.fare_amount }}"
+                             aria-label="Butaca {{ item.seat.number }}, {{ item.seat.get_category_display }}, disponible">
                     {% else %}
-                      <input type="checkbox" disabled class="seat-checkbox">
+                      <input type="checkbox" disabled class="seat-checkbox"
+                             aria-label="Butaca {{ item.seat.number }}, {% if item.is_occupied %}ocupada{% else %}sin tarifa{% endif %}">
                     {% endif %}
                     <div class="seat-card-inner">
                       <span class="seat-number">Butaca {{ item.seat.number }}</span>
@@ -154,9 +156,11 @@
                       {% if item.is_available %}
                         <input type="checkbox" name="return_seats" value="{{ item.seat.pk }}"
                                class="seat-checkbox return-seat-cb" data-seat-number="{{ item.seat.number }}"
-                               data-category="{{ item.seat.category }}" data-price="{{ item.fare_amount }}">
+                               data-category="{{ item.seat.category }}" data-price="{{ item.fare_amount }}"
+                               aria-label="Butaca {{ item.seat.number }}, {{ item.seat.get_category_display }}, disponible">
                       {% else %}
-                        <input type="checkbox" disabled class="seat-checkbox">
+                        <input type="checkbox" disabled class="seat-checkbox"
+                               aria-label="Butaca {{ item.seat.number }}, {% if item.is_occupied %}ocupada{% else %}sin tarifa{% endif %}">
                       {% endif %}
                       <div class="seat-card-inner">
                         <span class="seat-number">Butaca {{ item.seat.number }}</span>

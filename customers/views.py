@@ -110,6 +110,7 @@ def customer_register(request):
                 "phone": phone,
                 "commercial_consent": commercial_consent,
                 "next": next_url,
+                "apple_login_enabled": _apple_login_enabled(),
             })
 
         try:
@@ -137,6 +138,7 @@ def customer_register(request):
                 "phone": phone,
                 "commercial_consent": commercial_consent,
                 "next": next_url,
+                "apple_login_enabled": _apple_login_enabled(),
             })
 
         # Iniciar sesión automáticamente
@@ -157,7 +159,10 @@ def customer_register(request):
             return redirect(next_url)
         return redirect("mis_viajes")
 
-    return render(request, "customers/register.html", {"next": next_url})
+    return render(request, "customers/register.html", {
+        "next": next_url,
+        "apple_login_enabled": _apple_login_enabled(),
+    })
 
 
 def customer_login(request):

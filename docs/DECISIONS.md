@@ -358,3 +358,7 @@ Los campos privados excluidos son descripciones, IDs internos, contactos, docume
   pagos, reservas, tickets o fulfillment.
 - Caja diaria, devoluciones, saldos a favor, comisiones, impuestos, Mercado Pago,
   Payway y conciliación bancaria siguen fuera de alcance.
+
+## Accesibilidad y responsive (2026-10-08)
+
+Se adopta `@axe-core/playwright` como dependencia de desarrollo para detectar regresiones WCAG en páginas representativas. Las excepciones no se silencian: cualquier violación del análisis axe hace fallar la prueba y las correcciones de contraste, landmarks, headings y mapa de butacas se mantienen en CSS/HTML local. La base E2E se elimina y recrea antes de migrar y sembrar el escenario sintético; no se usan datos reales ni se relajan permisos, CSRF o reglas comerciales.
