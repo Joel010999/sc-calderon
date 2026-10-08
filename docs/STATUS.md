@@ -392,3 +392,12 @@ Se corrigió la validación de `next` en login y registro de clientes: ahora usa
 `url_has_allowed_host_and_scheme` de Django y rechaza variantes con backslash o
 hosts externos que pueden convertirse en open redirects. Se agregaron pruebas de
 regresión para login y registro; no se modificaron modelos ni migraciones.
+
+## Accesibilidad y responsive móvil (2026-10-08)
+
+En implementación en `feature/accessibility-mobile-hardening-20261008`: se agregó
+salto al contenido, foco visible consistente, soporte de `prefers-reduced-motion`,
+semántica ARIA para navegación y pasos del checkout, y cierre del menú móvil con
+Escape y retorno de foco. Se ajustó el panel para viewport estrecho (incluido
+360px) sin cambiar rutas, permisos, CSRF ni reglas de negocio; no se agregaron
+modelos, migraciones, dependencias remotas ni se ejecutaron migraciones persistentes.

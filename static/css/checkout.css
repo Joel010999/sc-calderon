@@ -435,6 +435,11 @@
   pointer-events: none;
 }
 
+.seat-card:has(input:focus-visible) {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .seat-card.is-available:hover {
   border-color: var(--navy);
   background: #f8fafc;
@@ -490,7 +495,7 @@
 
 .badge-cama {
   background: rgba(201, 45, 45, 0.12);
-  color: var(--primary);
+  color: #a32222;
 }
 
 .badge-semicama {

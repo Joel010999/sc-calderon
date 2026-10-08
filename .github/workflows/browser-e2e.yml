@@ -39,6 +39,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Preparar base temporal y escenario demo
         run: |
+          rm -f e2e.sqlite3
           python manage.py check
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput

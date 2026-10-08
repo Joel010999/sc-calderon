@@ -218,3 +218,7 @@ ajustes solo están disponibles para Administradores, exigen motivo y no cambian
 pagos, reservas, pasajes ni fulfillment. El panel es personalizado y todas las
 acciones mutables usan POST+CSRF. SQLite se mantiene para desarrollo y tests,
 sin presentarse como garantía de concurrencia equivalente a PostgreSQL.
+
+## Accesibilidad y responsive (2026-10-08)
+
+Las plantillas públicas, de clientes y del panel mantienen landmarks, salto al contenido, foco visible, navegación de menú con teclado y `prefers-reduced-motion`. El mapa de butacas conserva controles checkbox nativos operables por teclado con etiquetas accesibles para disponibilidad, ocupación y tarifa; el CSS usa `focus-visible` sin cambiar la lógica comercial. Las auditorías axe-core y Playwright se ejecutan sobre Chromium a 360px y escritorio; sus artefactos solo se publican ante fallos. No se agregan dependencias frontend remotas de ejecución ni migraciones.

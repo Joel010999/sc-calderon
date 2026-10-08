@@ -10,8 +10,9 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body>
+    <a class="skip-link" href="#panel-main-content">Saltar al contenido principal</a>
     {% if request.user.is_authenticated %}
-    <nav class="panel-nav">
+    <nav class="panel-nav" aria-label="Barra de usuario">
         <div class="nav-container">
             <div class="nav-brand">
                 <span>SC Viajes</span>
@@ -68,7 +69,7 @@
         <div class="panel-main-area">
     {% endif %}
 
-            <main>
+            <main id="panel-main-content" tabindex="-1">
                 {% if messages %}
                     <div class="alert-container">
                         {% for message in messages %}
