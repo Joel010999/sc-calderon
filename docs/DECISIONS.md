@@ -359,6 +359,13 @@ Los campos privados excluidos son descripciones, IDs internos, contactos, docume
 - Caja diaria, devoluciones, saldos a favor, comisiones, impuestos, Mercado Pago,
   Payway y conciliación bancaria siguen fuera de alcance.
 
+Se agrega reporte diario informativo con fecha operativa argentina, filtros server-side,
+detalle paginado y CSV BOM neutralizado. Los vendedores sólo consultan sus cajas;
+Administradores y superusuarios pueden consultar todas. La revisión administrativa
+de un cierre es idempotente y persiste actor, fecha y observación en `CashSession`;
+la migración `cash_register.0004` es necesaria para conservar ese estado y no se
+aplica a bases reales.
+
 ## Accesibilidad y responsive (2026-10-08)
 
 Se adopta `@axe-core/playwright` como dependencia de desarrollo para detectar regresiones WCAG en páginas representativas. Las excepciones no se silencian: cualquier violación del análisis axe hace fallar la prueba y las correcciones de contraste, landmarks, headings y mapa de butacas se mantienen en CSS/HTML local. La base E2E se elimina y recrea antes de migrar y sembrar el escenario sintético; no se usan datos reales ni se relajan permisos, CSRF o reglas comerciales.

@@ -1,0 +1,15 @@
+{% extends 'panel/base.html' %}
+{% block content %}
+<div class="container">
+  <h1>Detalle de caja</h1>
+  <p>Vendedor #{{ session.opened_by_id }} · Estado: {{ session.get_status_display }}</p>
+  <p>Apertura: {{ session.opened_at|date:'d/m/Y H:i' }} · Cierre: {{ session.closed_at|date:'d/m/Y H:i'|default_if_none:'—' }}</p>
+  <p>Total esperado: {{ session.expected_amount|default_if_none:'—' }} · Importe contado: {{ session.closing_amount|default_if_none:'—' }} · Diferencia: {{ session.difference|default_if_none:'—' }}</p>
+  {% if is_admin and session.status == 'CLOSED' and not session.reviewed_at %}
+    <form method="post" action="{% url 'panel:cash_report_review' session.pk %}">
+      {% csrf_token %}<label for="review-note">Observación de revisión</label><textarea id="review-note" name="note" maxlength="255"></textarea><button type="submit">Revisar cierre</button>
+    </form>
+  {% elif session.reviewed_at %}<p role="status">Cierre revisado el {{ session.reviewed_at|date:'d/m/Y H:i' }} por Administrador.</p>{% endif %}
+  <div class="table-scroll"><table><caption>Movimientos inmutables</caption><thead><tr><th>Fecha</th><th>Tipo</th><th>Importe</th><th>Referencia</th></tr></thead><tbody>{% for movement in page.object_list %}<tr><td>{{ movement.created_at|date:'d/m/Y H:i' }}</td><td>{{ movement.get_kind_display }}</td><td>{{ movement.amount }}</td><td>{{ movement.reference|default:'—' }}</td></tr>{% empty %}<tr><td colspan="4">No hay movimientos.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

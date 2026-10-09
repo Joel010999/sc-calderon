@@ -19,6 +19,9 @@ class CashSession(models.Model):
     closing_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal("0.00"))])
     expected_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal("0.00"))])
     closing_note = models.CharField(max_length=255, blank=True, default="")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="cash_sessions_reviewed")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.CharField(max_length=255, blank=True, default="")
     class Meta:
         ordering = ["-opened_at", "-pk"]
         constraints = [

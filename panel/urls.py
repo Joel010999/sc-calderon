@@ -13,6 +13,7 @@ from . import notification_views as notifications
 from . import customer_views as customers
 from . import audit_views as audit
 from . import cash_views as cash
+from . import cash_report_views as cash_reports
 from . import staff_views as staff
 
 app_name = 'panel'
@@ -38,6 +39,10 @@ urlpatterns = [
     path('caja/abrir/', cash.cash_open, name='cash_open'),
     path('caja/cerrar/', cash.cash_close, name='cash_close'),
     path('caja/ajuste/', cash.cash_adjustment, name='cash_adjustment'),
+    path('reportes/caja/', cash_reports.cash_report, name='cash_report'),
+    path('reportes/caja.csv', cash_reports.cash_report_csv, name='cash_report_csv'),
+    path('reportes/caja/<int:session_pk>/', cash_reports.cash_report_detail, name='cash_report_detail'),
+    path('reportes/caja/<int:session_pk>/revisar/', cash_reports.cash_report_review, name='cash_report_review'),
     path('fulfillment/', fulfillment.fulfillment_list, name='fulfillment_list'),
     path('fulfillment/reconciliar/', fulfillment.fulfillment_reconcile, name='fulfillment_reconcile'),
     path('reportes/ventas/', reports.sales_report, name='sales_report'),
