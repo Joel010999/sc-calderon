@@ -7,6 +7,6 @@ django-storages[s3]==1.14.6
 dj-database-url==3.1.2
 reportlab==5.0.1
 qrcode==8.2
-pillow==12.1.1
-PyJWT[crypto]==2.10.1
+pillow==12.3.0
+PyJWT[crypto]==2.15.0
 pypdf==6.19.0

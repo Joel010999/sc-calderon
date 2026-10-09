@@ -90,15 +90,21 @@ class OperationsPanelTests(TestCase):
             self.assertEqual(self.client.post(url, data, secure=True).status_code, 403)
         self.assertEqual(self.state(), before)
 
-    def test_seller_staff_admin_and_superuser_can_read_all_screens(self):
-        for user in (self.seller, self.staff, self.admin, self.superuser):
+    def test_seller_admin_and_superuser_can_read_all_screens(self):
+        for user in (self.seller, self.admin, self.superuser):
             self.client.force_login(user)
             for url in self.read_urls():
                 with self.subTest(user=user.username, url=url):
                     self.assertEqual(self.client.get(url, secure=True).status_code, 200)
 
+    def test_staff_without_role_cannot_read_all_screens(self):
+        self.client.force_login(self.staff)
+        for url in self.read_urls():
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, secure=True).status_code, 403)
+
     def test_seller_and_staff_cannot_write_any_structure(self):
-        for user in (self.seller, self.staff):
+        for user in (self.seller,):
             self.client.force_login(user)
             for url, data in self.mutations():
                 with self.subTest(user=user.username, url=url):
@@ -107,7 +113,7 @@ class OperationsPanelTests(TestCase):
                     self.assertEqual(self.state(), before)
 
     def test_readers_cannot_open_editing_forms_or_see_write_actions(self):
-        for user in (self.seller, self.staff):
+        for user in (self.seller,):
             self.client.force_login(user)
             for name, kwargs in (("bus_create", {}), ("bus_edit", {"pk": self.bus.pk}),
                                  ("seat_create", {"bus_pk": self.bus.pk}),

@@ -483,6 +483,33 @@ def google_login(request):
     return redirect("login_cliente")
 
 
+def _verify_google_id_token(id_token):
+    """Valida el JWT de Google sin persistir tokens ni respuestas del proveedor."""
+    import jwt
+
+    header = jwt.get_unverified_header(id_token)
+    if header.get("alg") != "RS256" or not header.get("kid"):
+        raise ValueError("algoritmo o clave Google inválidos")
+    request = urllib.request.Request("https://www.googleapis.com/oauth2/v3/certs")
+    with urllib.request.urlopen(request, timeout=10) as response:
+        keys = json.loads(response.read().decode("utf-8")).get("keys", [])
+    key_data = next((item for item in keys if item.get("kid") == header["kid"]), None)
+    if not key_data:
+        raise ValueError("clave Google desconocida")
+    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key_data))
+    claims = jwt.decode(
+        id_token,
+        public_key,
+        algorithms=["RS256"],
+        audience=settings.GOOGLE_OAUTH_CLIENT_ID,
+        issuer=["https://accounts.google.com", "accounts.google.com"],
+        options={"require": ["exp", "iat", "iss", "aud", "sub", "email", "email_verified"]},
+    )
+    if claims.get("email_verified") is not True:
+        raise ValueError("correo Google no verificado")
+    return claims
+
+
 def google_callback(request):
     """Callback seguro para Google OAuth con protección CSRF por state y soporte de simulación segura."""
     state = request.GET.get("state", "")
@@ -500,20 +527,22 @@ def google_callback(request):
         messages.error(request, f"Error al autenticar con Google: {error}")
         return redirect("login_cliente")
 
-    email = None
-    google_sub = ""
-    first_name = ""
-    last_name = ""
+    claims = None
 
     # Caso 1: Callback simulado seguro (para entornos de prueba / desarrollo)
     is_simulation_allowed = getattr(settings, "GOOGLE_OAUTH_SIMULATION_ENABLED", False) or getattr(settings, "DEBUG", False)
     if is_simulation_allowed and code.startswith("simulated:"):
         parts = code.split(":")
         if len(parts) >= 3:
-            email = parts[1].strip()
-            google_sub = parts[2].strip()
-            first_name = "Usuario"
-            last_name = "Google"
+            claims = {
+                "iss": "https://accounts.google.com",
+                "aud": getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", "simulation-client"),
+                "sub": parts[2].strip(),
+                "email": parts[1].strip(),
+                "email_verified": True,
+                "given_name": "Usuario",
+                "family_name": "Google",
+            }
 
     # Caso 2: Google OAuth real mediante credenciales configuradas en entorno
     elif getattr(settings, "GOOGLE_OAUTH_ENABLED", False):
@@ -533,20 +562,9 @@ def google_callback(request):
                 tokens = json.loads(resp.read().decode("utf-8"))
 
             id_token = tokens.get("id_token")
-            access_token = tokens.get("access_token")
-
-            userinfo_url = "https://www.googleapis.com/oauth2/v3/userinfo"
-            req_info = urllib.request.Request(
-                userinfo_url,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            with urllib.request.urlopen(req_info, timeout=10) as resp:
-                info = json.loads(resp.read().decode("utf-8"))
-
-            email = info.get("email")
-            google_sub = info.get("sub", "")
-            first_name = info.get("given_name", "")
-            last_name = info.get("family_name", "")
+            if not id_token:
+                raise ValueError("respuesta OAuth sin id_token")
+            claims = _verify_google_id_token(id_token)
         except Exception:
             logger.exception("Error al intercambiar token con Google")
             messages.error(request, "No pudimos verificar tus datos con Google. Por favor intentá nuevamente.")
@@ -555,19 +573,28 @@ def google_callback(request):
         messages.error(request, "El inicio de sesión con Google no está disponible.")
         return redirect("login_cliente")
 
-    if not email:
-        messages.error(request, "No se pudo obtener una dirección de correo de Google.")
+    email = normalize_email((claims or {}).get("email", ""))
+    google_sub = str((claims or {}).get("sub", "")).strip()
+    first_name = str((claims or {}).get("given_name", "")).strip()[:150]
+    last_name = str((claims or {}).get("family_name", "")).strip()[:150]
+    if not google_sub or not email or (claims or {}).get("email_verified") is not True:
+        messages.error(request, "No pudimos verificar tus datos con Google. Por favor intentá nuevamente.")
         return redirect("login_cliente")
 
-    normalized = normalize_email(email)
+    normalized = email
     User = get_user_model()
 
-    # Buscar usuario existente o crearlo
-    user = User.objects.filter(email__iexact=normalized, customer_profile__isnull=False, is_staff=False, is_superuser=False).first()
-    if user and (user.is_staff or user.is_superuser or not getattr(user, "customer_profile", None)):
-        messages.error(request, "Esta cuenta no puede usarse como cuenta de cliente.")
+    # La identidad verificable es google_sub; nunca se vincula una cuenta sólo por email.
+    customer = Customer.objects.select_related("user").filter(google_sub=google_sub).first()
+    if customer:
+        user = customer.user
+        if user.is_staff or user.is_superuser or not user.is_active:
+            messages.error(request, "No pudimos iniciar sesión con Google. Por favor intentá nuevamente.")
+            return redirect("login_cliente")
+    elif Customer.objects.filter(normalized_email=normalized).exists() or User.objects.filter(email__iexact=normalized).exists():
+        messages.error(request, "No pudimos iniciar sesión con Google. Usá el método con el que creaste tu cuenta.")
         return redirect("login_cliente")
-    if not user:
+    else:
         username = normalized[:150]
         if User.objects.filter(username=username).exists():
             username = f"{normalized[:140]}_{secrets.token_hex(4)}"
@@ -582,18 +609,9 @@ def google_callback(request):
         )
         user.set_unusable_password()
         user.save()
-
-    customer, _ = Customer.objects.get_or_create(
-        user=user,
-        defaults={
-            "email": normalized,
-            "normalized_email": normalized,
-            "google_sub": google_sub,
-        },
-    )
-    if google_sub and not customer.google_sub:
-        customer.google_sub = google_sub
-        customer.save(update_fields=["google_sub"])
+        customer = Customer.objects.create(
+            user=user, email=normalized, normalized_email=normalized, google_sub=google_sub
+        )
 
     login(request, user, backend="customers.backends.EmailAuthBackend")
 
@@ -699,7 +717,8 @@ def apple_callback(request):
     else:
         # No se vincula por email: un correo existente no revela si la cuenta existe.
         if not email:
-            raise ValueError("Apple no entregó un correo para una identidad nueva")
+            messages.error(request, "Apple no compartió un correo para crear tu cuenta. Iniciá sesión con el método que usaste al registrarte o volvé a intentarlo.")
+            return redirect("login_cliente")
         if Customer.objects.filter(normalized_email=email).exists() or User.objects.filter(email__iexact=email).exists():
             messages.error(request, "No se pudo iniciar sesión con Apple. Usá el método con el que creaste tu cuenta.")
             return redirect("login_cliente")
