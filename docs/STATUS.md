@@ -72,7 +72,7 @@ Estado: implementada, integrada con el ciclo de vida de viajes, validada y publi
 
 - Resumen operativo con conteos reales de recorridos, colectivos y butacas activos. Los conteos de cama y semicama incluyen solo butacas activas, según su propio estado.
 - Recorridos y paradas visibles en modo lectura, con orden y permisos de subida y bajada. Las vistas no cargan datos iniciales automáticamente.
-- Colectivos y butacas administrables por superusuarios y miembros de `Administrador`. Vendedores y usuarios `is_staff` sin ese grupo tienen acceso de consulta. Ver [política inicial](DECISIONS.md#permisos-iniciales-del-panel-de-configuración-operativa).
+- Colectivos y butacas administrables por superusuarios y miembros de `Administrador`. Vendedores acceden sólo a las pantallas y acciones explícitamente permitidas; usuarios `is_staff` sin rol no ingresan al panel. Ver [política inicial](DECISIONS.md#permisos-iniciales-del-panel-de-configuración-operativa).
 - Formularios con campos explícitos; el colectivo de una butaca se obtiene de la URL y no puede cambiarse desde el formulario. Activación y desactivación mediante POST con CSRF, sin eliminación física.
 - Mapa de butacas por planta construido con CSS Grid a partir de posiciones almacenadas. Interfaz responsive con CSS local, navegación, estados vacíos y errores accesibles.
 - Auditoría `panel.AuditEvent` implementada con actor, acción, entidad, descripción, datos anteriores y posteriores y fecha. Los cambios y su auditoría se guardan en una única transacción explícita, sin signals. Si falla la auditoría, se revierte el cambio. No hay interfaz para editar ni eliminar eventos.
@@ -446,3 +446,13 @@ listado paginado y filtros, acciones POST+CSRF, proteccion de superusuarios y de
 Administrador activo, revocacion de sesiones y auditoria sanitizada. Se agrego la
 migracion `panel.0002_staffinvitation`; no se ejecutaron migraciones persistentes ni
 se enviaron correos reales.
+
+## Endurecimiento de identidad y acceso (2026-10-09)
+
+Google OAuth resuelve primero por `google_sub` nullable/unique, migra valores vacios a
+NULL y exige issuer, audience, subject, email y `email_verified` del ID token; no vincula
+por email existente ni persiste tokens. Apple devuelve un error recuperable cuando una
+identidad nueva no comparte email, sin crear cuenta. El panel excluye a `is_staff` sin
+grupo autorizado, `TicketEmailAttempt` conserva una representacion sanitizada y se
+actualizaron dependencias de PyJWT/Pillow y pruebas; la migracion solo se aplico en una
+base SQLite temporal.

@@ -53,7 +53,7 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 
 - Un superusuario o un usuario del grupo `Administrador` puede consultar, crear, editar, activar y desactivar colectivos y butacas.
 - El grupo `Vendedor` puede consultar recorridos, colectivos y butacas, sin modificar estructura operativa.
-- Un usuario `is_staff` sin grupo `Administrador` puede ingresar y consultar, pero no modificar estructura operativa, salvo que sea superusuario.
+- Un usuario `is_staff` sin grupo `Administrador` o `Vendedor` no puede ingresar al panel, salvo que sea superusuario.
 - Un usuario común no tiene acceso al panel. Un usuario anónimo es redirigido al login.
 - Los permisos se verifican en el servidor, en las vistas y en los servicios de escritura. Ocultar acciones en la interfaz no reemplaza esas validaciones.
 - Los recorridos y paradas son de solo lectura en esta etapa, incluso para administradores.
@@ -62,7 +62,7 @@ La arquitectura acordada y los límites de los módulos están en [ARCHITECTURE.
 
 ### Viajes programados, horarios y tarifas en el panel
 
-- Superusuarios y miembros de `Administrador` pueden crear viajes y gestionar tarifas. Vendedores y usuarios `is_staff` sin ese grupo solo consultan, salvo que sean superusuarios. Se mantienen las restricciones para usuarios comunes y anónimos.
+- Superusuarios y miembros de `Administrador` pueden crear viajes y gestionar tarifas. Vendedores pueden consultar y operar según sus permisos explícitos; usuarios `is_staff` sin rol no ingresan al panel.
 - La creación utiliza dos pasos: selección de recorrido y colectivo, y carga de horarios con revisión visual antes de confirmar. El recorrido y el colectivo deben estar activos; el colectivo debe tener al menos una butaca activa.
 - El panel trabaja en horario argentino y convierte las entradas locales a fechas conscientes de zona horaria. La primera salida debe estar en el futuro; esta restricción pertenece al panel, no al servicio de dominio, para no impedir una futura importación histórica.
 - El mismo colectivo no puede tener viajes superpuestos. El intervalo se obtiene de la primera y última parada de cada viaje. Solo los viajes `CANCELLED` dejan de bloquear el colectivo.

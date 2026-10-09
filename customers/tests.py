@@ -22,6 +22,8 @@ import hashlib
 import json
 import time
 
+from unittest.mock import patch
+
 
 from decimal import Decimal
 
@@ -1638,6 +1640,78 @@ class GoogleOAuthConfigurationAndSimulationTests(BaseCustomerTestCase):
             self.assertFalse(customer.user.is_staff)
 
 
+    def test_google_does_not_link_existing_email(self):
+        register_customer(email="existente@ejemplo.invalid", password="StrongPassword123!")
+        with self.settings(GOOGLE_OAUTH_SIMULATION_ENABLED=True):
+            self.client.get(reverse("google_login"))
+            response = self.client.get(reverse("google_callback"), {
+                "state": self.client.session["google_oauth_state"],
+                "code": "simulated:existente@ejemplo.invalid:nuevo-sub",
+            })
+        self.assertRedirects(response, reverse("login_cliente"))
+        self.assertFalse(Customer.objects.filter(google_sub="nuevo-sub").exists())
+
+    def test_google_sub_login_is_idempotent(self):
+        with self.settings(GOOGLE_OAUTH_SIMULATION_ENABLED=True):
+            for _ in range(2):
+                self.client.get(reverse("google_login"))
+                response = self.client.get(reverse("google_callback"), {
+                    "state": self.client.session["google_oauth_state"],
+                    "code": "simulated:repetido@ejemplo.invalid:stable-sub",
+                })
+                self.assertRedirects(response, reverse("mis_viajes"))
+        self.assertEqual(Customer.objects.filter(google_sub="stable-sub").count(), 1)
+
+    def _google_callback_with_claims(self, claims):
+        with self.settings(GOOGLE_OAUTH_ENABLED=True, GOOGLE_OAUTH_SIMULATION_ENABLED=False, DEBUG=False):
+            self.client.get(reverse("google_login"))
+            state = self.client.session["google_oauth_state"]
+            with patch("customers.views._verify_google_id_token", return_value=claims):
+                return self.client.get(reverse("google_callback"), {"state": state, "code": "provider-code"})
+
+    def test_google_resolves_existing_identity_by_sub_only(self):
+        customer = register_customer(email="sub-owner@ejemplo.invalid", password="StrongPassword123!")
+        customer.google_sub = "stable-google-sub"
+        customer.save(update_fields=["google_sub"])
+        with self.settings(GOOGLE_OAUTH_SIMULATION_ENABLED=True):
+            self.client.get(reverse("google_login"))
+            response = self.client.get(reverse("google_callback"), {
+                "state": self.client.session["google_oauth_state"],
+                "code": "simulated:different@ejemplo.invalid:stable-google-sub",
+            })
+        self.assertRedirects(response, reverse("mis_viajes"))
+        self.assertEqual(self.client.session["_auth_user_id"], str(customer.user.pk))
+
+    def test_google_rejects_unverified_or_different_sub_with_same_email(self):
+        register_customer(email="same@ejemplo.invalid", password="StrongPassword123!")
+        response = self._google_callback_with_claims({
+            "iss": "https://accounts.google.com", "aud": "client", "sub": "unlinked-sub",
+            "email": "same@ejemplo.invalid", "email_verified": True,
+        })
+        self.assertRedirects(response, reverse("login_cliente"))
+        self.assertFalse(Customer.objects.filter(google_sub="unlinked-sub").exists())
+
+        response = self._google_callback_with_claims({
+            "iss": "https://accounts.google.com", "aud": "client", "sub": "unverified-sub",
+            "email": "new@ejemplo.invalid", "email_verified": False,
+        })
+        self.assertRedirects(response, reverse("login_cliente"))
+        self.assertFalse(Customer.objects.filter(google_sub="unverified-sub").exists())
+
+    def test_google_callback_state_is_single_use(self):
+        with self.settings(GOOGLE_OAUTH_SIMULATION_ENABLED=True):
+            self.client.get(reverse("google_login"))
+            state = self.client.session["google_oauth_state"]
+            first = self.client.get(reverse("google_callback"), {
+                "state": state, "code": "simulated:once@ejemplo.invalid:once-sub",
+            })
+            second = self.client.get(reverse("google_callback"), {
+                "state": state, "code": "simulated:once@ejemplo.invalid:once-sub",
+            })
+        self.assertRedirects(first, reverse("mis_viajes"))
+        self.assertEqual(second.status_code, 400)
+
+
 class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
     """Apple OIDC se prueba sin credenciales ni llamadas al proveedor."""
 
@@ -1663,6 +1737,16 @@ class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
             response = self.client.post(reverse("apple_callback"), {"state": self.client.session["apple_oidc_state"], "code": "simulated:sub-2:existente@ejemplo.invalid"})
             self.assertRedirects(response, reverse("login_cliente"))
             self.assertFalse(Customer.objects.filter(apple_sub="sub-2").exists())
+
+    def test_apple_missing_email_is_recoverable_without_creating_account(self):
+        with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):
+            self.client.get(reverse("apple_login"))
+            response = self.client.post(reverse("apple_callback"), {
+                "state": self.client.session["apple_oidc_state"],
+                "code": "simulated:no-email-sub:",
+            })
+        self.assertRedirects(response, reverse("login_cliente"))
+        self.assertFalse(Customer.objects.filter(apple_sub="no-email-sub").exists())
 
     def test_apple_state_expires_and_button_is_hidden_when_disabled(self):
         login_page = self.client.get(reverse("login_cliente"))

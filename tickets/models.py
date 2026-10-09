@@ -255,10 +255,6 @@ class TicketEmailAttempt(models.Model):
         ]
 
     def __str__(self):
-        return f"Envío {self.booking.public_id} · {self.get_status_display()} ({self.recipient_email})"
-
-
-    def __str__(self):
         return f"Envío {self.booking.public_id} · {self.get_status_display()}"
 
 

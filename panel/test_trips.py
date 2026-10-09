@@ -404,7 +404,7 @@ class TripPermissionTests(TripDataMixin, TestCase):
             (self.url("trip_complete", trip_pk=self.trip.pk), {}),
         ]
 
-    def test_seller_and_staff_can_read_but_all_writes_are_forbidden(self):
+    def test_seller_can_read_but_all_writes_are_forbidden(self):
         self.client.force_login(self.seller)
         for url in self.read_urls():
             self.assertEqual(self.client.get(url, secure=True).status_code, 200)
@@ -412,7 +412,7 @@ class TripPermissionTests(TripDataMixin, TestCase):
 
         self.client.force_login(self.staff)
         for url in self.read_urls():
-            self.assertEqual(self.client.get(url, secure=True).status_code, 200)
+            self.assertEqual(self.client.get(url, secure=True).status_code, 403)
         self.assertEqual(self.client.get(self.url("trip_start_confirm", trip_pk=self.trip.pk), secure=True).status_code, 403)
         before = self.database_state()
         for url, data in self.writes():
