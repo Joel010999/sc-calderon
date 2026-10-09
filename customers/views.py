@@ -183,12 +183,12 @@ def customer_login(request):
             return render(request, "customers/login.html", {"email": email_or_username, "next": next_url, "apple_login_enabled": _apple_login_enabled()})
 
         if not user.is_active or user.is_staff or user.is_superuser:
-            messages.error(request, "No se pudo iniciar sesi?n como cliente con esas credenciales.")
+            messages.error(request, "No se pudo iniciar sesión como cliente con esas credenciales.")
             return render(request, "customers/login.html", {"email": email_or_username, "next": next_url, "apple_login_enabled": _apple_login_enabled()})
 
         customer = get_customer_for_user(user)
         if not customer:
-            messages.error(request, "No se pudo iniciar sesi?n como cliente con esas credenciales.")
+            messages.error(request, "No se pudo iniciar sesión como cliente con esas credenciales.")
             return render(request, "customers/login.html", {"email": email_or_username, "next": next_url, "apple_login_enabled": _apple_login_enabled()})
 
         login(request, user, backend="customers.backends.EmailAuthBackend")
@@ -228,7 +228,7 @@ def mis_viajes(request):
     """Panel privado de viajes del cliente."""
     customer = get_customer_for_user(request.user)
     if not customer or request.user.is_staff or request.user.is_superuser:
-        return HttpResponseForbidden("Esta secci?n es exclusiva para cuentas de clientes.")
+        return HttpResponseForbidden("Esta sección es exclusiva para cuentas de clientes.")
 
     # Obtener reservas del cliente ordenadas cronológicamente
     customer_bookings = (
@@ -375,14 +375,14 @@ def customer_password_reset(request):
                     reverse("password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
                 )
 
-                subject = "Restablecer tu contraseña — Éxodo Viajes"
+                subject = "Restablecer tu contraseña — SC Viajes"
                 body = (
                     f"Hola {user.first_name or 'pasajero'},\n\n"
-                    f"Recibimos una solicitud para restablecer tu contraseña en Éxodo Viajes.\n"
+                    f"Recibimos una solicitud para restablecer tu contraseña en SC Viajes.\n"
                     f"Podés generar una nueva contraseña ingresando al siguiente enlace:\n\n"
                     f"{reset_url}\n\n"
                     f"Este enlace es válido por tiempo limitado. Si vos no solicitaste este cambio, podés ignorar este correo.\n\n"
-                    f"Saludos,\nEquipo de Éxodo Viajes"
+                    f"Saludos,\nEquipo de SC Viajes"
                 )
                 try:
                     send_mail(

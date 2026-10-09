@@ -4,6 +4,7 @@ import hashlib
 import secrets
 import uuid
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -34,6 +35,7 @@ from .models import (
 )
 from .rendering import TicketData, build_ticket_pdf
 from .storage import get_ticket_storage
+from core.site_config import public_url
 
 
 def generate_ticket_code(booking: Booking, leg, passenger) -> str:
@@ -51,12 +53,11 @@ def build_verification_url(raw_verification_token: str) -> str:
 
     Utiliza exclusivamente la configuración del servidor, nunca cabeceras Host de la petición.
     """
-    base_url = getattr(
-        settings,
-        "TICKETS_VERIFICATION_BASE_URL",
-        getattr(settings, "SITE_URL", "https://scviajes.com.ar"),
-    ).rstrip("/")
-    return f"{base_url}/tickets/verify/?token={raw_verification_token}"
+    configured = str(getattr(settings, "TICKETS_VERIFICATION_BASE_URL", "")).strip().rstrip("/")
+    parsed = urlparse(configured)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        configured = public_url("").rstrip("/")
+    return f"{configured}/tickets/verify/?token={raw_verification_token}"
 
 
 def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
@@ -494,7 +495,18 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
 
 
 def reconcile_confirmed_fulfillments(limit=None):
-    """Recupera trabajos pendientes/fallidos de reservas confirmadas."""
+    """Recupera trabajos pendientes/fallidos de reservas confirmadas.
+
+    También crea el trabajo durable cuando una confirmación anterior quedó sin
+    callback ``on_commit`` (por ejemplo, tras una caída del proceso web).
+    """
+    missing = Booking.objects.filter(
+        status=BookingStatus.CONFIRMED, ticket_fulfillment__isnull=True
+    ).order_by("confirmed_at", "pk")
+    if limit:
+        missing = missing[:limit]
+    for booking in missing:
+        enqueue_booking_fulfillment(booking)
     qs = TicketFulfillment.objects.filter(booking__status=BookingStatus.CONFIRMED).filter(
         models.Q(issue_status__in=[FulfillmentIssueStatus.PENDING, FulfillmentIssueStatus.FAILED])
         | models.Q(email_status__in=[FulfillmentEmailStatus.PENDING, FulfillmentEmailStatus.FAILED])

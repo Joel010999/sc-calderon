@@ -26,6 +26,11 @@ jobs:
       PROTECTED_MEDIA_ROOT: ${{ github.workspace }}/.e2e-protected-media
       TICKETS_STORAGE_ROOT: ${{ github.workspace }}/.e2e-tickets
       PRIVATE_STORAGE_BACKEND: filesystem
+      BANK_TRANSFER_ACCOUNT_HOLDER: SC Viajes E2E
+      BANK_TRANSFER_ALIAS: scviajes.mp
+      BANK_TRANSFER_CVU: 0001234567890123456789
+      BANK_TRANSFER_CUIT: 20-12345678-6
+      BANK_TRANSFER_ENTITY: Mercado Pago (test)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

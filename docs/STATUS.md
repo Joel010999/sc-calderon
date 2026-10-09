@@ -1,5 +1,14 @@
 # Estado de SC Viajes
 
+## Configuración productiva y contenido (2026-10-09)
+
+Implementado en `feature/production-config-content-hardening-20261009`: URL
+pública HTTPS canónica para invitaciones y pasajes, configuración bancaria por
+entorno sin datos ficticios, branding SC Viajes configurable, higiene de
+fulfillment ante reservas confirmadas sin trabajo y actualización de Playwright.
+No se modificaron identidad OAuth, permisos ni modelos; no se ejecutaron
+migraciones contra bases persistentes.
+
 ## Worker persistente de mantenimiento (2026-10-06)
 
 Implementado `run_maintenance_worker`, proceso separado de `web` en `Procfile`.
@@ -415,6 +424,21 @@ Escape y retorno de foco. Se ajustó el panel para viewport estrecho (incluido
 360px) sin cambiar rutas, permisos, CSRF ni reglas de negocio; no se agregaron
 modelos, migraciones, dependencias remotas ni se ejecutaron migraciones persistentes.
 ## Gestion de usuarios internos (2026-10-08)
+
+## Estado consolidado de produccion y contenido (2026-10-09)
+
+Implementado en esta rama: configuracion bancaria por entorno con validacion de
+placeholders y formatos; bloqueo seguro del inicio de transferencias; `PUBLIC_BASE_URL`
+HTTPS para invitaciones; branding SC Viajes; ocultamiento de contacto no configurado;
+limpieza de textos corruptos; frontend local sin dependencias remotas; Playwright
+actualizado; y reporte sanitizado de fallos de fulfillment.
+
+Pendiente de despliegue: configurar valores reales fuera del repositorio, verificar
+preflight con secretos administrados y completar los workflows PostgreSQL y Browser E2E.
+Bloqueado por decision comercial: datos bancarios reales, telefono/WhatsApp real,
+servicios a bordo no confirmados, AppSheet/Google Sheets, Flecha Bus, Mercado Pago QR,
+Payway y politicas comerciales aun no aprobadas. No se ejecutaron migraciones
+persistentes ni se accedio a proveedores reales.
 
 Implementada la base del panel personalizado para Administradores y Vendedores:
 invitaciones con token hash-only de un solo uso, contrasena validada, grupos exactos,

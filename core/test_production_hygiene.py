@@ -6,6 +6,10 @@ from django.test import SimpleTestCase
 
 
 MOJIBAKE_RE = re.compile(r"[\u00c3\u00c2\ufffd\u0192]|\u00e2(?:\u20ac|\u2020|\u2122|\u0153|\u201d|\u009d)")
+SUSPICIOUS_QUESTION_RE = re.compile(
+    r"\b(?:sesi|secci|venci|configuraci|invitaci|revisi|transferi|contrase|operaci|notificaci|paginaci|autorizaci|migraci|producci|expiraci|categor)\?",
+    re.IGNORECASE,
+)
 REMOTE_FRONTEND_RE = re.compile(
     r"""(?ix)
     <(?:script|link)\b[^>]+(?:src|href)\s*=\s*["']https?://
@@ -48,7 +52,7 @@ class ProductionHygieneTests(SimpleTestCase):
         for path in self._text_files():
             content = path.read_text(encoding="utf-8")
             has_literal_newlines = path.suffix.lower() in {".html", ".md"} and r"\n" in content
-            if MOJIBAKE_RE.search(content) or has_literal_newlines:
+            if MOJIBAKE_RE.search(content) or SUSPICIOUS_QUESTION_RE.search(content) or has_literal_newlines:
                 offenders.append(str(path.relative_to(settings.BASE_DIR)))
         self.assertEqual(offenders, [], f"Se encontraron secuencias de codificación: {offenders}")
 
@@ -61,6 +65,10 @@ class ProductionHygieneTests(SimpleTestCase):
             if REMOTE_FRONTEND_RE.search(content):
                 offenders.append(str(path.relative_to(settings.BASE_DIR)))
         self.assertEqual(offenders, [], f"Dependencias frontend remotas: {offenders}")
+
+    def test_suspicious_question_pattern_only_matches_corrupted_words(self):
+        self.assertTrue(SUSPICIOUS_QUESTION_RE.search("La sesi" + "?n expiró."))
+        self.assertIsNone(SUSPICIOUS_QUESTION_RE.search("¿Cómo funciona la reserva?"))
 
     def test_required_static_entrypoints_exist(self):
         required = [

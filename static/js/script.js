@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         destinationPoint: 'Terminal de Córdoba',
         price: 54900,
         availability: '8 asientos',
-        service: ['Wi-Fi', 'Starlink', 'Servicio directo'],
+        service: ['Servicio a bordo', 'Servicio directo'],
         note: 'Conectividad durante todo el viaje.'
       },
       {
@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
         destinationPoint: 'Terminal de Córdoba',
         price: 56800,
         availability: '4 asientos',
-        service: ['Wi-Fi', 'Starlink', 'Nocturno'],
+        service: ['Servicio a bordo', 'Nocturno'],
         note: 'Salida nocturna con llegada por la mañana.'
       },
       {
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
         destinationPoint: 'Terminal de Córdoba',
         price: 54900,
         availability: '12 asientos',
-        service: ['Wi-Fi', 'Starlink', 'Tarifa base'],
+        service: ['Servicio a bordo', 'Tarifa base'],
         note: 'Tarifa de referencia basada en material comercial.'
       }
     ],
@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
         destinationPoint: 'Casa de Turismo de Jujuy',
         price: 54900,
         availability: '9 asientos',
-        service: ['Wi-Fi', 'Starlink', 'Servicio directo'],
+        service: ['Servicio a bordo', 'Servicio directo'],
         note: 'Recorrido directo con conectividad a bordo.'
       },
       {
@@ -71,8 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
         destinationPoint: 'Casa de Turismo de Jujuy',
         price: 56200,
         availability: '6 asientos',
-        service: ['Wi-Fi', 'Starlink', 'Frecuencia habitual'],
-        note: 'Servicio regular con conectividad Starlink.'
+        service: ['Servicio a bordo', 'Frecuencia habitual'],
+        note: 'Servicio regular entre ambos destinos.'
       },
       {
         id: 'cj-3',
@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         destinationPoint: 'Casa de Turismo de Jujuy',
         price: 57600,
         availability: '3 asientos',
-        service: ['Wi-Fi', 'Starlink', 'Cupos limitados'],
+        service: ['Servicio a bordo', 'Cupos limitados'],
         note: 'Últimos lugares disponibles.'
       }
     ]
@@ -237,7 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       <div class="detail-note">
         <strong>Wi-Fi durante todo el viaje</strong>
-        <span>Conectividad mediante Starlink. Servicio directo entre ${state.origin} y ${state.destination}.</span>
+        <span>Servicio directo entre ${state.origin} y ${state.destination}.</span>
       </div>
     `;
   }
@@ -252,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const total = t.price * state.passengers;
 
     const msg = encodeURIComponent(
-      `Hola Éxodo, quiero continuar con mi reserva de ${routeLabel()} para el ${formatDate(t.date)} a nombre de ${state.customer.fullName}. Somos ${state.passengers} ${passengerWord(state.passengers)}.`
+      `Hola SC Viajes, quiero continuar con mi reserva de ${routeLabel()} para el ${formatDate(t.date)} a nombre de ${state.customer.fullName}. Somos ${state.passengers} ${passengerWord(state.passengers)}.`
     );
 
     confirmSummary.innerHTML = `
@@ -265,7 +265,8 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
 
     if (waLink) {
-      waLink.href = `https://wa.me/5490000000000?text=${msg}`;
+      const whatsappUrl = document.body.dataset.whatsappUrl;
+      if (whatsappUrl) waLink.href = `${whatsappUrl}${whatsappUrl.includes('?') ? '&' : '?'}text=${msg}`;
     }
   }
 

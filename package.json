@@ -1,9 +1,11 @@
 {
   "name": "scviajes-browser-e2e",
   "private": true,
-  "scripts": { "test:e2e": "playwright test" },
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@playwright/test": "1.55.0"
+    "@playwright/test": "1.64.0"
   }
 }

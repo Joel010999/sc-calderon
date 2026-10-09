@@ -368,6 +368,19 @@ aplica a bases reales.
 
 ## Accesibilidad y responsive (2026-10-08)
 
+## Configuracion productiva y contenido (2026-10-09)
+
+- Los datos bancarios no tienen valores por defecto operativos. La ausencia es valida
+  para desarrollo, pero bloquea el inicio de transferencias y produce FAIL en el
+  preflight productivo.
+- Los enlaces de invitacion requieren `PUBLIC_BASE_URL` HTTPS en produccion. No se
+  confia en cabeceras `Host` ni se imprimen tokens o valores bancarios completos en
+  logs.
+- El nombre publico vigente es SC Viajes. Telefonos, WhatsApp y servicios a bordo no
+  confirmados se ocultan si no tienen configuracion explicita.
+- La actualizacion de Playwright se limita a dependencias de desarrollo y no agrega
+  servicios remotos de ejecucion.
+
 Se adopta `@axe-core/playwright` como dependencia de desarrollo para detectar regresiones WCAG en páginas representativas. Las excepciones no se silencian: cualquier violación del análisis axe hace fallar la prueba y las correcciones de contraste, landmarks, headings y mapa de butacas se mantienen en CSS/HTML local. La base E2E se elimina y recrea antes de migrar y sembrar el escenario sintético; no se usan datos reales ni se relajan permisos, CSRF o reglas comerciales.
 ## Gestión de usuarios internos (2026-10-08)
 

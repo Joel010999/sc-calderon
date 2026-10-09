@@ -53,6 +53,7 @@ from payments.services import (
     initiate_public_transfer_payment,
     upload_public_transfer_voucher,
 )
+from core.site_config import bank_transfer_configured, bank_transfer_configuration
 
 logger = logging.getLogger(__name__)
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -878,6 +879,7 @@ def payment_pending(request, public_id):
         "remaining_seconds": remaining_seconds,
         "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ),
         "is_held": True,
+        "bank_transfer_configured": bank_transfer_configured(),
     })
 
 
@@ -902,6 +904,10 @@ def iniciar_transferencia(request, public_id):
         return redirect("pago_pendiente", public_id=public_id)
 
     booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+
+    if not bank_transfer_configured():
+        messages.error(request, "La transferencia bancaria no está configurada en este momento.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
 
     try:
         payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
@@ -985,12 +991,13 @@ def pantalla_transferencia(request, public_id):
         deadline_local = timezone.localtime(deadline, AR_TZ)
         remaining_seconds = max(0, int((deadline - now).total_seconds()))
 
+    config = bank_transfer_configuration()
     bank_config = {
-        "holder": getattr(settings, "BANK_TRANSFER_ACCOUNT_HOLDER", "SC Viajes S.R.L."),
-        "alias": getattr(settings, "BANK_TRANSFER_ALIAS", "scviajes.mp"),
-        "cvu": getattr(settings, "BANK_TRANSFER_CVU", "0000003100010000000000"),
-        "cuit": getattr(settings, "BANK_TRANSFER_CUIT", ""),
-        "entity": getattr(settings, "BANK_TRANSFER_ENTITY", "Mercado Pago"),
+        "holder": config["BANK_TRANSFER_ACCOUNT_HOLDER"],
+        "alias": config["BANK_TRANSFER_ALIAS"],
+        "cvu": config["BANK_TRANSFER_CVU"],
+        "cuit": config["BANK_TRANSFER_CUIT"],
+        "entity": config["BANK_TRANSFER_ENTITY"],
     }
 
     return render(request, "core/transfer_voucher.html", {

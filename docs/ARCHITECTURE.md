@@ -245,6 +245,19 @@ sin presentarse como garantía de concurrencia equivalente a PostgreSQL.
 
 ## Accesibilidad y responsive (2026-10-08)
 
+## Configuracion productiva y contenido (2026-10-09)
+
+La configuracion bancaria se obtiene exclusivamente de variables de entorno y se valida
+server-side antes de mostrar o iniciar una transferencia. En desarrollo puede faltar y
+la interfaz lo informa; en produccion el preflight falla ante ausencia, placeholders o
+formatos invalidos. `PUBLIC_BASE_URL` es la unica fuente para enlaces absolutos de
+invitaciones y verificaciones, siempre HTTPS y sin construir URLs desde `Host`.
+
+El branding publico usa `SC Viajes`; telefono y WhatsApp son opcionales y no tienen
+defaults reales. El prototipo HTML de la raiz no forma parte del runtime Django y fue
+retirado tras verificar que no existian referencias. El frontend servido permanece
+local, y el contenido no afirma servicios comerciales no confirmados.
+
 Las plantillas públicas, de clientes y del panel mantienen landmarks, salto al contenido, foco visible, navegación de menú con teclado y `prefers-reduced-motion`. El mapa de butacas conserva controles checkbox nativos operables por teclado con etiquetas accesibles para disponibilidad, ocupación y tarifa; el CSS usa `focus-visible` sin cambiar la lógica comercial. Las auditorías axe-core y Playwright se ejecutan sobre Chromium a 360px y escritorio; sus artefactos solo se publican ante fallos. No se agregan dependencias frontend remotas de ejecución ni migraciones.
 ## Gestión de usuarios internos
 

@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 from customers.models import Customer, normalize_email
 from .models import AuditEvent, StaffInvitation
+from core.site_config import public_url
 
 ROLES = ("Administrador", "Vendedor")
 
@@ -48,7 +49,8 @@ def invite_staff(*, actor, email, role):
     user.set_unusable_password()
     user.save(update_fields=["password"])
     _audit(actor, user, AuditEvent.Action.CREATE, {}, {"role": role, "active": False})
-    send_mail("Invitación al panel de SC Viajes", f"Establecé tu contraseña: /panel/invitacion/{raw}/", settings.DEFAULT_FROM_EMAIL, [normalized])
+    invitation_url = public_url(f"/panel/invitacion/{raw}/")
+    send_mail("Invitación al panel de SC Viajes", f"Establecé tu contraseña: {invitation_url}", settings.DEFAULT_FROM_EMAIL, [normalized])
     return invitation, raw
 
 @transaction.atomic

@@ -10,6 +10,7 @@ from django.core.management.color import no_style
 from django.core.validators import validate_email
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
+from core.site_config import validate_bank_transfer_configuration
 
 
 @dataclass(frozen=True)
@@ -125,9 +126,12 @@ def collect_preflight():
     local_dirs = [settings.MEDIA_ROOT, settings.PROTECTED_MEDIA_ROOT, settings.TICKETS_STORAGE_ROOT]
     unsafe_dirs = any(_inside_base(path) for path in local_dirs)
     results.append(_result("local_directories", "FAIL" if prod and unsafe_dirs else ("WARNING" if unsafe_dirs else "PASS"), "Los directorios sensibles están fuera del proyecto." if not unsafe_dirs else "Hay directorios sensibles dentro del proyecto."))
-    base_url = urlparse(getattr(settings, "TICKETS_VERIFICATION_BASE_URL", ""))
-    url_ok = base_url.scheme in {"http", "https"} and bool(base_url.netloc) and (not prod or base_url.scheme == "https")
+    base_url = urlparse(getattr(settings, "PUBLIC_BASE_URL", ""))
+    unsafe_host = (base_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"} or (base_url.hostname or "").endswith(".local")
+    url_ok = bool(base_url.netloc) and not base_url.username and not base_url.password and not unsafe_host and (base_url.scheme == "https" if prod else base_url.scheme in {"http", "https"})
     results.append(_result("required_variables", "PASS" if url_ok else "FAIL", "Las variables esenciales tienen valores consistentes." if url_ok else "Hay variables esenciales vacías o inconsistentes."))
+    bank_ok = not validate_bank_transfer_configuration()
+    results.append(_result("bank_transfer", "PASS" if bank_ok else ("WARNING" if not prod else "FAIL"), "La cuenta de transferencia está configurada." if bank_ok else "Faltan datos de transferencia bancaria."))
     from core.backup import backup_preflight
     for item in backup_preflight(probe_versions=prod)["results"]:
         # Backup readiness is part of the production preflight; development/tests
