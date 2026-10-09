@@ -68,10 +68,10 @@ class PanelTests(TestCase):
         response = self.client.get(reverse('panel:dashboard'), secure=True)
         self.assertEqual(response.status_code, 200)
 
-    def test_staff_can_access(self):
+    def test_staff_without_role_cannot_access(self):
         self.client.login(username='staff', password='password123')
         response = self.client.get(reverse('panel:dashboard'), secure=True)
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
 
     def test_superuser_can_access(self):
         self.client.login(username='super', password='password123')

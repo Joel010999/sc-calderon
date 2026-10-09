@@ -32,8 +32,9 @@ class Customer(models.Model):
     google_sub = models.CharField(
         "identificador de Google",
         max_length=255,
+        null=True,
         blank=True,
-        default="",
+        unique=True,
         db_index=True,
     )
     apple_sub = models.CharField(
