@@ -423,6 +423,14 @@ semántica ARIA para navegación y pasos del checkout, y cierre del menú móvil
 Escape y retorno de foco. Se ajustó el panel para viewport estrecho (incluido
 360px) sin cambiar rutas, permisos, CSRF ni reglas de negocio; no se agregaron
 modelos, migraciones, dependencias remotas ni se ejecutaron migraciones persistentes.
+## Protección distribuida contra abuso (2026-10-10)
+
+Implementada en este worktree: contadores hash-only por ventana para verificación
+de pasajes, creación de holds y comienzo de transferencias; límites configurables,
+atomicidad con locks de PostgreSQL, limpieza acotada en `run_operational_maintenance`
+y validación en `production_preflight`. Se agregó migración temporal `core.0003`;
+no se aplicó a bases persistentes.
+
 ## Gestion de usuarios internos (2026-10-08)
 
 ## Estado consolidado de produccion y contenido (2026-10-09)

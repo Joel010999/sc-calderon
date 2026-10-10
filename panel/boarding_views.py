@@ -1,8 +1,5 @@
-import hashlib
-
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
@@ -18,22 +15,14 @@ from tickets.models import BoardingRecord
 
 from .boarding_forms import BoardingReversalForm, BoardingValidationForm
 from .permissions import can_manage_operations, require_operations_manager, reservations_access
+from core.abuse import consume, request_identifier
 
 
 def _invalid_attempt_is_limited(request):
     """Aplica un límite defensivo por operador e IP sin persistir el QR ingresado."""
-    identity = f"{request.user.pk}:{request.META.get('REMOTE_ADDR', '127.0.0.1')}"
-    identity_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
-    key = f"panel_boarding_invalid_{identity_hash}"
-    limit = getattr(settings, "PANEL_BOARDING_INVALID_ATTEMPTS_PER_MINUTE", 30)
-    try:
-        count = cache.get(key, 0)
-        if count >= limit:
-            return True
-        cache.set(key, count + 1, timeout=60)
-    except Exception:
-        return False
-    return False
+    return not consume(request, scope="panel.boarding.invalid", limit=settings.ABUSE_BOARDING_LIMIT,
+                       window_seconds=settings.ABUSE_BOARDING_WINDOW_SECONDS,
+                       identifier=request_identifier(request, request.user.pk))
 
 
 @reservations_access()

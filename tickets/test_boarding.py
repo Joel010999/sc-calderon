@@ -213,7 +213,7 @@ class BoardingPanelTests(TicketBaseMixin, TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(BoardingRecord.objects.count(), 0)
 
-    @override_settings(PANEL_BOARDING_INVALID_ATTEMPTS_PER_MINUTE=1)
+    @override_settings(PANEL_BOARDING_INVALID_ATTEMPTS_PER_MINUTE=1, ABUSE_BOARDING_LIMIT=1)
     def test_invalid_attempts_are_rate_limited_without_storing_scan_value(self):
         self.client.force_login(self.seller_user)
         token = self._csrf()

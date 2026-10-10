@@ -234,6 +234,7 @@ class PublicTransferViewsTestCase(TestCase):
 
         self.assertEqual(Payment.objects.filter(booking=booking).count(), 1)
 
+    @override_settings(ABUSE_TRANSFER_LIMIT=5, ABUSE_TRANSFER_WINDOW_SECONDS=900)
     def test_iniciar_transferencia_rate_limiting(self):
         booking = self.create_held_booking()
         url = reverse("iniciar_transferencia", kwargs={"public_id": booking.public_id})

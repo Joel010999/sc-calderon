@@ -274,3 +274,14 @@ roles o estados, evitando dejar cero Administradores activos bajo concurrencia d
 PostgreSQL. La desactivación o cambio de rol revoca sesiones existentes y cada
 cambio real genera una auditoría con datos mínimos, sin contraseñas, tokens ni
 contenido sensible.
+## ProtecciÃ³n distribuida contra abuso (2026-10-10)
+
+Los lÃ­mites de abuso se almacenan en `core.AbuseCounter` como contadores por
+ventana y alcance, con un identificador HMAC-SHA256 que no conserva IP, sesiÃ³n,
+email, token ni otra PII. Los incrementos se serializan con `select_for_update`
+y la restricciÃ³n Ãºnica de alcance, hash y ventana; PostgreSQL ofrece exclusiÃ³n
+entre procesos. SQLite mantiene comportamiento funcional para desarrollo/tests,
+sin prometer exclusiÃ³n equivalente. La limpieza es acotada y forma parte del
+mantenimiento operacional. Los contadores son la Ãºnica escritura tÃ©cnica
+excepcional de algunas peticiones GET (por ejemplo, verificaciÃ³n QR); no mutan
+entidades de dominio ni crean auditorÃ­as.
