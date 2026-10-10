@@ -394,3 +394,12 @@ Se adopta `@axe-core/playwright` como dependencia de desarrollo para detectar re
   establecimiento es de un solo uso, con expiración, y sólo se persiste su hash.
 - El último Administrador activo queda protegido mediante bloqueos de filas
   PostgreSQL. Las sesiones se revocan al desactivar o cambiar el rol.
+## Distributed abuse protection (2026-10-10)
+
+Use a Django table with HMAC counters per window instead of process memory,
+sessions, Redis, or an external provider. The HMAC secret is configurable and
+required in production; rotating it invalidates active windows without exposing
+previous values. `REMOTE_ADDR` is the default source and `X-Forwarded-For` is
+accepted only for explicitly trusted proxies. Maintenance removes expired rows
+in bounded batches. This layer does not replace domain services or change
+commercial policies.
