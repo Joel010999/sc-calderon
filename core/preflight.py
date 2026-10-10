@@ -112,6 +112,28 @@ def collect_preflight():
     results.append(_result("apple_oidc", "PASS" if apple_ok and getattr(settings, "APPLE_OIDC_ENABLED", False) else ("WARNING" if apple_ok else "FAIL"), "Apple OIDC está configurado o deshabilitado explícitamente." if apple_ok else "Apple OIDC tiene una configuración inconsistente."))
     maintenance_ok = all(getattr(settings, name, 0) > 0 for name in ("OPERATIONAL_MAINTENANCE_MAX_LIMIT", "OPERATIONAL_MAINTENANCE_MAX_SECONDS", "OPERATIONAL_MAINTENANCE_LEASE_SECONDS"))
     results.append(_result("operational_maintenance", "PASS" if maintenance_ok else "FAIL", "Mantenimiento operacional tiene límites seguros." if maintenance_ok else "Mantenimiento operacional tiene límites inválidos."))
+    abuse_names = (
+        "ABUSE_VERIFY_LIMIT", "ABUSE_VERIFY_WINDOW_SECONDS", "ABUSE_TRANSFER_LIMIT",
+        "ABUSE_TRANSFER_WINDOW_SECONDS", "ABUSE_CHECKOUT_LIMIT", "ABUSE_CHECKOUT_WINDOW_SECONDS",
+        "ABUSE_COUNTER_RETENTION_SECONDS", "ABUSE_COUNTER_CLEANUP_LIMIT", "ABUSE_LOGIN_LIMIT",
+        "ABUSE_LOGIN_WINDOW_SECONDS", "ABUSE_REGISTER_LIMIT", "ABUSE_REGISTER_WINDOW_SECONDS",
+        "ABUSE_PASSWORD_RESET_LIMIT", "ABUSE_PASSWORD_RESET_WINDOW_SECONDS", "ABUSE_OAUTH_LIMIT",
+        "ABUSE_OAUTH_WINDOW_SECONDS", "ABUSE_CLAIM_LIMIT", "ABUSE_CLAIM_WINDOW_SECONDS",
+        "ABUSE_VOUCHER_LIMIT", "ABUSE_VOUCHER_WINDOW_SECONDS", "ABUSE_BOARDING_LIMIT",
+        "ABUSE_BOARDING_WINDOW_SECONDS", "ABUSE_STAFF_INVITATION_LIMIT",
+        "ABUSE_STAFF_INVITATION_WINDOW_SECONDS", "ABUSE_COUNTER_CLEANUP_LIMIT")
+    abuse_ok = all(0 < int(getattr(settings, name, 0)) <= 1000000 for name in abuse_names)
+    if prod and not getattr(settings, "ABUSE_HASH_SECRET", ""):
+        abuse_ok = False
+    try:
+        import ipaddress
+        for proxy in getattr(settings, "ABUSE_TRUSTED_PROXY_IPS", ()):
+            ipaddress.ip_address(proxy)
+    except ValueError:
+        abuse_ok = False
+    results.append(_result("distributed_abuse_protection", "PASS" if abuse_ok else "FAIL",
+                           "Protección distribuida hash-only configurada." if abuse_ok else
+                           "La configuración de protección distribuida es inválida."))
     worker_ok = (
         getattr(settings, "MAINTENANCE_WORKER_MODE", "") in {"resident", "cron"}
         and getattr(settings, "MAINTENANCE_WORKER_INTERVAL_SECONDS", 0) > 0

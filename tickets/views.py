@@ -3,9 +3,9 @@
 import hashlib
 
 from django.conf import settings
-from django.core.cache import cache
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import render
+from core.abuse import consume
 
 from .models import Ticket, TicketStatus
 from .storage import get_ticket_storage
@@ -41,14 +41,11 @@ def verify_ticket_view(request):
     - No realiza mutaciones de estado ni operaciones de embarque.
     """
     # 1. Rate limiting basado en IP hasheada
-    client_ip = get_client_ip(request)
-    ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
-    rl_key = f"tickets_verify_rl_{ip_hash}"
-    limit = getattr(settings, "TICKETS_RATE_LIMIT_PER_MINUTE", 30)
-
     try:
-        req_count = cache.get(rl_key, 0)
-        if req_count >= limit:
+        # Contador técnico durable: no cambia el recurso consultado ni auditorías.
+        if not consume(request, scope="tickets.verify", limit=min(settings.ABUSE_VERIFY_LIMIT,
+                       settings.TICKETS_RATE_LIMIT_PER_MINUTE),
+                       window_seconds=settings.ABUSE_VERIFY_WINDOW_SECONDS):
             response = HttpResponse(
                 "Límite de solicitudes de verificación superado. Por favor, intentá nuevamente más tarde.",
                 status=429,
@@ -59,7 +56,6 @@ def verify_ticket_view(request):
             response["X-Robots-Tag"] = "noindex, nofollow"
             return response
 
-        cache.set(rl_key, req_count + 1, timeout=60)
     except Exception:
         # En caso de fallo transitorio del cache, continuar sin interrumpir
         pass

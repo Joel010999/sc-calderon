@@ -54,6 +54,7 @@ from payments.services import (
     upload_public_transfer_voucher,
 )
 from core.site_config import bank_transfer_configured, bank_transfer_configuration
+from core.abuse import consume, request_identifier
 
 logger = logging.getLogger(__name__)
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -545,22 +546,17 @@ def create_public_booking(request):
     limitación razonable de reservas sin Redis ni Celery.
     """
     now = timezone.now()
-    now_ts = now.timestamp()
 
     # 1. Protección Honeypot (campo invisible para usuarios reales)
     honeypot = request.POST.get("website", "").strip()
     if honeypot:
         return HttpResponseBadRequest("Solicitud no válida.")
 
-    # 2. Limitación razonable de holds sin Redis/Celery basada en sesión
-    recent_holds = request.session.get("recent_holds", [])
-    recent_holds = [ts for ts in recent_holds if now_ts - ts < 900]  # Ventana de 15 minutos
-    if len(recent_holds) >= 3:
-        messages.error(
-            request,
-            "Has alcanzado el límite de reservas retenidas simultáneas. "
-            "Por favor aguardá unos minutos antes de generar una nueva solicitud."
-        )
+    # 2. Limitación distribuida de holds sin Redis/Celery
+    if not consume(request, scope="checkout.hold", limit=settings.ABUSE_CHECKOUT_LIMIT,
+                   window_seconds=settings.ABUSE_CHECKOUT_WINDOW_SECONDS,
+                   identifier=request_identifier(request)):
+        messages.error(request, "Límite de reservas retenidas alcanzado; aguardá unos minutos.")
         return redirect("buscar_viajes")
 
     # 3. Datos de contacto y pasajeros
@@ -716,8 +712,6 @@ def create_public_booking(request):
     # Nota de seguridad: NO almacenar datos personales en cookies ni sesión
     session_token = uuid.uuid4().hex
     request.session[f"booking_access_{booking.public_id}"] = session_token
-    recent_holds.append(now_ts)
-    request.session["recent_holds"] = recent_holds
     request.session["active_held_booking_id"] = str(booking.public_id)
     request.session.pop("checkout_flow", None)
 
@@ -891,16 +885,10 @@ def iniciar_transferencia(request, public_id):
         return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
 
     now = timezone.now()
-    now_ts = now.timestamp()
-
-    # Limitación razonable en sesión (máximo 5 inicios por 15 minutos)
-    recent_starts = request.session.get("recent_transfer_starts", [])
-    recent_starts = [ts for ts in recent_starts if now_ts - ts < 900]
-    if len(recent_starts) >= 5:
-        messages.error(
-            request,
-            "Has superado el límite de solicitudes de transferencia. Por favor aguardá unos minutos."
-        )
+    if not consume(request, scope="transfer.start", limit=settings.ABUSE_TRANSFER_LIMIT,
+                   window_seconds=settings.ABUSE_TRANSFER_WINDOW_SECONDS,
+                   identifier=request_identifier(request)):
+        messages.error(request, "límite de solicitudes de transferencia alcanzado; aguardá unos minutos.")
         return redirect("pago_pendiente", public_id=public_id)
 
     booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
@@ -911,8 +899,6 @@ def iniciar_transferencia(request, public_id):
 
     try:
         payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
-        recent_starts.append(now_ts)
-        request.session["recent_transfer_starts"] = recent_starts
         return redirect("pantalla_transferencia", public_id=booking.public_id)
     except BookingExpiredError as bee:
         messages.error(request, str(bee))
@@ -1023,15 +1009,13 @@ def subir_comprobante(request, public_id):
     if not session_token:
         return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
 
-    now = timezone.now()
-    now_ts = now.timestamp()
-
-    # Rate limiting en sesión para cargas de archivo (máximo 5 en 10 minutos)
-    recent_uploads = request.session.get("recent_voucher_uploads", [])
-    recent_uploads = [ts for ts in recent_uploads if now_ts - ts < 600]
-    if len(recent_uploads) >= 5:
+    if not consume(request, scope="payments.voucher_upload", limit=settings.ABUSE_VOUCHER_LIMIT,
+                   window_seconds=settings.ABUSE_VOUCHER_WINDOW_SECONDS,
+                   identifier=request_identifier(request, public_id)):
         messages.error(request, "Has superado el límite de intentos de carga de comprobantes. Por favor aguardá unos minutos.")
         return redirect("pantalla_transferencia", public_id=public_id)
+
+    now = timezone.now()
 
     booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
 
@@ -1042,8 +1026,6 @@ def subir_comprobante(request, public_id):
 
     try:
         payment = upload_public_transfer_voucher(booking_or_id=booking, voucher_file=voucher_file, now=now)
-        recent_uploads.append(now_ts)
-        request.session["recent_voucher_uploads"] = recent_uploads
         messages.success(request, "Comprobante cargado correctamente. Tu pago se encuentra en revisión manual (plazo de 24 horas).")
         return redirect("pantalla_transferencia", public_id=booking.public_id)
     except BookingExpiredError as bee:

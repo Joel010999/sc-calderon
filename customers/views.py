@@ -46,6 +46,7 @@ from .services import (
     register_customer,
 )
 from . import apple_oidc
+from core.abuse import consume, request_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,13 @@ def customer_register(request):
         phone = request.POST.get("phone", "").strip()
         commercial_consent = request.POST.get("commercial_consent") == "on"
         next_url = request.POST.get("next", next_url)
+
+        if not consume(request, scope="customers.register", limit=settings.ABUSE_REGISTER_LIMIT,
+                       window_seconds=settings.ABUSE_REGISTER_WINDOW_SECONDS,
+                       identifier=request_identifier(request, normalize_email(email))):
+            messages.error(request, "No pudimos procesar el registro en este momento. Intentá nuevamente más tarde.")
+            return render(request, "customers/register.html", {"email": email, "next": next_url,
+                "apple_login_enabled": _apple_login_enabled()})
 
         if password != password_confirm:
             messages.error(request, "Las contraseñas no coinciden.")
@@ -176,6 +184,13 @@ def customer_login(request):
         email_or_username = request.POST.get("email", "").strip()
         password = request.POST.get("password", "")
         next_url = request.POST.get("next", next_url)
+
+        if not consume(request, scope="customers.login", limit=settings.ABUSE_LOGIN_LIMIT,
+                       window_seconds=settings.ABUSE_LOGIN_WINDOW_SECONDS,
+                       identifier=request_identifier(request, normalize_email(email_or_username))):
+            messages.error(request, "Credenciales incorrectas. Verificá tu correo y contraseña.")
+            return render(request, "customers/login.html", {"email": email_or_username, "next": next_url,
+                "apple_login_enabled": _apple_login_enabled()})
 
         user = authenticate(request, username=email_or_username, password=password)
         if user is None:
@@ -287,6 +302,12 @@ def claim_booking_view(request):
         messages.error(request, "Ingresá el código de reclamo de tu compra.")
         return redirect("mis_viajes")
 
+    if not consume(request, scope="customers.claim", limit=settings.ABUSE_CLAIM_LIMIT,
+                   window_seconds=settings.ABUSE_CLAIM_WINDOW_SECONDS,
+                   identifier=request_identifier(request, raw_token)):
+        messages.error(request, "No pudimos procesar el código de reclamo. Verificá los datos ingresados.")
+        return redirect("mis_viajes")
+
     try:
         claim_booking_with_token(customer=customer, raw_token=raw_token)
         messages.success(request, "¡Tu viaje fue asociado exitosamente a tu cuenta!")
@@ -365,6 +386,11 @@ def customer_password_reset(request):
         email_raw = request.POST.get("email", "").strip()
         normalized = normalize_email(email_raw)
 
+        if not consume(request, scope="customers.password_reset", limit=settings.ABUSE_PASSWORD_RESET_LIMIT,
+                       window_seconds=settings.ABUSE_PASSWORD_RESET_WINDOW_SECONDS,
+                       identifier=request_identifier(request, normalized)):
+            return redirect("password_reset_done")
+
         if normalized:
             User = get_user_model()
             user = User.objects.filter(email__iexact=normalized, customer_profile__isnull=False, is_staff=False, is_superuser=False).first()
@@ -419,6 +445,10 @@ def customer_password_reset_confirm(request, uidb64, token):
         return render(request, "customers/password_reset_confirm.html", {"valid_link": False})
 
     if request.method == "POST":
+        if not consume(request, scope="customers.password_reset_confirm", limit=settings.ABUSE_PASSWORD_RESET_LIMIT,
+                       window_seconds=settings.ABUSE_PASSWORD_RESET_WINDOW_SECONDS,
+                       identifier=request_identifier(request, f"{uidb64}|{token}")):
+            return render(request, "customers/password_reset_confirm.html", {"valid_link": False})
         new_password = request.POST.get("new_password", "")
         new_password_confirm = request.POST.get("new_password_confirm", "")
 
@@ -513,6 +543,11 @@ def _verify_google_id_token(id_token):
 def google_callback(request):
     """Callback seguro para Google OAuth con protección CSRF por state y soporte de simulación segura."""
     state = request.GET.get("state", "")
+    if not consume(request, scope="customers.oauth", limit=settings.ABUSE_OAUTH_LIMIT,
+                   window_seconds=settings.ABUSE_OAUTH_WINDOW_SECONDS,
+                   identifier=request_identifier(request, "google")):
+        messages.error(request, "No pudimos iniciar sesión con Google. Intentá nuevamente más tarde.")
+        return redirect("login_cliente")
     session_state = request.session.get("google_oauth_state", "")
 
     # Validación CSRF estricta de state
@@ -660,6 +695,11 @@ def apple_login(request):
 @csrf_exempt
 @require_POST
 def apple_callback(request):
+    if not consume(request, scope="customers.oauth", limit=settings.ABUSE_OAUTH_LIMIT,
+                   window_seconds=settings.ABUSE_OAUTH_WINDOW_SECONDS,
+                   identifier=request_identifier(request, "apple")):
+        messages.error(request, "No pudimos iniciar sesión con Apple. Intentá nuevamente más tarde.")
+        return redirect("login_cliente")
     """Callback Apple: rechaza replay, verifica nonce y nunca persiste tokens."""
     state = request.POST.get("state", request.GET.get("state", ""))
     session_state = request.session.pop("apple_oidc_state", "")

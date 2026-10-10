@@ -7,6 +7,7 @@ Este comando es deliberadamente un coordinador: las reglas de dominio viven en
 import json
 import time
 import uuid
+from datetime import timedelta
 from collections import Counter
 
 from django.conf import settings
@@ -23,7 +24,7 @@ from tickets.models import (
 )
 
 
-TASKS = ("expire", "payments", "fulfillment", "notifications")
+TASKS = ("expire", "payments", "fulfillment", "notifications", "abuse")
 
 
 class Command(BaseCommand):
@@ -196,6 +197,9 @@ class Command(BaseCommand):
                 stale = stale.filter(booking__public_id=booking_id)
             return list(qs.values_list("pk", flat=True)) + list(stale.values_list("pk", flat=True))
 
+        if task == "abuse":
+            return [None]
+
         jobs = TicketFulfillment.objects.filter(booking__status=BookingStatus.CONFIRMED)
         if booking_id:
             jobs = jobs.filter(booking__public_id=booking_id)
@@ -237,6 +241,12 @@ class Command(BaseCommand):
         if task == "notifications":
             from notifications.services import process_notification
             return process_notification(booking_pk, retry=True)
+        if task == "abuse":
+            from core.abuse import prune
+            return prune(
+                before=timezone.now() - timedelta(seconds=int(getattr(settings, "ABUSE_COUNTER_RETENTION_SECONDS", 86400))),
+                limit=int(getattr(settings, "ABUSE_COUNTER_CLEANUP_LIMIT", 1000)),
+            )
         from tickets.services import process_booking_fulfillment
         job, _ = TicketFulfillment.objects.get_or_create(booking_id=booking_pk)
         return process_booking_fulfillment(job.pk, retry=True)

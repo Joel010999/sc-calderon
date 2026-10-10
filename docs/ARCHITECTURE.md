@@ -274,3 +274,12 @@ roles o estados, evitando dejar cero Administradores activos bajo concurrencia d
 PostgreSQL. La desactivación o cambio de rol revoca sesiones existentes y cada
 cambio real genera una auditoría con datos mínimos, sin contraseñas, tokens ni
 contenido sensible.
+## Distributed abuse protection (2026-10-10)
+
+Abuse limits use `core.AbuseCounter` counters by scope and time window. The
+identifier is HMAC-SHA256 and never stores IP, session, email, token, or other
+PII. PostgreSQL serializes increments with `select_for_update` and a unique
+scope/hash/window constraint. SQLite remains functional for development and
+tests without equivalent cross-process guarantees. Cleanup is bounded and runs
+through operational maintenance. Some GET requests write only this technical
+counter; they never mutate domain entities or create audit events.

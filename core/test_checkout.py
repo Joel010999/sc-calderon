@@ -338,11 +338,8 @@ class CreatePublicBookingViewTests(CheckoutBaseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(Booking.objects.count(), 0)
 
-    def test_rate_limit_blocks_excessive_holds_in_session(self):
-        session = self.client.session
-        now_ts = timezone.now().timestamp()
-        session["recent_holds"] = [now_ts - 100, now_ts - 200, now_ts - 300]
-        session.save()
+    @override_settings(ABUSE_CHECKOUT_LIMIT=0)
+    def test_rate_limit_blocks_excessive_holds_distributed(self):
 
         payload = {
             "trip_type": "oneway",
