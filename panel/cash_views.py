@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
-from cash_register.models import CashMovement, CashSession
+from cash_register.models import CashSession
 from cash_register.services import (
     close_cash,
     current_cash,

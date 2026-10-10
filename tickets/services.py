@@ -15,11 +15,9 @@ from django.utils import timezone
 from sales.models import AssignmentStatus, Booking, BookingStatus, SeatAssignment
 from .exceptions import (
     InvalidTicketError,
-    TicketEmailDuplicateError,
     TicketEmailError,
     TicketEmailPendingError,
     TicketIssuanceError,
-    TicketNotFoundError,
     TicketVoidError,
 )
 from .models import (

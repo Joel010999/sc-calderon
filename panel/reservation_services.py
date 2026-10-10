@@ -1,14 +1,10 @@
 """Servicios de reservas manuales y auditoría del panel."""
 
 from decimal import Decimal
-from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
 
-from operations.models import Trip, TripFare, TripStop
-from sales.exceptions import InvalidBookingError, SeatUnavailableError
-from sales.models import Booking, BookingChannel, BookingStatus, SeatAssignment
+from sales.exceptions import InvalidBookingError
+from sales.models import Booking, BookingStatus
 from sales.services import create_manual_booking, release_booking
 from .models import AuditEvent
 from .permissions import require_reservations_access
