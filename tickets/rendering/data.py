@@ -1,7 +1,6 @@
 """Estructura desacoplada de datos para el renderizado del pasaje PDF."""
 
 from dataclasses import dataclass
-from decimal import Decimal
 
 
 @dataclass(frozen=True)

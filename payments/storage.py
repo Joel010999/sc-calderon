@@ -5,11 +5,10 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.files.storage import FileSystemStorage, default_storage
+from django.core.files.storage import FileSystemStorage
 
 from core.private_storage import get_private_storage
 
-from .exceptions import PaymentVoucherError
 
 
 class ProtectedFileSystemStorage(FileSystemStorage):

@@ -1,27 +1,24 @@
 """Vistas del panel para gestión de reservas manuales."""
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 import uuid
 
-from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from django.db import transaction
-from django.db.models import CharField, Count, Q
+from django.db.models import CharField, Q
 from django.db.models.functions import Cast
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from operations.models import Bus, Route, Seat, SeatCategory, Stop, Trip, TripFare, TripStop
+from operations.models import Seat, Trip
 from sales.conf import get_manual_hold_hours, get_max_passengers_per_booking
 from sales.exceptions import InvalidBookingError, SeatUnavailableError
 from sales.models import (
     AssignmentStatus,
     Booking,
-    BookingChannel,
     BookingStatus,
     SeatAssignment,
     normalize_document,
@@ -305,8 +302,6 @@ def booking_create(request):
 
     # Tramo de vuelta (si aplica)
     return_trip_id = request.POST.get("return_trip") if request.method == "POST" else request.GET.get("return_trip", "")
-    return_orig_id = request.POST.get("return_origin") if request.method == "POST" else request.GET.get("return_origin", "")
-    return_dest_id = request.POST.get("return_destination") if request.method == "POST" else request.GET.get("return_destination", "")
 
     contact_email = (request.POST.get("contact_email") or "").strip()
     contact_phone = (request.POST.get("contact_phone") or "").strip()

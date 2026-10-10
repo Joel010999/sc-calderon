@@ -1,17 +1,14 @@
 """Vistas del panel para gestión de pagos manuales y transferencias."""
 
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 import uuid
 
-from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from django.db.models import CharField, Q
-from django.db.models.functions import Cast
-from django.http import FileResponse, Http404, HttpResponseForbidden
+from django.db.models import Q
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
@@ -21,16 +18,13 @@ from payments.exceptions import (
     InvalidPaymentStatusError,
     PaymentDuplicateError,
     PaymentError,
-    PaymentVoucherError,
 )
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import (
-    calculate_booking_total,
     expire_public_transfer_if_expired,
     register_cash_payment,
     register_transfer_payment,
     review_transfer_payment,
-    validate_payment_agent,
 )
 from sales.exceptions import BookingExpiredError, InvalidBookingError
 from sales.models import Booking, BookingStatus, normalize_document

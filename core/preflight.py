@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.management.color import no_style
 from django.core.validators import validate_email
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor

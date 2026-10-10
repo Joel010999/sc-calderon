@@ -15,7 +15,6 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.urls import path, include
-from core.errors import error_400, error_403, error_404, error_500
 from core.health import live_check, ready_check
 from core.views import health_check
 
