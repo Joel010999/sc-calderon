@@ -699,7 +699,7 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
         Verifica que PostgreSQL lance IntegrityError con diag.constraint_name exacto,
         y que _is_payment_collision_integrity_error lo detecte para traducir a PaymentDuplicateError.
         """
-        p1 = Payment.objects.create(
+        Payment.objects.create(
             booking=self.booking,
             method=PaymentMethod.CASH,
             status=PaymentStatus.APPROVED,
@@ -847,7 +847,7 @@ class PublicTransferPaymentTests(PaymentsBaseTestCase):
     def test_upload_public_transfer_voucher_success_and_24h_extension(self):
         booking = self.create_held_online_booking()
         now = timezone.now()
-        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+        initiate_public_transfer_payment(booking_or_id=booking, now=now)
 
         # Antes de subir comprobante: el vencimiento es a los 5 minutos
         self.assertEqual(booking.expires_at, now + timedelta(minutes=5))

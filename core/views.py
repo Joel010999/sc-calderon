@@ -1,15 +1,14 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 import logging
 import uuid
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
-from django.conf import settings
 from django.contrib import messages
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import connection, transaction
+from django.db import connection
 from django.db.models import Prefetch
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -17,27 +16,21 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from operations.models import Bus, Route, Seat, SeatCategory, Stop, Trip, TripFare, TripStop
+from operations.models import Seat, Stop, Trip, TripStop
 from sales.conf import (
     get_max_passengers_per_booking,
     get_online_cutoff_minutes,
-    get_online_hold_minutes,
 )
 from sales.exceptions import BookingExpiredError, InvalidBookingError, SeatUnavailableError
 from sales.models import (
     AssignmentStatus,
     Booking,
     BookingChannel,
-    BookingLeg,
-    BookingPassenger,
     BookingStatus,
     SeatAssignment,
-    normalize_document,
 )
 from sales.services import (
-    create_booking,
     create_online_booking,
-    expire_booking,
     get_trip_availability,
     release_booking,
     validate_passenger_data,
@@ -707,7 +700,7 @@ def create_public_booking(request):
         err_msg = next(iter(ve.message_dict.values()))[0] if hasattr(ve, "message_dict") else str(ve)
         messages.error(request, err_msg)
         return redirect("buscar_viajes")
-    except Exception as exc:
+    except Exception:
         logger.exception("Error inesperado al crear reserva online")
         messages.error(request, "Ocurrió un error al procesar la reserva. Por favor intentá nuevamente.")
         return redirect("buscar_viajes")
@@ -724,9 +717,8 @@ def create_public_booking(request):
     # 9. Asociación con cuenta de cliente o generación de token de reclamo para invitado
     if request.user.is_authenticated:
         try:
-            from customers.models import Customer, normalize_email
+            from customers.models import Customer
             from customers.services import associate_booking_with_customer
-            normalized_u_email = normalize_email(request.user.email or request.user.username)
             if request.user.is_staff or request.user.is_superuser:
                 raise ValidationError("Los usuarios internos no se asocian como clientes.")
             customer = Customer.objects.filter(user=request.user).first()
@@ -910,7 +902,7 @@ def iniciar_transferencia(request, public_id):
         return redirect("pago_pendiente", public_id=booking.public_id)
 
     try:
-        payment = initiate_public_transfer_payment(booking_or_id=booking, now=now)
+        initiate_public_transfer_payment(booking_or_id=booking, now=now)
         recent_starts.append(now_ts)
         request.session["recent_transfer_starts"] = recent_starts
         return redirect("pantalla_transferencia", public_id=booking.public_id)
@@ -1041,7 +1033,7 @@ def subir_comprobante(request, public_id):
         return redirect("pantalla_transferencia", public_id=booking.public_id)
 
     try:
-        payment = upload_public_transfer_voucher(booking_or_id=booking, voucher_file=voucher_file, now=now)
+        upload_public_transfer_voucher(booking_or_id=booking, voucher_file=voucher_file, now=now)
         recent_uploads.append(now_ts)
         request.session["recent_voucher_uploads"] = recent_uploads
         messages.success(request, "Comprobante cargado correctamente. Tu pago se encuentra en revisión manual (plazo de 24 horas).")

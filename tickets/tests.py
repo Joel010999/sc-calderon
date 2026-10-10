@@ -387,7 +387,6 @@ class TicketAtomicityAndCleanupTests(TicketBaseMixin, TransactionTestCase):
 
     def test_failure_on_second_pdf_rolls_back_db_and_deletes_first_pdf(self):
         booking = self.create_confirmed_booking(passenger_count=2)
-        storage = get_ticket_storage()
 
         original_build = build_ticket_pdf
         call_count = [0]
@@ -411,7 +410,6 @@ class TicketAtomicityAndCleanupTests(TicketBaseMixin, TransactionTestCase):
 
     def test_failure_on_audit_creation_rolls_back_db_and_deletes_pdfs(self):
         booking = self.create_confirmed_booking(passenger_count=1)
-        storage = get_ticket_storage()
 
         with patch.object(TicketAuditEvent.objects, "create", side_effect=RuntimeError("Fallo simulado en auditoría")):
             with self.assertRaises(RuntimeError):
@@ -657,7 +655,7 @@ class TicketVerificationViewTests(TicketBaseMixin, TransactionTestCase):
     def test_rate_limiting_by_hashed_ip(self):
         booking = self.create_confirmed_booking(passenger_count=1)
         tickets = issue_tickets_for_booking(booking)
-        raw_token = ticket = tickets[0]._raw_verification_token
+        raw_token = tickets[0]._raw_verification_token
 
         # 3 solicitudes permitidas
         for _ in range(3):

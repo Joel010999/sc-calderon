@@ -1722,7 +1722,7 @@ class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
             state = self.client.session["apple_oidc_state"]
             bad = self.client.post(reverse("apple_callback"), {"state": "incorrecto", "code": "simulated:sub-1:apple@ejemplo.invalid"})
             self.assertEqual(bad.status_code, 400)
-            start = self.client.get(reverse("apple_login"))
+            self.client.get(reverse("apple_login"))
             state = self.client.session["apple_oidc_state"]
             ok = self.client.post(reverse("apple_callback"), {"state": state, "code": "simulated:sub-1:apple@ejemplo.invalid"})
             self.assertRedirects(ok, reverse("mis_viajes"))
@@ -1733,7 +1733,7 @@ class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
     def test_apple_does_not_link_existing_email_or_enumerate_account(self):
         register_customer(email="existente@ejemplo.invalid", password="StrongPassword123!")
         with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True):
-            start = self.client.get(reverse("apple_login"))
+            self.client.get(reverse("apple_login"))
             response = self.client.post(reverse("apple_callback"), {"state": self.client.session["apple_oidc_state"], "code": "simulated:sub-2:existente@ejemplo.invalid"})
             self.assertRedirects(response, reverse("login_cliente"))
             self.assertFalse(Customer.objects.filter(apple_sub="sub-2").exists())
@@ -1754,7 +1754,7 @@ class AppleOIDCConfigurationAndSimulationTests(BaseCustomerTestCase):
         register_page = self.client.get(reverse("registro_cliente"))
         self.assertNotContains(register_page, "Continuar con Apple")
         with self.settings(APPLE_OIDC_SIMULATION_ENABLED=True, DEBUG=True, APPLE_OIDC_STATE_TTL_SECONDS=60):
-            start = self.client.get(reverse("apple_login"))
+            self.client.get(reverse("apple_login"))
             session = self.client.session
             session["apple_oidc_state_created_at"] = int(time.time()) - 61
             session.save()

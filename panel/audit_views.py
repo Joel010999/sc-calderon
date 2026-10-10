@@ -2,7 +2,6 @@ import csv
 from django.core.paginator import Paginator
 from django.http import HttpResponse, Http404
 from django.shortcuts import render
-from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from .audit_services import build_audit_explorer, resolve_audit_token

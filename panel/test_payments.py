@@ -388,7 +388,7 @@ class PanelPaymentsTestCase(TestCase):
         review_url = reverse("panel:transfer_review", kwargs={"public_id": payment.public_id})
 
         # 1. Rechazo sin motivo -> falla
-        resp_empty = self.client.post(review_url, {
+        self.client.post(review_url, {
             "action": "reject",
             "rejection_reason": "   ",
         })

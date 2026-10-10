@@ -456,3 +456,11 @@ identidad nueva no comparte email, sin crear cuenta. El panel excluye a `is_staf
 grupo autorizado, `TicketEmailAttempt` conserva una representacion sanitizada y se
 actualizaron dependencias de PyJWT/Pillow y pruebas; la migracion solo se aplico en una
 base SQLite temporal.
+
+## Endurecimiento de calidad y CI (2026-10-10)
+
+Implementado Ruff fijado a `0.13.0`, correcciones de imports/variables muertos y
+un workflow reproducible para Ruff, checks de Django, `collectstatic`, `pip check`,
+`pip-audit` y `npm audit` en PRs y pushes a `main` y `feature/**`. Las exclusiones y su justificación
+están documentadas en [CODE_QUALITY.md](CODE_QUALITY.md); no se modificaron
+migraciones ni dependencias de producción.
