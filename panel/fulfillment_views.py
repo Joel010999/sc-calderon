@@ -1,4 +1,5 @@
 from datetime import date
+import logging
 import uuid
 
 from django.contrib import messages
@@ -11,6 +12,9 @@ from tickets.models import FulfillmentEmailStatus, FulfillmentIssueStatus, Ticke
 from tickets.services import process_booking_fulfillment
 from .models import AuditEvent
 from .permissions import reservations_access
+
+
+logger = logging.getLogger(__name__)
 
 
 @reservations_access()
@@ -64,6 +68,7 @@ def fulfillment_list(request):
 def fulfillment_reconcile(request):
     ids = request.POST.getlist("fulfillment_ids")[:20]
     processed = 0
+    failed = 0
     for value in ids:
         try:
             if value.startswith("booking:"):
@@ -76,9 +81,12 @@ def fulfillment_reconcile(request):
             process_booking_fulfillment(job.pk, retry=True, actor=request.user)
             processed += 1
         except (ValueError, TicketFulfillment.DoesNotExist):
+            failed += 1
             continue
-        except Exception:
+        except Exception as exc:
+            failed += 1
+            logger.warning("Fulfillment reconcile failed id=%s error_type=%s", value[:80], type(exc).__name__)
             continue
-    AuditEvent.objects.create(actor=request.user, action=AuditEvent.Action.UPDATE, entity_type="tickets.TicketFulfillment", entity_id="batch", description=f"Reconciliación manual de {processed} trabajos de pasajes", after={"processed": processed, "requested": len(ids)})
-    messages.success(request, f"Se procesaron {processed} trabajos de pasajes.")
+    AuditEvent.objects.create(actor=request.user, action=AuditEvent.Action.UPDATE, entity_type="tickets.TicketFulfillment", entity_id="batch", description=f"Reconciliación manual de {processed} trabajos de pasajes", after={"processed": processed, "failed": failed, "requested": len(ids)})
+    messages.success(request, f"Se procesaron {processed} trabajos de pasajes. Fallos: {failed}.")
     return redirect("panel:fulfillment_list")

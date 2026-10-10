@@ -129,10 +129,10 @@ class HomeViewTests(CheckoutBaseTestCase):
         response = self.client.get(reverse("home"))
         self.assertEqual(response.status_code, 200)
         content = response.content.decode("utf-8")
-        self.assertIn("ÉXODO", content)
-        self.assertIn("Viajes y Turismo", content)
+        self.assertIn("SC Viajes", content)
+        self.assertNotIn("Éxodo", content)
         self.assertIn("¿A dónde viajás?", content)
-        self.assertIn("wi-fi a bordo", content.lower())
+        self.assertIn("servicio a bordo", content.lower())
         self.assertIn("Córdoba", content)
         self.assertIn("Jujuy", content)
 

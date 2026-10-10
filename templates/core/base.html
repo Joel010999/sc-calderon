@@ -4,23 +4,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Éxodo Viajes y Turismo — Córdoba ↔ Jujuy</title>
-  <meta name="description" content="Reservá tu viaje en colectivo entre Córdoba y Jujuy con Éxodo Viajes y Turismo. Wi-Fi con Starlink durante todo el trayecto.">
+  <title>{{ site_brand.name }} — Córdoba ↔ Jujuy</title>
+  <meta name="description" content="Reservá tu viaje en colectivo entre Córdoba y Jujuy con {{ site_brand.name }}.">
   <link rel="preload" href="{% static 'assets/hero-bg.jpg' %}" as="image">
   <link rel="preload" href="{% static 'assets/hero-interior.jpg' %}" as="image">
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
   <link rel="stylesheet" href="{% static 'css/checkout.css' %}">
   {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body data-whatsapp-url="{{ site_brand.whatsapp_url }}">
   <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
   <!-- ═══════════════════ HEADER ═══════════════════ -->
   <header class="site-header">
-    <a href="/" class="brand-mark" aria-label="Éxodo Viajes y Turismo">
+    <a href="/" class="brand-mark" aria-label="{{ site_brand.name }}">
       <span class="brand-mark__flag"></span>
       <div>
-        <p class="brand-mark__name">ÉXODO</p>
-        <p class="brand-mark__sub">Viajes y Turismo</p>
+        <p class="brand-mark__name">{{ site_brand.name }}</p>
+        <p class="brand-mark__sub">{{ site_brand.tagline }}</p>
       </div>
     </a>
 
@@ -57,7 +57,7 @@
         <span class="marquee__dot">•</span>
         <span>CÓRDOBA ↔ JUJUY</span>
         <span class="marquee__dot">•</span>
-        <span>WI-FI A BORDO CON STARLINK</span>
+        <span>SERVICIO A BORDO</span>
         <span class="marquee__dot">•</span>
         <span>NUEVAS UNIDADES</span>
         <span class="marquee__dot">•</span>
@@ -67,7 +67,7 @@
         <span class="marquee__dot">•</span>
         <span>CÓRDOBA ↔ JUJUY</span>
         <span class="marquee__dot">•</span>
-        <span>WI-FI A BORDO CON STARLINK</span>
+        <span>SERVICIO A BORDO</span>
         <span class="marquee__dot">•</span>
         <span>NUEVAS UNIDADES</span>
         <span class="marquee__dot">•</span>
@@ -91,7 +91,7 @@
       <section class="hero" id="inicio">
         <div class="hero__copy">
           <div class="hero__eyebrow">
-            <span>Éxodo</span>
+            <span>SC Viajes</span>
             <span class="hero__eyebrow-dot"></span>
             <span>Córdoba ↔ Jujuy</span>
           </div>
@@ -107,7 +107,7 @@
               <svg class="trust-pill__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L2 7 L12 12 L22 7 Z"/><path d="M2 17 L12 22 L22 17"/><path d="M2 12 L12 17 L22 12"/></svg>
               <div>
                 <strong>Wi-Fi durante el viaje</strong>
-                <span>Conectividad con Starlink</span>
+                <span>Servicio a bordo sujeto a disponibilidad</span>
               </div>
             </div>
             <div class="trust-pill">
@@ -205,12 +205,12 @@
       </section>
 
       <!-- ═══════════════════ QUICK STRIP ═══════════════════ -->
-      <section class="quick-strip reveal" aria-label="Motivos para elegir Éxodo">
+      <section class="quick-strip reveal" aria-label="Motivos para elegir SC Viajes">
         <div class="quick-strip__item">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c-3 0-8 4-8 10s5 10 8 10 8-4 8-10S15 2 12 2Z"/><path d="M2 12h20"/></svg>
           <div>
             <span>Conectividad</span>
-            <strong>Starlink durante el trayecto</strong>
+            <strong>Servicio a bordo</strong>
           </div>
         </div>
         <div class="quick-strip__item">
@@ -276,11 +276,11 @@
               <button class="button button--primary" type="button" data-go-screen="passengers">
                 Continuar reserva
               </button>
-              <a class="button button--ghost" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20quiero%20reservar%20un%20viaje." target="_blank" rel="noreferrer">
+              {% if site_brand.whatsapp_url %}<a class="button button--ghost" href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">
                 Reservar por WhatsApp
-              </a>
+              </a>{% endif %}
             </div>
-            <p class="detail-wa-hint">¿Preferís reservar por WhatsApp? <a href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo" target="_blank" rel="noreferrer">Hablar con Éxodo →</a></p>
+            {% if site_brand.whatsapp_url %}<p class="detail-wa-hint">¿Preferís reservar por WhatsApp? <a href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">Hablar con SC Viajes →</a></p>{% endif %}
           </div>
         </div>
 
@@ -345,14 +345,14 @@
               </div>
               <p class="flow-panel__eyebrow">Reserva iniciada</p>
               <h3>Tu solicitud fue registrada correctamente.</h3>
-              <p class="confirmation-card__desc">Un representante de Éxodo se comunicará para confirmar tu reserva.</p>
+              <p class="confirmation-card__desc">Un representante de SC Viajes se comunicará para confirmar tu reserva.</p>
 
               <div class="confirmation-summary" id="confirmation-summary"></div>
 
               <div class="detail-actions detail-actions--stack">
-                <a class="button button--primary" id="whatsapp-link" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20quiero%20continuar%20con%20mi%20reserva." target="_blank" rel="noreferrer">
+                {% if site_brand.whatsapp_url %}<a class="button button--primary" id="whatsapp-link" href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">
                   Continuar por WhatsApp
-                </a>
+                </a>{% endif %}
                 <button class="button button--ghost" type="button" data-reset-flow="true">
                   Volver al inicio
                 </button>
@@ -367,13 +367,13 @@
         <div class="connectivity-section__content">
           <p class="section-head__tag" style="color: var(--accent)">Conectividad</p>
           <h2>Viajá conectado.</h2>
-          <p>Wi-Fi durante todo el viaje. Conectividad mediante Starlink para que tu trayecto sea más cómodo y productivo.</p>
+          <p>Información del viaje y reserva en un solo lugar.</p>
         </div>
         <div class="connectivity-section__visual">
           <div class="connectivity-icon">
             <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
           </div>
-          <p class="connectivity-label">Starlink a bordo</p>
+          <p class="connectivity-label">Información del servicio</p>
         </div>
       </section>
 
@@ -432,7 +432,7 @@
       <!-- ═══════════════════ BENEFITS ═══════════════════ -->
       <section class="benefits reveal" id="como-funciona">
         <div class="section-head">
-          <p class="section-head__tag">Por qué Éxodo</p>
+          <p class="section-head__tag">Por qué SC Viajes</p>
           <h2>Todo lo que necesitás para viajar tranquilo.</h2>
         </div>
 
@@ -440,7 +440,7 @@
           <article>
             <span class="benefit-num">01</span>
             <h3>Wi-Fi a bordo</h3>
-            <p>Conectividad mediante Starlink.</p>
+            <p>Información del viaje y reserva en un solo lugar.</p>
           </article>
           <article>
             <span class="benefit-num">02</span>
@@ -504,14 +504,14 @@
           </details>
           <details>
             <summary>¿Hay Wi-Fi durante el viaje?</summary>
-            <p>Sí, el servicio cuenta con conectividad mediante Starlink.</p>
+            <p>La disponibilidad de servicios a bordo se informa según cada viaje.</p>
           </details>
           <details>
             <summary>¿Cómo puedo reservar?</summary>
             <p>Podés comenzar la reserva desde la plataforma o comunicarte por WhatsApp.</p>
           </details>
           <details>
-            <summary>¿Cómo puedo comunicarme con Éxodo?</summary>
+            <summary>¿Cómo puedo comunicarme con SC Viajes?</summary>
             <p>Por WhatsApp.</p>
           </details>
         </div>
@@ -525,9 +525,9 @@
           <button class="button button--primary" type="button" data-scroll-search="true">
             Buscar viaje
           </button>
-          <a class="button button--ghost-light" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20quiero%20información%20sobre%20los%20viajes." target="_blank" rel="noreferrer">
+          {% if site_brand.whatsapp_url %}<a class="button button--ghost-light" href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">
             Hablar por WhatsApp
-          </a>
+          </a>{% endif %}
         </div>
       </section>
 
@@ -537,7 +537,7 @@
     <!-- ═══════════════════ FOOTER ═══════════════════ -->
     <footer class="site-footer">
       <div class="site-footer__brand">
-        <strong>ÉXODO</strong> <span>Viajes y Turismo</span>
+        <strong>{{ site_brand.name }}</strong> <span>{{ site_brand.tagline }}</span>
       </div>
       <p>Prototipo comercial desarrollado por <strong>RenderByte</strong>.</p>
       <p class="site-footer__year">2026</p>
@@ -547,10 +547,10 @@
 
   <!-- WhatsApp Float -->
   <aside class="whatsapp-float-region" aria-label="Contacto por WhatsApp">
-  <a class="whatsapp-float" href="https://wa.me/5490000000000?text=Hola%20%C3%89xodo%2C%20tengo%20una%20consulta%20sobre%20los%20viajes." target="_blank" rel="noreferrer" aria-label="Contactar por WhatsApp">
+  {% if site_brand.whatsapp_url %}<a class="whatsapp-float" href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer" aria-label="Contactar por WhatsApp">
     <svg class="whatsapp-float__icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
     <span>¿Tenés dudas? Hablá con nosotros</span>
-  </a>
+  </a>{% endif %}
   </aside>
 
   <!-- Mobile Sticky CTA -->

@@ -149,7 +149,7 @@ def claim_booking_with_token(customer: Customer, raw_token: str) -> CustomerBook
     if not claim or claim.is_claimed:
         raise ValidationError("El código de reclamo es inválido o ya fue utilizado.")
     if claim.expires_at <= timezone.now():
-        raise ValidationError("El enlace de reclamo venci?. Solicit? uno nuevo.")
+        raise ValidationError("El enlace de reclamo venció. Solicitá uno nuevo.")
 
     # Verificar que la reserva no esté ya asociada
     if CustomerBooking.objects.filter(booking=claim.booking).exists():

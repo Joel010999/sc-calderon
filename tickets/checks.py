@@ -2,6 +2,7 @@ from django.conf import settings
 from urllib.parse import urlparse
 
 from django.core.checks import Error, Warning, register
+from core.site_config import validate_bank_transfer_configuration
 
 
 @register()
@@ -16,6 +17,21 @@ def production_fulfillment_configuration(app_configs, **kwargs):
     if not getattr(settings, "EMAIL_HOST", "") and "smtp" in settings.EMAIL_BACKEND.lower():
         warnings.append(Warning("EMAIL_HOST no está configurado para el backend SMTP.", id="tickets.W003"))
     return warnings
+
+
+@register()
+def public_and_bank_configuration(app_configs, **kwargs):
+    """Evita enlaces inseguros y datos de transferencia ficticios en producción."""
+    if getattr(settings, "DEBUG", False) or getattr(settings, "TESTING", False):
+        return []
+    issues = []
+    public = urlparse(getattr(settings, "PUBLIC_BASE_URL", ""))
+    unsafe_host = (public.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"} or (public.hostname or "").endswith(".local")
+    if public.scheme != "https" or not public.netloc or public.username or public.password or unsafe_host:
+        issues.append(Error("PUBLIC_BASE_URL debe ser una URL HTTPS sin credenciales.", id="tickets.E019"))
+    if validate_bank_transfer_configuration():
+        issues.append(Error("Faltan datos bancarios productivos obligatorios.", id="tickets.E020"))
+    return issues
 
 
 @register()

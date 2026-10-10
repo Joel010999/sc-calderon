@@ -116,8 +116,9 @@ TEMPLATES = [
             'context_processors': [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-                'panel.context_processors.panel_permissions',
+            'django.contrib.messages.context_processors.messages',
+            'panel.context_processors.panel_permissions',
+            'core.context_processors.public_site',
             ],
         },
     },
@@ -245,8 +246,12 @@ PAYMENTS_MAX_VOUCHER_SIZE_BYTES = int(os.getenv('PAYMENTS_MAX_VOUCHER_SIZE_BYTES
 PAYMENTS_ALLOWED_VOUCHER_EXTENSIONS = ('.pdf', '.jpg', '.jpeg', '.png')
 
 # Tickets configuration & Private Storage
+PUBLIC_BASE_URL = os.getenv(
+    "PUBLIC_BASE_URL",
+    "https://scviajes.test" if DEBUG or TESTING else "",
+).strip().rstrip("/")
 TICKETS_STORAGE_ROOT = Path(os.getenv('TICKETS_STORAGE_ROOT', str(BASE_DIR / 'private_tickets')))
-TICKETS_VERIFICATION_BASE_URL = os.getenv('TICKETS_VERIFICATION_BASE_URL', 'https://scviajes.com.ar')
+TICKETS_VERIFICATION_BASE_URL = os.getenv('TICKETS_VERIFICATION_BASE_URL', PUBLIC_BASE_URL)
 TICKETS_RATE_LIMIT_PER_MINUTE = int(os.getenv('TICKETS_RATE_LIMIT_PER_MINUTE', 30))
 TICKETS_FULFILLMENT_STALE_SECONDS = int(os.getenv('TICKETS_FULFILLMENT_STALE_SECONDS', 900))
 TICKETS_RECONCILE_MAX_LIMIT = int(os.getenv('TICKETS_RECONCILE_MAX_LIMIT', 100))
@@ -265,11 +270,27 @@ MAINTENANCE_WORKER_LOCK_WAIT_SECONDS = float(os.getenv('MAINTENANCE_WORKER_LOCK_
 MAINTENANCE_WORKER_ENABLED = os.getenv('MAINTENANCE_WORKER_ENABLED', 'True').lower() in ('1', 'true', 'yes')
 MAINTENANCE_WORKER_MODE = os.getenv('MAINTENANCE_WORKER_MODE', 'resident').strip().lower()
 # Bank transfer configuration
-BANK_TRANSFER_ACCOUNT_HOLDER = os.getenv("BANK_TRANSFER_ACCOUNT_HOLDER", "SC Viajes S.R.L.")
-BANK_TRANSFER_ALIAS = os.getenv("BANK_TRANSFER_ALIAS", "scviajes.mp")
-BANK_TRANSFER_CVU = os.getenv("BANK_TRANSFER_CVU", "0000003100010000000000")
-BANK_TRANSFER_CUIT = os.getenv("BANK_TRANSFER_CUIT", "")
-BANK_TRANSFER_ENTITY = os.getenv("BANK_TRANSFER_ENTITY", "Mercado Pago")
+SITE_BRAND_NAME = os.getenv("SITE_BRAND_NAME", "SC Viajes").strip()
+SITE_BRAND_TAGLINE = os.getenv("SITE_BRAND_TAGLINE", "Pasajes entre Córdoba y Jujuy").strip()
+SITE_SUPPORT_EMAIL = os.getenv("SITE_SUPPORT_EMAIL", "").strip()
+SITE_WHATSAPP_URL = os.getenv("SITE_WHATSAPP_URL", "").strip()
+
+# Datos de transferencia: nunca se incluyen valores bancarios ficticios en código.
+_TEST_BANK_DEFAULTS = {
+    "BANK_TRANSFER_ACCOUNT_HOLDER": "SC Viajes Test",
+    "BANK_TRANSFER_ALIAS": "scviajes.mp",
+    "BANK_TRANSFER_CVU": "0001234567890123456789",
+    "BANK_TRANSFER_CUIT": "20-12345678-6",
+    "BANK_TRANSFER_ENTITY": "Mercado Pago (test)",
+}
+def _bank_setting(name):
+    return os.getenv(name, _TEST_BANK_DEFAULTS[name] if TESTING else "").strip()
+
+BANK_TRANSFER_ACCOUNT_HOLDER = _bank_setting("BANK_TRANSFER_ACCOUNT_HOLDER")
+BANK_TRANSFER_ALIAS = _bank_setting("BANK_TRANSFER_ALIAS")
+BANK_TRANSFER_CVU = _bank_setting("BANK_TRANSFER_CVU")
+BANK_TRANSFER_CUIT = _bank_setting("BANK_TRANSFER_CUIT")
+BANK_TRANSFER_ENTITY = _bank_setting("BANK_TRANSFER_ENTITY")
 PAYMENTS_PROOF_WINDOW_MINUTES = int(os.getenv("PAYMENTS_PROOF_WINDOW_MINUTES", 5))
 PAYMENTS_REVIEW_WINDOW_HOURS = int(os.getenv("PAYMENTS_REVIEW_WINDOW_HOURS", 24))
 PANEL_REPORTS_MAX_RANGE_DAYS = int(os.getenv("PANEL_REPORTS_MAX_RANGE_DAYS", 366))
