@@ -58,7 +58,11 @@ jobs:
           python e2e/prepare_browser_scenario.py
           python manage.py collectstatic --noinput
       - name: Ejecutar aceptación en navegador
-        run: npm run test:e2e
+        run: npm run test:e2e -- e2e/acceptance.spec.js
+      - name: Restablecer escenario para accesibilidad
+        run: |
+          python manage.py seed_demo_scenario --reset
+          python manage.py seed_demo_scenario
       - name: Verificar suite de accesibilidad con axe
         run: npm run test:e2e -- e2e/accessibility.spec.js
       - name: Auditar Apple ficticio sin navegar al proveedor

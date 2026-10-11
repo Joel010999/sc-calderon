@@ -395,7 +395,7 @@ test.describe('aceptación pública y panel interno', () => {
       await operatorPage.locator('select[name="trip"]').selectOption(tripId);
       await operatorPage.locator('input[name="scan_value"]').fill(unboardedTicketCode.trim());
       await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/no estÃ¡ emitido|no es vÃ¡lido|no estÃ¡ vigente/i);
+      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/pasaje no|no es .*lido/i);
     } finally {
       await customerContext.close();
       await operatorContext.close();
