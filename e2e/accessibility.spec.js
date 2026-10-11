@@ -76,8 +76,16 @@ test.describe('accesibilidad y responsive', () => {
     await page.goto('/');
     const origin = await page.locator('#origin option').filter({ hasText: 'Cordoba Demo' }).first().getAttribute('value');
     const destination = await page.locator('#destination option').filter({ hasText: 'Jujuy Demo' }).first().getAttribute('value');
-    await page.goto(`/checkout/?trip_type=oneway&passengers=1&outbound_trip=1&outbound_origin=${origin}&outbound_destination=${destination}`);
-    await expect(page.locator('form[action*="/checkout/"]').first()).toBeVisible();
+    let checkoutUrl = null;
+    for (let offset = 0; offset <= 14 && !checkoutUrl; offset += 1) {
+      const date = new Date();
+      date.setDate(date.getDate() + offset);
+      const response = await page.goto(`/buscar/?trip_type=oneway&origin=${origin}&destination=${destination}&date=${date.toISOString().slice(0, 10)}&passengers=1`);
+      if (response && response.ok() && await page.locator('form[action*="/checkout/"]').count()) {
+        checkoutUrl = page.url();
+      }
+    }
+    expect(checkoutUrl).toBeTruthy();
     await page.locator('form[action*="/checkout/"]').first().locator('button').click();
     const availableSeat = page.locator('input.outbound-seat-cb:not([disabled])').first();
     await expect(availableSeat).toBeVisible();
