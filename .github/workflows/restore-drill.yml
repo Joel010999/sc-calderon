@@ -1,0 +1,69 @@
+name: PostgreSQL restore drill
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'core/backup.py'
+      - 'core/restore_drill.py'
+      - 'core/management/commands/restore_drill.py'
+      - 'core/test_restore_drill.py'
+      - '**/migrations/**'
+      - '.github/workflows/restore-drill.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'core/backup.py'
+      - 'core/restore_drill.py'
+      - 'core/management/commands/restore_drill.py'
+      - 'core/test_restore_drill.py'
+      - '**/migrations/**'
+      - '.github/workflows/restore-drill.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: scviajes_ci
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U scviajes_ci -d postgres"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DEBUG: 'True'
+      SECRET_KEY: restore-drill-only-secret
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DATABASE_URL: postgresql://scviajes_ci:synthetic@127.0.0.1:5432/scviajes_restore_drill_source
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: {python-version: '3.12'}
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements.txt
+      - name: Crear bases sintéticas aisladas
+        run: |
+          createdb -h 127.0.0.1 -U scviajes_ci scviajes_restore_drill_source
+          createdb -h 127.0.0.1 -U scviajes_ci scviajes_restore_drill_destination
+      - name: Ejecutar restore drill
+        run: >-
+          python manage.py restore_drill
+          --source-url "$DATABASE_URL"
+          --destination-url postgresql://scviajes_ci:synthetic@127.0.0.1:5432/scviajes_restore_drill_destination
+          --backup "$RUNNER_TEMP/scviajes_restore_drill_ci.dump"
+          --confirm CONFIRMAR_RESTORE_DRILL_TEMPORAL --json
+      - name: Pruebas de seguridad del drill
+        run: python manage.py test core.test_restore_drill core.test_backup_restore
+      - name: Limpiar bases sintéticas
+        if: always()
+        run: |
+          dropdb -h 127.0.0.1 -U scviajes_ci --if-exists scviajes_restore_drill_destination
+          dropdb -h 127.0.0.1 -U scviajes_ci --if-exists scviajes_restore_drill_source
