@@ -63,9 +63,15 @@ LOGGING = {
             '()': 'core.request_context.RequestJSONFormatter' if LOG_FORMAT == 'json' else 'core.request_context.RequestTextFormatter',
         },
     },
-    'filters': {'request_id': {'()': 'core.request_context.RequestIDFilter'}},
-    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'request', 'filters': ['request_id']}},
-    'loggers': {'django.request.safe': {'handlers': ['console'], 'level': 'INFO', 'propagate': False}},
+    'filters': {
+        'request_id': {'()': 'core.request_context.RequestIDFilter'},
+        'sensitive_request': {'()': 'core.request_context.SensitiveRequestFilter'},
+    },
+    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'request', 'filters': ['request_id', 'sensitive_request']}},
+    'loggers': {
+        'django.request.safe': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'django.server': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
     'root': {'handlers': ['console'], 'level': 'WARNING'},
 }
 

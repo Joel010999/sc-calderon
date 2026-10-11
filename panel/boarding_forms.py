@@ -25,7 +25,10 @@ class BoardingValidationForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["trip"].queryset = (
-            Trip.objects.filter(status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING])
+            # Los viajes finalizados permanecen seleccionables para devolver un
+            # resultado explícito de rechazo; el servicio sigue bloqueando toda
+            # mutación de embarque en COMPLETED.
+            Trip.objects.filter(status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING, Trip.Status.COMPLETED])
             .select_related("route", "bus")
             .order_by("departure_at", "pk")
         )
