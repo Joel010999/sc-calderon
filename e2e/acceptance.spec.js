@@ -1,15 +1,20 @@
+const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 
 const adminUser = process.env.DEMO_ADMIN_USERNAME || 'demo-20261005-admin';
 const sellerUser = process.env.DEMO_SELLER_USERNAME || 'demo-20261005-vendedor';
 const adminPassword = process.env.DEMO_ADMIN_PASSWORD || 'e2e-only-admin-password-20261007';
 const sellerPassword = process.env.DEMO_SELLER_PASSWORD || 'e2e-only-seller-password-20261007';
+const cashSellerUser = process.env.DEMO_CASH_SELLER_USERNAME || 'demo-20261005-cash-vendedor';
+const cashSellerPassword = process.env.DEMO_CASH_SELLER_PASSWORD || 'e2e-only-cash-seller-password-20261010';
 const customerEmail = process.env.DEMO_CUSTOMER_EMAIL || 'cliente@demo.scviajes.invalid';
 const customerPassword = process.env.DEMO_CUSTOMER_PASSWORD || 'e2e-only-customer-password-20261007';
 const customerHome = '/cliente/mis-viajes/';
 
 async function panelLogin(page, username = sellerUser) {
-  const password = username === adminUser ? adminPassword : sellerPassword;
+  const password = username === adminUser
+    ? adminPassword
+    : username === cashSellerUser ? cashSellerPassword : sellerPassword;
   await page.goto('/panel/login/');
   await page.locator('#id_username').fill(username);
   await page.locator('#id_password').fill(password);
@@ -58,6 +63,35 @@ async function createGuestBooking(page, email) {
   await page.locator('#id_phone').fill('3515550000');
   await page.locator('#submit-booking-btn').click();
   await expect(page).toHaveURL(/\/resumen\/[0-9a-f-]+\//);
+  return page.url();
+}
+
+function readBrowserSecrets() {
+  const secretFile = process.env.E2E_SECRET_FILE;
+  if (!secretFile) throw new Error('E2E_SECRET_FILE no está configurado');
+  return JSON.parse(fs.readFileSync(secretFile, 'utf8'));
+}
+
+async function createManualBookingFromPanel(page) {
+  await page.goto('/panel/reservas/nueva/');
+  const trip = page.locator('#id_outbound_trip option:not([value=""])').first();
+  await page.locator('#id_outbound_trip').selectOption(await trip.getAttribute('value'));
+  await page.waitForLoadState('networkidle');
+  const origin = page.locator('#id_outbound_origin option:not([value=""])').first();
+  await page.locator('#id_outbound_origin').selectOption(await origin.getAttribute('value'));
+  await page.waitForLoadState('networkidle');
+  const destination = page.locator('#id_outbound_destination option:not([value=""])').last();
+  await page.locator('#id_outbound_destination').selectOption(await destination.getAttribute('value'));
+  await page.waitForLoadState('networkidle');
+  await page.locator('input[name="outbound_seats"]:not([disabled])').first().check();
+  await page.locator('#id_contact_email').fill(`cash-${Date.now()}@demo.scviajes.invalid`);
+  await page.locator('#id_contact_phone').fill('3515550000');
+  await page.locator('#id_p_1_first_name').fill('Caja');
+  await page.locator('#id_p_1_last_name').fill('Sintética');
+  await page.locator('#id_p_1_document_number').fill(`9900${Date.now().toString().slice(-6)}`);
+  await page.locator('#id_p_1_birth_date').fill('1990-01-01');
+  await page.getByRole('button', { name: /crear reserva manual/i }).click();
+  await page.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//);
   return page.url();
 }
 
@@ -189,6 +223,61 @@ test.describe('aceptación pública y panel interno', () => {
     await expect(page.getByText(/Mi caja abierta/)).toBeVisible();
   });
 
+  test('caja completa con reserva manual, idempotencia, cierre y conciliación', async ({ browser }) => {
+    const sellerContext = await browser.newContext({ locale: 'es-AR' });
+    const adminContext = await browser.newContext({ locale: 'es-AR' });
+    const otherContext = await browser.newContext({ locale: 'es-AR' });
+    try {
+      const sellerPage = await sellerContext.newPage();
+      await panelLogin(sellerPage, cashSellerUser);
+      await sellerPage.goto('/panel/caja/');
+      if (await sellerPage.getByRole('button', { name: 'Abrir caja' }).count()) {
+        await sellerPage.locator('input[name="opening_amount"]').fill('0');
+        await sellerPage.getByRole('button', { name: 'Abrir caja' }).click();
+        await sellerPage.waitForURL(/\/panel\/caja\/$/);
+      }
+      const bookingUrl = await createManualBookingFromPanel(sellerPage);
+      await expect(sellerPage.getByRole('button', { name: /Confirmar cobro en efectivo/i })).toBeVisible();
+      sellerPage.once('dialog', (dialog) => dialog.accept());
+      await sellerPage.getByRole('button', { name: /Confirmar cobro en efectivo/i }).click();
+      await sellerPage.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//);
+      await expect(sellerPage.locator('body')).toContainText(/confirmada|confirmado/i);
+      await expect(sellerPage.getByRole('button', { name: /Confirmar cobro en efectivo/i })).toHaveCount(0);
+
+      await sellerPage.goto('/panel/caja/');
+      await sellerPage.locator('input[name="closing_amount"]').fill('0');
+      await sellerPage.getByRole('button', { name: 'Cerrar caja' }).click();
+      await sellerPage.waitForURL(/\/panel\/caja\/$/);
+
+      const adminPage = await adminContext.newPage();
+      await panelLogin(adminPage, adminUser);
+      await adminPage.goto('/panel/reportes/caja/?estado=CLOSED');
+      const detailLink = adminPage.getByRole('link', { name: 'Ver detalle' }).first();
+      await expect(detailLink).toBeVisible();
+      const detailUrl = await detailLink.getAttribute('href');
+      await detailLink.click();
+      await expect(adminPage.locator('body')).toContainText(/Total esperado:/);
+      await expect(adminPage.locator('body')).toContainText(/Importe contado:/);
+      await expect(adminPage.locator('body')).toContainText(/Diferencia:/);
+      await expect(adminPage.getByRole('cell', { name: 'Cobro en efectivo' })).toHaveCount(1);
+      await adminPage.locator('textarea[name="note"]').fill('Conciliación sintética E2E');
+      await adminPage.getByRole('button', { name: 'Revisar cierre' }).click();
+      await adminPage.waitForURL(/\/panel\/reportes\/caja\/[0-9]+\//);
+      await expect(adminPage.locator('p[role="status"]')).toContainText(/revisado/i);
+      await expect(adminPage.locator('body')).not.toContainText('cash-');
+
+      const otherPage = await otherContext.newPage();
+      await panelLogin(otherPage);
+      const forbidden = await otherPage.goto(new URL(detailUrl, 'http://127.0.0.1').pathname);
+      expect(forbidden.status()).toBe(403);
+      await sellerPage.goto(bookingUrl);
+    } finally {
+      await sellerContext.close();
+      await adminContext.close();
+      await otherContext.close();
+    }
+  });
+
   test('transferencia completa confirma fulfillment y descarga protegida', async ({ browser }) => {
     const guestContext = await browser.newContext({ locale: 'es-AR' });
     const operatorContext = await browser.newContext({ locale: 'es-AR' });
@@ -247,14 +336,16 @@ test.describe('aceptación pública y panel interno', () => {
     try {
       const customerPage = await customerContext.newPage();
       await customerLogin(customerPage, customerHome);
-      const ticketCode = await customerPage.locator('strong').filter({ hasText: /^TK-/ }).first().textContent();
-      expect(ticketCode).toMatch(/^TK-/);
+      const secrets = readBrowserSecrets();
+      const ticketCode = secrets.boarding_ticket_code;
+      const tripId = String(secrets.boarding_trip_id);
 
       const operatorPage = await operatorContext.newPage();
       await panelLogin(operatorPage);
+      await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
+      await expect(operatorPage.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 0');
+      await expect(operatorPage.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [2-9]/);
       await operatorPage.goto('/panel/embarques/');
-      const trip = operatorPage.locator('select[name="trip"] option').nth(2);
-      const tripId = await trip.getAttribute('value');
       await operatorPage.locator('select[name="trip"]').selectOption(tripId);
       await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
       await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
@@ -268,6 +359,9 @@ test.describe('aceptación pública y panel interno', () => {
         await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
         await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
         await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
+        await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
+        await expect(operatorPage.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 0');
+        await expect(operatorPage.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [2-9]/);
       }
 
       await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
@@ -276,12 +370,58 @@ test.describe('aceptación pública y panel interno', () => {
       await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
       await expect(operatorPage.getByText('Embarcado', { exact: true })).toBeVisible();
 
-      const publicResponse = await operatorPage.goto('/tickets/verify/?token=synthetic-invalid-token');
-      expect(publicResponse.status()).toBe(200);
-      await expect(operatorPage.getByText(/No se encontr/)).toBeVisible();
+      await operatorPage.goto('/panel/embarques/');
+      await operatorPage.locator('select[name="trip"]').selectOption(tripId);
+      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
+      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
+      await expect(operatorPage.getByRole('button', { name: 'Revertir embarque' })).toBeVisible();
+      await operatorPage.locator('textarea[name="reason"]').fill('Reversión sintética de prueba');
+      await operatorPage.getByRole('button', { name: 'Revertir embarque' }).click();
+      await operatorPage.waitForURL(/\/panel\/embarques\/$/);
+      await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
+      await expect(operatorPage.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 0');
+      await expect(operatorPage.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [2-9]/);
+
+      await operatorPage.goto('/panel/embarques/');
+      await operatorPage.locator('select[name="trip"]').selectOption(tripId);
+      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
+      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
+      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
+      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
+      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
+      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/ya fue embarcado|ya fue utilizado/i);
+
+      await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/`);
+      await operatorPage.getByRole('link', { name: 'Iniciar viaje' }).click();
+      await operatorPage.getByRole('button', { name: 'Confirmar e iniciar viaje' }).click();
+      await operatorPage.waitForURL(new RegExp(`/panel/operaciones/viajes/${tripId}/$`));
+      await operatorPage.getByRole('button', { name: 'Finalizar viaje' }).click();
+      await operatorPage.waitForURL(new RegExp(`/panel/operaciones/viajes/${tripId}/$`));
+      await operatorPage.goto('/panel/embarques/');
+      await operatorPage.locator('select[name="trip"]').selectOption(tripId);
+      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
+      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
+      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/no estÃ¡ emitido|no es vÃ¡lido|no estÃ¡ vigente/i);
     } finally {
       await customerContext.close();
       await operatorContext.close();
     }
+  });
+
+  test.describe('QR pÃºblico sintÃ©tico', () => {
+    test('QR vÃ¡lido es de solo consulta y el token manipulado es rechazado', async ({ page }) => {
+      const secrets = readBrowserSecrets();
+      await page.goto(secrets.qr_verification_url);
+      await expect(page.getByText(/Pasaje V/)).toBeVisible();
+      await expect(page.locator('body')).not.toContainText(/@demo\.scviajes\.invalid|99000101|3515550000/);
+      await expect(page.locator('body')).not.toContainText(secrets.qr_verification_url.split('token=')[1]);
+      await page.goto(`${secrets.qr_verification_url}x`);
+      await expect(page.getByText(/Pasaje No Encontrado/)).toBeVisible();
+
+      await panelLogin(page, adminUser);
+      await page.goto(`/panel/operaciones/viajes/${secrets.qr_trip_id}/manifiesto/`);
+      await expect(page.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 1');
+      await expect(page.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [1-9]/);
+    });
   });
 });

@@ -10,6 +10,7 @@ from asgiref.local import Local
 
 _REQUEST_ID = Local()
 _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_SENSITIVE_QUERY = re.compile(r"([?&](?:token|access_token|refresh_token|code)=)[^&\s\"]+", re.IGNORECASE)
 
 
 def get_request_id():
@@ -28,6 +29,18 @@ class RequestIDFilter(logging.Filter):
             or getattr(request, "request_id", "")
             or get_request_id()
         )
+        return True
+
+
+class SensitiveRequestFilter(logging.Filter):
+    """Evita que loggers HTTP serialicen tokens presentes en la URL."""
+
+    def filter(self, record):
+        message = record.getMessage()
+        sanitized = _SENSITIVE_QUERY.sub(r"\1[REDACTED]", message)
+        if sanitized != message:
+            record.msg = sanitized
+            record.args = ()
         return True
 
 

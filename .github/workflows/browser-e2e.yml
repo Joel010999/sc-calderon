@@ -25,6 +25,9 @@ jobs:
       DEMO_ADMIN_PASSWORD: e2e-only-admin-password-20261007
       DEMO_SELLER_PASSWORD: e2e-only-seller-password-20261007
       DEMO_CUSTOMER_PASSWORD: e2e-only-customer-password-20261007
+      DEMO_CASH_SELLER_USERNAME: demo-20261005-cash-vendedor
+      DEMO_CASH_SELLER_PASSWORD: e2e-only-cash-seller-password-20261010
+      E2E_SECRET_FILE: ${{ runner.temp }}/scviajes-browser-e2e-secrets.json
       MEDIA_ROOT: ${{ github.workspace }}/.e2e-media
       PROTECTED_MEDIA_ROOT: ${{ github.workspace }}/.e2e-protected-media
       TICKETS_STORAGE_ROOT: ${{ github.workspace }}/.e2e-tickets
@@ -52,6 +55,8 @@ jobs:
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
           python manage.py seed_demo_scenario
+          rm -f "$E2E_SECRET_FILE"
+          python e2e/prepare_browser_scenario.py
           python manage.py collectstatic --noinput
       - name: Ejecutar aceptación en navegador
         run: npm run test:e2e

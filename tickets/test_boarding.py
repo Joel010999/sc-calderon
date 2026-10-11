@@ -84,6 +84,16 @@ class BoardingServiceTests(TicketBaseMixin, TransactionTestCase):
         )
         self.assertEqual(BoardingRecord.objects.count(), 0)
 
+    def test_completed_trip_rejects_new_boarding(self):
+        self.trip_ida.status = self.trip_ida.Status.COMPLETED
+        self.trip_ida.completed_at = self.now
+        self.trip_ida.save(update_fields=["status", "completed_at", "updated_at"])
+
+        result = validate_boarding(self.raw_token, self.trip_ida.pk, self.seller_user, now=self.now)
+
+        self.assertEqual(result.code, BoardingCode.TICKET_NOT_VALID)
+        self.assertEqual(BoardingRecord.objects.count(), 0)
+
     def test_booking_assignment_and_ticket_state_are_revalidated(self):
         self.booking.status = BookingStatus.HELD
         self.booking.save(update_fields=["status", "updated_at"])
