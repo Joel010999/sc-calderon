@@ -378,7 +378,7 @@ test.describe('aceptación pública y panel interno', () => {
 
       await operatorPage.goto('/panel/embarques/');
       await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-      await operatorPage.locator('input[name="scan_value"]').fill(unboardedTicketCode.trim());
+      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
       await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
       await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
       await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
