@@ -17,18 +17,18 @@ import django
 
 django.setup()
 
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
-from django.utils import timezone
+from django.contrib.auth import get_user_model  # noqa: E402
+from django.contrib.auth.models import Group  # noqa: E402
+from django.utils import timezone  # noqa: E402
 
-from core.demo_scenario import DEMO_DOMAIN, DEMO_PREFIX, seed_demo
-from operations.models import Trip
-from payments.services import register_cash_payment
-from sales.models import Booking, BookingChannel, BookingStatus
-from sales.services import create_manual_booking
-from tickets.services import issue_tickets_for_booking
-from tickets.storage import get_ticket_storage
-from tickets.models import Ticket
+from core.demo_scenario import DEMO_DOMAIN, DEMO_PREFIX, seed_demo  # noqa: E402
+from operations.models import Trip  # noqa: E402
+from payments.services import register_cash_payment  # noqa: E402
+from sales.models import BookingStatus  # noqa: E402
+from sales.services import create_manual_booking  # noqa: E402
+from tickets.services import issue_tickets_for_booking  # noqa: E402
+from tickets.storage import get_ticket_storage  # noqa: E402
+from tickets.models import Ticket  # noqa: E402
 
 
 CASH_SELLER_USERNAME = f"{DEMO_PREFIX.lower()}-cash-vendedor"
