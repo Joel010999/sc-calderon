@@ -481,3 +481,9 @@ un workflow reproducible para Ruff, checks de Django, `collectstatic`, `pip chec
 `pip-audit` y `npm audit` en PRs y pushes a `main` y `feature/**`. Las exclusiones y su justificación
 están documentadas en [CODE_QUALITY.md](CODE_QUALITY.md); no se modificaron
 migraciones ni dependencias de producción.
+## 2026-10-10 — restore drill PostgreSQL
+
+Se agregó un restore drill temporal y reproducible con PostgreSQL, conteos y
+comparación de esquema sanitizados, inventario/checksum de archivos privados
+sintéticos, limpieza ante fallos y workflow CI aislado. No se ejecuta contra
+bases reales ni se almacenan credenciales.
