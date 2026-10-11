@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DEBUG: 'True'
+      TESTING: 'True'
+      SCVIAJES_ENVIRONMENT: test
+      DEMO_SCENARIO_ENABLED: 'True'
       SECRET_KEY: e2e-only-secret-not-for-production
       ALLOWED_HOSTS: 127.0.0.1,localhost
       DATABASE_URL: sqlite:///e2e.sqlite3
@@ -52,6 +55,8 @@ jobs:
           python manage.py collectstatic --noinput
       - name: Ejecutar aceptación en navegador
         run: npm run test:e2e
+      - name: Verificar suite de accesibilidad con axe
+        run: npm run test:e2e -- e2e/accessibility.spec.js
       - name: Auditar Apple ficticio sin navegar al proveedor
         env:
           APPLE_OIDC_SIMULATION_ENABLED: 'True'

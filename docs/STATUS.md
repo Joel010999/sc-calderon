@@ -467,6 +467,15 @@ base SQLite temporal.
 
 ## Endurecimiento de calidad y CI (2026-10-10)
 
+## Ampliacion critica E2E (2026-10-10)
+
+La suite de navegador cubre carga de comprobante sintético en transferencia,
+aprobación y rechazo en la bandeja interna, aislamiento entre contextos de
+navegador para roles, pantalla de embarque y caja del vendedor. El workflow fija
+el entorno de demo, ejecuta Playwright y una corrida explícita de axe; los
+artefactos siguen publicándose únicamente ante fallos. No se conectan proveedores
+reales ni se alteran reglas comerciales.
+
 Implementado Ruff fijado a `0.13.0`, correcciones de imports/variables muertos y
 un workflow reproducible para Ruff, checks de Django, `collectstatic`, `pip check`,
 `pip-audit` y `npm audit` en PRs y pushes a `main` y `feature/**`. Las exclusiones y su justificación
