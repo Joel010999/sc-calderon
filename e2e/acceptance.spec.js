@@ -341,7 +341,7 @@ test.describe('aceptación pública y panel interno', () => {
       const tripId = String(secrets.boarding_trip_id);
 
       const operatorPage = await operatorContext.newPage();
-      await panelLogin(operatorPage);
+      await panelLogin(operatorPage, adminUser);
       await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
       await expect(operatorPage.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 0');
       await expect(operatorPage.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [2-9]/);
