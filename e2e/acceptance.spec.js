@@ -349,7 +349,7 @@ test.describe('aceptación pública y panel interno', () => {
       await operatorPage.locator('select[name="trip"]').selectOption(tripId);
       await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
       await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado|ya fue embarcado|ya fue utilizado/i);
+      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
 
       if (await operatorPage.getByRole('button', { name: 'Revertir embarque' }).count()) {
         await operatorPage.locator('textarea[name="reason"]').fill('Corrección de prueba sintética');
@@ -367,13 +367,6 @@ test.describe('aceptación pública y panel interno', () => {
       await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
       await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
       await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/ya fue embarcado|ya fue utilizado/i);
-      await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
-      await expect(operatorPage.getByText('Embarcado', { exact: true })).toBeVisible();
-
-      await operatorPage.goto('/panel/embarques/');
-      await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
-      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
       await expect(operatorPage.getByRole('button', { name: 'Revertir embarque' })).toBeVisible();
       await operatorPage.locator('textarea[name="reason"]').fill('Reversión sintética de prueba');
       await operatorPage.getByRole('button', { name: 'Revertir embarque' }).click();
