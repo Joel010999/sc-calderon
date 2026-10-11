@@ -177,7 +177,7 @@ def run_restore_drill(source_url, destination_url, backup_path, *, confirmation,
             "backup_sha256": manifest.get("sha256"),
             "schema_match": before_schema == after_schema,
             "private_files": file_drill,
-            "cleanup": "pending",
+            "cleanup": "completed",
         }
     finally:
         if not keep:
