@@ -338,6 +338,7 @@ test.describe('aceptación pública y panel interno', () => {
       await customerLogin(customerPage, customerHome);
       const secrets = readBrowserSecrets();
       const ticketCode = secrets.boarding_ticket_code;
+      const unboardedTicketCode = secrets.qr_ticket_code;
       const tripId = String(secrets.boarding_trip_id);
 
       const operatorPage = await operatorContext.newPage();
@@ -377,7 +378,7 @@ test.describe('aceptación pública y panel interno', () => {
 
       await operatorPage.goto('/panel/embarques/');
       await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
+      await operatorPage.locator('input[name="scan_value"]').fill(unboardedTicketCode.trim());
       await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
       await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
       await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
@@ -392,7 +393,7 @@ test.describe('aceptación pública y panel interno', () => {
       await operatorPage.waitForURL(new RegExp(`/panel/operaciones/viajes/${tripId}/$`));
       await operatorPage.goto('/panel/embarques/');
       await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
+      await operatorPage.locator('input[name="scan_value"]').fill(unboardedTicketCode.trim());
       await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
       await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/no estÃ¡ emitido|no es vÃ¡lido|no estÃ¡ vigente/i);
     } finally {
