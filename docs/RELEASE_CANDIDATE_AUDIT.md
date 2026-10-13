@@ -51,3 +51,13 @@ No se modificó código de aplicación durante esta auditoría: los hallazgos ob
 ## Impedimentos de entrega
 
 El release no debe declararse listo para datos reales hasta ejecutar Ruff y todos los workflows sobre el hash final, validar PostgreSQL/restore/staging, configurar storage/SMTP/proveedores autorizados y confirmar datos bancarios y decisiones comerciales sin inventar valores. La suite SQLite válida y los tests afectados están en verde.
+
+## Actualización del toolkit de inventario heredado
+
+- **PASS:** la herramienta local `inventory_legacy_exports` fue revisada con datos sintéticos y mantiene sus protecciones de lectura, sanitización y límites para CSV, TSV y XLSX multihoja.
+- **No realizada:** no se efectuó ninguna conexión a AppSheet ni Google Sheets.
+- **No utilizados:** no se utilizaron datos reales.
+- **Bloqueado:** la configuración real y las decisiones de Sandro continúan pendientes de autorización y definición.
+- **Pendiente:** el staging autorizado continúa sin ejecutarse.
+
+Esta actualización no declara el sistema productivo ni aprobado para datos reales.
