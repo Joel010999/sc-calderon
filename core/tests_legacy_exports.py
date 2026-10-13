@@ -72,6 +72,7 @@ class LegacyExportInventoryTests(SimpleTestCase):
             else:
                 with self.assertRaisesRegex(ValueError, "symlink_rejected"):
                     inventory_legacy_exports(root, dry_run=True)
+                (root / "link.csv").unlink()
             (root / "large.csv").write_text("a\n1\n", encoding="utf-8")
             limited = inventory_legacy_exports(root, dry_run=True, limits={"max_file_bytes": 1})
             self.assertEqual(limited["files"][-1]["error"], "max_file_bytes_exceeded")
