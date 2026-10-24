@@ -535,3 +535,11 @@ pendiente cualquier política adicional de embarque de menores. Continúan fuera
 de alcance tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y
 Payway. La validación PostgreSQL, Browser E2E/axe y restore drill debe ejecutarse
 en los workflows sobre el SHA final; no se conectan proveedores reales.
+## ValidaciÃ³n CI de rutas y menores (SHA 6264626)
+
+Quality Gate, Sales PostgreSQL, Tickets PostgreSQL, Browser E2E con axe y
+PostgreSQL restore drill terminaron exitosamente sobre el SHA
+`6264626ae6028f32b6eaaadf76c8cc4575753a09`, en entornos aislados y sin
+proveedores reales.
+
+Esta validaciÃ³n reemplaza el estado pendiente indicado en la secciÃ³n anterior.
