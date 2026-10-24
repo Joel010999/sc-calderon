@@ -1941,8 +1941,8 @@ class SalesPostgresConcurrencyTests(TransactionTestCase):
 
     def setUp(self):
         super().setUp()
-        self.stop1 = Stop.objects.create(code="CONC1", name="Origen", city="C", province="P")
-        self.stop2 = Stop.objects.create(code="CONC2", name="Destino", city="C", province="P")
+        self.stop1 = Stop.objects.create(code="CONC1", name="Origen", city="C", province="Córdoba")
+        self.stop2 = Stop.objects.create(code="CONC2", name="Destino", city="C", province="Jujuy")
         self.route = Route.objects.create(code="CONC-RT", name="Ruta Concurrencia")
         RouteStop.objects.create(route=self.route, stop=self.stop1, sequence=1, allows_boarding=True, allows_alighting=False)
         RouteStop.objects.create(route=self.route, stop=self.stop2, sequence=2, allows_boarding=False, allows_alighting=True)

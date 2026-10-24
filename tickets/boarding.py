@@ -95,7 +95,10 @@ def _find_ticket(scan_value):
     kind, value = _scan_kind(scan_value)
     if not value:
         return None
-    queryset = Ticket.objects.select_for_update().select_related(
+    # `seat_assignment` es nullable para menores gratuitos. En PostgreSQL un
+    # FOR UPDATE implícito sobre todo el queryset no puede bloquear el lado
+    # nullable del LEFT JOIN; el ticket es la fila que debe serializarse.
+    queryset = Ticket.objects.select_for_update(of=("self",)).select_related(
         "booking",
         "leg",
         "passenger",
