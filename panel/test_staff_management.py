@@ -9,7 +9,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import AuditEvent, StaffInvitation
+from .models import AuditEvent, StaffInvitation, StaffProfile
 from .staff_services import accept_invitation, invite_staff, update_staff
 
 
@@ -62,6 +62,28 @@ class StaffManagementTests(TestCase):
                 invite_staff(actor=self.admin, email="seller2@sc.invalid", role="Vendedor")
         self.assertFalse(self.User.objects.filter(email="seller2@sc.invalid").exists())
         self.assertFalse(StaffInvitation.objects.filter(normalized_email="seller2@sc.invalid").exists())
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_only_explicit_owner_can_invite_or_promote_administrators(self):
+        with self.assertRaises(ValidationError):
+            invite_staff(actor=self.superuser, email="manager@sc.invalid", role="Administrador")
+        with self.assertRaises(ValidationError):
+            update_staff(actor=self.admin, user_id=self.seller.pk, role="Administrador")
+        StaffProfile.objects.create(user=self.superuser, is_owner=True)
+        invitation, _ = invite_staff(actor=self.superuser, email="manager@sc.invalid", role="Administrador")
+        self.assertEqual(invitation.role, "Administrador")
+        update_staff(actor=self.superuser, user_id=self.seller.pk, role="Administrador")
+        self.seller.refresh_from_db()
+        self.assertTrue(self.seller.groups.filter(name="Administrador").exists())
+
+    def test_staff_profile_fields_are_updated_without_replacing_customer(self):
+        update_staff(actor=self.admin, user_id=self.seller.pk, first_name="Ana", last_name="Vendedora",
+                     dni="30123456", whatsapp="3515551234")
+        self.seller.refresh_from_db()
+        self.assertEqual(self.seller.get_full_name(), "Ana Vendedora")
+        profile = StaffProfile.objects.get(user=self.seller)
+        self.assertEqual(profile.dni, "30123456")
+        self.assertEqual(profile.whatsapp, "3515551234")
 
     def test_post_csrf_and_self_protection(self):
         self.client.force_login(self.admin)

@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
-from .permissions import staff_management_access
+from .permissions import can_create_administrator, staff_management_access
 from .staff_services import ROLES, accept_invitation, invite_staff, update_staff
 from core.abuse import consume, request_identifier
 
@@ -15,7 +15,8 @@ def staff_list(request):
     qs=User.objects.filter(is_superuser=False,groups__name__in=ROLES).distinct().prefetch_related("groups").order_by("email")
     if q: qs=qs.filter(email__icontains=q)
     if role in ROLES: qs=qs.filter(groups__name=role)
-    return render(request,"panel/staff/list.html",{"users":Paginator(qs,25).get_page(request.GET.get("page")),"q":q,"role":role,"roles":ROLES})
+    roles = ROLES if can_create_administrator(request.user) else ("Vendedor",)
+    return render(request,"panel/staff/list.html",{"users":Paginator(qs,25).get_page(request.GET.get("page")),"q":q,"role":role,"roles":roles,"can_create_administrator":can_create_administrator(request.user)})
 
 @staff_management_access()
 def staff_invite(request):
@@ -27,12 +28,13 @@ def staff_invite(request):
             return render(request,"panel/staff/invite.html",{"roles":ROLES})
         try: invite_staff(actor=request.user,email=request.POST.get("email",""),role=request.POST.get("role","")); messages.success(request,"Invitación enviada."); return redirect("panel:staff_list")
         except ValidationError as exc: messages.error(request,str(exc))
-    return render(request,"panel/staff/invite.html",{"roles":ROLES})
+    roles = ROLES if can_create_administrator(request.user) else ("Vendedor",)
+    return render(request,"panel/staff/invite.html",{"roles":roles,"can_create_administrator":can_create_administrator(request.user)})
 
 @require_POST
 @staff_management_access()
 def staff_update(request,user_id):
-    try: update_staff(actor=request.user,user_id=user_id,role=request.POST.get("role") or None,active=request.POST.get("active")=="1"); messages.success(request,"Usuario actualizado.")
+    try: update_staff(actor=request.user,user_id=user_id,role=request.POST.get("role") or None,active=request.POST.get("active")=="1",first_name=request.POST.get("first_name"),last_name=request.POST.get("last_name"),dni=request.POST.get("dni"),whatsapp=request.POST.get("whatsapp")); messages.success(request,"Usuario actualizado.")
     except ValidationError as exc: messages.error(request,str(exc))
     return redirect("panel:staff_list")
 

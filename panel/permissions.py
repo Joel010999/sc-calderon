@@ -3,6 +3,8 @@ from functools import wraps
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 
+from .models import StaffProfile
+
 
 def is_panel_user(user):
     return user.is_authenticated and user.is_active and (
@@ -11,6 +13,18 @@ def is_panel_user(user):
 
 def can_manage_staff(user):
     return user.is_authenticated and user.is_active and (user.is_superuser or user.groups.filter(name="Administrador").exists())
+
+
+def is_staff_owner(user):
+    return (
+        user.is_authenticated
+        and user.is_active
+        and StaffProfile.objects.filter(user=user, is_owner=True).exists()
+    )
+
+
+def can_create_administrator(user):
+    return is_staff_owner(user)
 
 def staff_management_access():
     def decorate(view):
