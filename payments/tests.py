@@ -682,7 +682,16 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
             departure_at=self.ts1.scheduled_at,
             arrival_at=self.ts2.scheduled_at,
         )
-        self.passenger = BookingPassenger.objects.create(booking=self.booking, position=1, first_name="Juan", last_name="Perez", document_type="DNI", document_number="30111222")
+        self.passenger = BookingPassenger.objects.create(
+            booking=self.booking,
+            position=1,
+            first_name="Juan",
+            last_name="Perez",
+            document_type="DNI",
+            document_number="30111222",
+            birth_date=date(1988, 4, 4),
+            nationality="Argentina",
+        )
         SeatAssignment.objects.create(
             leg=self.leg,
             passenger=self.passenger,
