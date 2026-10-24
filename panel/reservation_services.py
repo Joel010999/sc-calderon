@@ -61,6 +61,7 @@ def booking_snapshot(booking):
         "phone": booking.phone,
         "seller_id": booking.seller_id,
         "seller_username": booking.seller.username if booking.seller else None,
+        "internal_note": booking.internal_note,
         "expires_at": booking.expires_at.isoformat() if booking.expires_at else None,
         "confirmed_at": booking.confirmed_at.isoformat() if booking.confirmed_at else None,
         "total": format(total, ".2f"),
@@ -85,13 +86,14 @@ def record_booking_event(*, actor, booking, action, before, description=None):
 
 
 @transaction.atomic
-def create_panel_manual_booking(*, actor, email, phone="", legs, passengers_data=None, now=None):
+def create_panel_manual_booking(*, actor, email="", phone="", internal_note="", legs, passengers_data=None, now=None):
     """Crea una reserva manual y registra su auditoría en la misma transacción."""
     require_reservations_access(actor)
     booking = create_manual_booking(
         seller=actor,
         email=email,
         phone=phone,
+        internal_note=internal_note,
         legs=legs,
         passengers_data=passengers_data,
         now=now,
@@ -117,6 +119,9 @@ def release_panel_booking(*, actor, booking_or_id, now=None):
     booking = Booking.objects.select_for_update().prefetch_related(
         "legs__seat_assignments", "passengers"
     ).get(pk=booking_id)
+
+    if booking.seller_id != actor.pk:
+        raise InvalidBookingError("Solo quien creó la reserva puede liberarla manualmente.")
 
     if booking.status == BookingStatus.RELEASED:
         return booking, False

@@ -16,6 +16,7 @@ from django.db import models
 from django.utils import timezone
 
 from sales.models import Booking, BookingStatus
+from payments.models import Payment, PaymentStatus
 from tickets.models import (
     FulfillmentEmailStatus,
     FulfillmentIssueStatus,
@@ -162,8 +163,11 @@ class Command(BaseCommand):
 
     def _candidates(self, task, booking_id, now):
         if task == "expire":
-            qs = Booking.objects.filter(status=BookingStatus.HELD, expires_at__lte=now).exclude(
-                payments__status__in=["AWAITING_VOUCHER", "UNDER_REVIEW"]
+            latest_payment = Payment.objects.filter(booking_id=models.OuterRef("pk")).order_by("-created_at", "-pk").values("status")[:1]
+            qs = Booking.objects.filter(status=BookingStatus.HELD, expires_at__lte=now).annotate(
+                latest_payment_status=models.Subquery(latest_payment),
+            ).exclude(
+                latest_payment_status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW, PaymentStatus.REJECTED]
             ).order_by("pk")
             if booking_id:
                 qs = qs.filter(public_id=booking_id)

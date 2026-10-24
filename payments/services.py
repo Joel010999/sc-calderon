@@ -17,6 +17,7 @@ from sales.models import (
     SeatAssignment,
 )
 from sales.validators import validate_aware_datetime
+from sales.services import validate_booking_for_payment
 from .exceptions import (
     InvalidPaymentStatusError,
     PaymentDuplicateError,
@@ -63,6 +64,15 @@ def validate_payment_agent(user):
     if user.is_superuser or user.groups.filter(name__in=["Administrador", "Vendedor"]).exists():
         return True
     raise ValidationError("No tenés permiso para operar con pagos.")
+
+
+def validate_payment_reviewer(user):
+    """La revisión de transferencias es exclusiva de Administrador activo."""
+    if not user or not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
+        raise ValidationError("El usuario debe estar autenticado y activo.")
+    if user.is_superuser or user.groups.filter(name="Administrador").exists():
+        return True
+    raise ValidationError("Solo un Administrador activo puede revisar transferencias.")
 
 
 def _enqueue_ticket_fulfillment(booking):
@@ -114,6 +124,8 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
     if booking.channel != BookingChannel.MANUAL:
         raise InvalidBookingError("Solo las reservas manuales admiten registro de pago en efectivo.")
 
+    validate_booking_for_payment(booking)
+
     _lock_manual_booking_trips(booking)
 
     if booking.status == BookingStatus.CONFIRMED:
@@ -126,7 +138,7 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
         raise InvalidBookingError(f"Estado de reserva no válido para pago: {booking.status}")
 
     # Verificar vigencia
-    if booking.expires_at <= effective_now:
+    if booking.expires_at is not None and booking.expires_at <= effective_now:
         booking.status = BookingStatus.EXPIRED
         booking.full_clean()
         booking.save(update_fields=["status", "updated_at"])
@@ -283,6 +295,8 @@ def _register_transfer_payment_atomic(*, booking_or_id, seller, voucher, referen
     if booking.channel != BookingChannel.MANUAL:
         raise InvalidBookingError("Solo las reservas manuales admiten transferencias en el panel.")
 
+    validate_booking_for_payment(booking)
+
     _lock_manual_booking_trips(booking)
 
     if booking.status == BookingStatus.CONFIRMED:
@@ -295,7 +309,7 @@ def _register_transfer_payment_atomic(*, booking_or_id, seller, voucher, referen
         raise InvalidBookingError(f"Estado de reserva no válido para pago: {booking.status}")
 
     # Verificar vigencia
-    if booking.expires_at <= effective_now:
+    if booking.expires_at is not None and booking.expires_at <= effective_now:
         booking.status = BookingStatus.EXPIRED
         booking.full_clean()
         booking.save(update_fields=["status", "updated_at"])
@@ -407,7 +421,7 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
         validate_aware_datetime(now)
     effective_now = now or timezone.now()
 
-    validate_payment_agent(reviewer)
+    validate_payment_reviewer(reviewer)
 
     if isinstance(payment_or_id, Payment):
         payment_id = payment_or_id.pk
@@ -434,7 +448,7 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
         if booking.channel == BookingChannel.MANUAL:
             _lock_manual_booking_trips(booking)
         # Verificar vencimiento de la reserva
-        if booking.expires_at <= effective_now or booking.status == BookingStatus.EXPIRED:
+        if (booking.expires_at is not None and booking.expires_at <= effective_now) or booking.status == BookingStatus.EXPIRED:
             # Rechaza si vencida sin modificar Payment
             booking.status = BookingStatus.EXPIRED
             booking.full_clean()
@@ -528,17 +542,8 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
 
         # El rechazo no extiende vencimiento; si la reserva sigue vigente, queda en HELD
         # Si ya venció en este instante, se actualiza a EXPIRED
-        if booking.status == BookingStatus.HELD and booking.expires_at <= effective_now:
-            booking.status = BookingStatus.EXPIRED
-            booking.full_clean()
-            booking.save(update_fields=["status", "updated_at"])
-            SeatAssignment.objects.filter(
-                leg__booking=booking,
-                status=AssignmentStatus.HELD,
-            ).update(
-                status=AssignmentStatus.RELEASED,
-                updated_at=effective_now,
-            )
+        # El rechazo conserva la butaca para corregir el pago y no libera por
+        # el vencimiento del intento rechazado.
 
         if isinstance(payment_or_id, Payment):
             payment_or_id.status = payment.status
@@ -565,12 +570,12 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
 
     from notifications.models import NotificationType
     from notifications.services import schedule_notification
-    notification_type = NotificationType.TRANSFER_APPROVED if approved else NotificationType.TRANSFER_REJECTED
-    schedule_notification(
-        booking=booking, notification_type=notification_type,
-        event_key=f"payment:{payment.public_id}:{'approved' if approved else 'rejected'}",
-        payload={"booking_ref": str(booking.public_id)},
-    )
+    if not approved:
+        schedule_notification(
+            booking=booking, notification_type=NotificationType.TRANSFER_REJECTED,
+            event_key=f"payment:{payment.public_id}:rejected",
+            payload={"booking_ref": str(booking.public_id)},
+        )
     return payment, None
 
 
@@ -618,7 +623,9 @@ def _initiate_public_transfer_payment_atomic(*, booking_or_id, now=None):
         raise InvalidBookingError(f"Estado de reserva no válido para pago: {booking.status}")
 
     # Comprobación de vencimiento de la reserva
-    if booking.expires_at <= effective_now:
+    latest_payment = Payment.objects.filter(booking=booking).order_by("-created_at", "-pk").first()
+    rejected_correction = latest_payment is not None and latest_payment.status == PaymentStatus.REJECTED
+    if not rejected_correction and booking.expires_at is not None and booking.expires_at <= effective_now:
         booking.status = BookingStatus.EXPIRED
         booking.full_clean()
         booking.save(update_fields=["status", "updated_at"])
@@ -892,7 +899,13 @@ def expire_public_transfer_if_expired(booking, now=None):
 
     booking_id = booking.pk if isinstance(booking, Booking) else booking
     locked_booking = Booking.objects.select_for_update().get(pk=booking_id)
-    if locked_booking.status == BookingStatus.HELD and locked_booking.expires_at <= effective_now:
+    latest_payment = Payment.objects.filter(booking=locked_booking).order_by("-created_at", "-pk").first()
+    if (
+        locked_booking.status == BookingStatus.HELD
+        and locked_booking.expires_at is not None
+        and locked_booking.expires_at <= effective_now
+        and not (latest_payment and latest_payment.status == PaymentStatus.REJECTED)
+    ):
         locked_booking.status = BookingStatus.EXPIRED
         locked_booking.full_clean()
         locked_booking.save(update_fields=["status", "updated_at"])

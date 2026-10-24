@@ -78,6 +78,7 @@
                 </div>
 
                 <!-- Acciones de Aprobación y Rechazo -->
+                {% if can_review %}
                 <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 0.375rem; padding: 1rem;">
                     <h3 style="margin-top: 0; margin-bottom: 0.75rem; font-size: 0.95rem; color: #374151;">Resolución de la transferencia</h3>
 
@@ -114,6 +115,9 @@
                         </form>
                     </div>
                 </div>
+                {% else %}
+                <p class="muted">Solo un Administrador activo puede revisar esta transferencia.</p>
+                {% endif %}
             </section>
             {% endfor %}
         </div>

@@ -15,3 +15,7 @@ def get_online_cutoff_minutes():
 
 def get_manual_hold_hours():
     return getattr(settings, "SALES_MANUAL_HOLD_HOURS", 24)
+
+
+def get_manual_cutoff_minutes():
+    return getattr(settings, "SALES_MANUAL_CUTOFF_MINUTES", 30)

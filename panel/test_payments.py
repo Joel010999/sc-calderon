@@ -102,7 +102,7 @@ class PanelPaymentsTestCase(TestCase):
         shutil.rmtree(self.temp_public_media, ignore_errors=True)
         super().tearDown()
 
-    def create_booking(self, email="test@correo.com", status=BookingStatus.HELD, seats=None, hours_held=24):
+    def create_booking(self, email="test@correo.com", status=BookingStatus.HELD, seats=None, hours_held=None):
         now = timezone.now()
         booking = Booking.objects.create(
             channel=BookingChannel.MANUAL,
@@ -110,7 +110,7 @@ class PanelPaymentsTestCase(TestCase):
             email=email,
             phone="3519998888",
             seller=self.seller_user,
-            expires_at=now + timedelta(hours=hours_held),
+            expires_at=(now + timedelta(hours=hours_held)) if hours_held is not None else None,
             confirmed_at=now if status == BookingStatus.CONFIRMED else None,
         )
         leg = BookingLeg.objects.create(
@@ -142,6 +142,8 @@ class PanelPaymentsTestCase(TestCase):
                 last_name="Tevez",
                 document_type="DNI",
                 document_number="28123456",
+                birth_date=date(1988, 4, 4),
+                nationality="Argentina",
             )
             price = self.fare_cama.amount if seat.category == SeatCategory.CAMA else self.fare_semi.amount
             assign_status = AssignmentStatus.CONFIRMED if status == BookingStatus.CONFIRMED else AssignmentStatus.HELD
@@ -229,7 +231,7 @@ class PanelPaymentsTestCase(TestCase):
 
     def test_booking_detail_held_shows_payment_actions_and_total(self):
         """Para reserva HELD, el detalle muestra el total y las acciones de pago en efectivo y transferencia."""
-        self.client.force_login(self.seller_user)
+        self.client.force_login(self.admin_user)
         booking = self.create_booking()  # 12000.00
         url = reverse("panel:booking_detail", kwargs={"public_id": booking.public_id})
 
@@ -348,7 +350,7 @@ class PanelPaymentsTestCase(TestCase):
     # --- Transferencias Pendientes, Aprobación y Rechazo ---
 
     def test_pending_transfers_approve_flow(self):
-        self.client.force_login(self.seller_user)
+        self.client.force_login(self.admin_user)
         booking = self.create_booking()
         payment = register_transfer_payment(
             booking_or_id=booking,
@@ -371,7 +373,7 @@ class PanelPaymentsTestCase(TestCase):
 
         payment.refresh_from_db()
         self.assertEqual(payment.status, PaymentStatus.APPROVED)
-        self.assertEqual(payment.reviewed_by, self.seller_user)
+        self.assertEqual(payment.reviewed_by, self.admin_user)
 
         booking.refresh_from_db()
         self.assertEqual(booking.status, BookingStatus.CONFIRMED)
@@ -487,7 +489,8 @@ class PanelPaymentsTestCase(TestCase):
         booking = self.create_booking(email="online_transf@correo.com")
         booking.channel = BookingChannel.ONLINE
         booking.seller = None
-        booking.save(update_fields=["channel", "seller"])
+        booking.expires_at = timezone.now() + timedelta(minutes=15)
+        booking.save(update_fields=["channel", "seller", "expires_at"])
 
         initiate_public_transfer_payment(booking_or_id=booking)
         payment = upload_public_transfer_voucher(
@@ -528,7 +531,8 @@ class PanelPaymentsTestCase(TestCase):
         booking = self.create_booking(email="online_rej@correo.com")
         booking.channel = BookingChannel.ONLINE
         booking.seller = None
-        booking.save(update_fields=["channel", "seller"])
+        booking.expires_at = timezone.now() + timedelta(minutes=15)
+        booking.save(update_fields=["channel", "seller", "expires_at"])
 
         initiate_public_transfer_payment(booking_or_id=booking)
         payment = upload_public_transfer_voucher(
@@ -536,7 +540,7 @@ class PanelPaymentsTestCase(TestCase):
             voucher_file=self.sample_voucher(),
         )
 
-        self.client.force_login(self.seller_user)
+        self.client.force_login(self.admin_user)
         review_url = reverse("panel:transfer_review", kwargs={"public_id": payment.public_id})
         resp = self.client.post(review_url, {
             "action": "reject",
@@ -550,6 +554,6 @@ class PanelPaymentsTestCase(TestCase):
 
         self.assertEqual(payment.status, PaymentStatus.REJECTED)
         self.assertEqual(payment.rejection_reason, "Comprobante adulterado o no legible")
-        self.assertEqual(payment.reviewed_by, self.seller_user)
+        self.assertEqual(payment.reviewed_by, self.admin_user)
         # La reserva permanece HELD porque aún no venció el plazo
         self.assertEqual(booking.status, BookingStatus.HELD)

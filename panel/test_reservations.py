@@ -241,7 +241,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
         response = self.client.get(reverse("panel:booking_list") + f"?seller={self.user_admin.pk}", secure=True)
         self.assertEqual(response.status_code, 200)
         content = response.content.decode("utf-8")
-        self.assertIn("admin_booking@correo.com", content)
+        self.assertNotIn("admin_booking@correo.com", content)
         self.assertNotIn("held@correo.com", content)
 
     def test_search_by_public_id(self):
@@ -255,7 +255,7 @@ class ReservationListingAndSearchTests(ReservationPanelBaseTestCase):
         response = self.client.get(reverse("panel:booking_list") + "?q=admin_booking", secure=True)
         self.assertEqual(response.status_code, 200)
         content = response.content.decode("utf-8")
-        self.assertIn("admin_booking@correo.com", content)
+        self.assertNotIn("admin_booking@correo.com", content)
         self.assertNotIn("held@correo.com", content)
 
     def test_search_by_normalized_document(self):
@@ -665,7 +665,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         self.assertEqual(p2.normalized_document, "33444555")
 
     @override_settings(SALES_MANUAL_HOLD_HOURS=48)
-    def test_configurable_manual_hold_hours(self):
+    def test_manual_hold_has_no_automatic_expiry(self):
         now = timezone.now()
         booking = create_manual_booking(
             seller=self.user_seller,
@@ -678,7 +678,7 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
             }],
             now=now,
         )
-        self.assertEqual(booking.expires_at, now + timedelta(hours=48))
+        self.assertIsNone(booking.expires_at)
 
     @override_settings(SALES_MAX_PASSENGERS_PER_BOOKING=2)
     def test_configurable_max_passengers_limit_enforced(self):

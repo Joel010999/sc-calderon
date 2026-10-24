@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from operations.models import Seat, Trip, TripFare, TripStop
 from .conf import (
-    get_manual_hold_hours,
+    get_manual_cutoff_minutes,
     get_max_passengers_per_booking,
     get_online_cutoff_minutes,
     get_online_hold_minutes,
@@ -68,6 +68,40 @@ def validate_passenger_data(p_data, position=1):
 
     if errors:
         raise ValidationError(errors)
+
+
+def validate_quick_passenger_data(p_data, position=1):
+    """Valida los datos mínimos para retener una butaca manualmente."""
+    errors = {}
+    if not (p_data.get("first_name") or "").strip():
+        errors["first_name"] = f"El nombre del pasajero {position} es obligatorio."
+    if not (p_data.get("last_name") or "").strip():
+        errors["last_name"] = f"El apellido del pasajero {position} es obligatorio."
+    if not (p_data.get("document_type") or "").strip():
+        errors["document_type"] = f"El tipo de documento del pasajero {position} es obligatorio."
+    if not (p_data.get("document_number") or "").strip():
+        errors["document_number"] = f"El número de documento del pasajero {position} es obligatorio."
+    if errors:
+        raise ValidationError(errors)
+
+
+def validate_booking_for_payment(booking):
+    """Exige los datos completos antes de iniciar o confirmar un pago manual."""
+    if not booking.email:
+        raise ValidationError("El correo de compra es obligatorio antes de iniciar el pago.")
+    try:
+        validate_email(booking.email)
+    except ValidationError as exc:
+        raise ValidationError("Indicá una dirección de correo electrónico válida antes de iniciar el pago.") from exc
+    for position, passenger in enumerate(booking.passengers.all().order_by("position"), start=1):
+        validate_passenger_data({
+            "first_name": passenger.first_name,
+            "last_name": passenger.last_name,
+            "document_type": passenger.document_type,
+            "document_number": passenger.document_number,
+            "birth_date": passenger.birth_date,
+            "nationality": passenger.nationality,
+        }, position=position)
 
 
 def _is_seat_collision_integrity_error(exc):
@@ -204,7 +238,7 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
 
 
 @transaction.atomic
-def create_booking(*, channel, email, phone="", seller=None, legs, passengers_data=None, now=None):
+def create_booking(*, channel, email, phone="", seller=None, internal_note="", legs, passengers_data=None, now=None):
     """Crea una reserva (ida o ida/vuelta) con sus tramos, pasajeros y butacas.
 
     Operación completamente atómica con bloqueos ordenados por PK sobre los viajes
@@ -219,12 +253,13 @@ def create_booking(*, channel, email, phone="", seller=None, legs, passengers_da
     if channel not in BookingChannel.values:
         raise ValidationError(f"Canal no válido: {channel}")
 
-    if not email:
+    if not email and channel == BookingChannel.ONLINE:
         raise ValidationError("El correo de compra es obligatorio.")
-    try:
-        validate_email(email)
-    except ValidationError:
-        raise ValidationError("Indicá una dirección de correo electrónico válida.")
+    if email:
+        try:
+            validate_email(email)
+        except ValidationError:
+            raise ValidationError("Indicá una dirección de correo electrónico válida.")
 
     if channel == BookingChannel.ONLINE:
         if seller is not None:
@@ -300,8 +335,7 @@ def create_booking(*, channel, email, phone="", seller=None, legs, passengers_da
         hold_minutes = get_online_hold_minutes()
         expires_at = effective_now + timedelta(minutes=hold_minutes)
     else:
-        hold_hours = get_manual_hold_hours()
-        expires_at = effective_now + timedelta(hours=hold_hours)
+        expires_at = None
 
     # 4. Recarga de paradas actuales desde base de datos
     all_stop_pks = set()
@@ -422,6 +456,11 @@ def create_booking(*, channel, email, phone="", seller=None, legs, passengers_da
             "fares_for_seats": fares_for_seats,
         })
 
+    if channel == BookingChannel.MANUAL:
+        cutoff = timedelta(minutes=get_manual_cutoff_minutes())
+        if any(effective_now > leg["origin_stop"].scheduled_at - cutoff for leg in resolved_legs):
+            raise ValidationError("La fecha límite expiró.")
+
     try:
         booking = Booking(
             channel=channel,
@@ -429,6 +468,7 @@ def create_booking(*, channel, email, phone="", seller=None, legs, passengers_da
             email=email,
             phone=phone,
             seller=seller,
+            internal_note=(internal_note or "").strip(),
             expires_at=expires_at,
         )
         booking.full_clean()
@@ -525,13 +565,14 @@ def create_online_booking(*, email, phone="", legs, passengers_data=None, now=No
     )
 
 
-def create_manual_booking(*, seller, email, phone="", legs, passengers_data=None, now=None):
+def create_manual_booking(*, seller, email="", phone="", internal_note="", legs, passengers_data=None, now=None):
     """Crea una reserva canal MANUAL con vendedor autorizado."""
     return create_booking(
         channel=BookingChannel.MANUAL,
         email=email,
         phone=phone,
         seller=seller,
+        internal_note=internal_note,
         legs=legs,
         passengers_data=passengers_data,
         now=now,
@@ -565,7 +606,7 @@ def confirm_booking(booking_or_id, now=None):
             raise InvalidBookingError("La reserva ha sido liberada y no se puede confirmar.")
         elif booking.status != BookingStatus.HELD:
             raise InvalidBookingError(f"Estado de reserva inválido para confirmación: {booking.status}")
-        elif booking.expires_at <= effective_now:
+        elif booking.expires_at is not None and booking.expires_at <= effective_now:
             booking.status = BookingStatus.EXPIRED
             booking.full_clean()
             booking.save(update_fields=["status", "updated_at"])
@@ -678,7 +719,7 @@ def expire_booking(booking_or_id, now=None):
     if booking.status != BookingStatus.HELD:
         raise InvalidBookingError(f"No se puede expirar una reserva en estado {booking.get_status_display()}.")
 
-    if booking.expires_at <= now:
+    if booking.expires_at is not None and booking.expires_at <= now:
         booking.status = BookingStatus.EXPIRED
         booking.full_clean()
         booking.save(update_fields=["status", "updated_at"])
