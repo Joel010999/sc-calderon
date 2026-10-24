@@ -43,3 +43,28 @@ class StaffInvitation(models.Model):
     @property
     def is_available(self):
         return self.used_at is None and self.expires_at > timezone.now()
+
+
+class StaffProfile(models.Model):
+    """Datos propios del personal y capacidad explícita de propietario."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        verbose_name="usuario interno",
+        on_delete=models.CASCADE,
+        related_name="staff_profile",
+    )
+    dni = models.CharField("DNI", max_length=30, blank=True, default="")
+    whatsapp = models.CharField("WhatsApp", max_length=50, blank=True, default="")
+    is_owner = models.BooleanField(
+        "capacidad propietaria",
+        default=False,
+        help_text="Solo provisionamiento explícito; no editable desde el panel.",
+    )
+
+    class Meta:
+        verbose_name = "perfil interno"
+        verbose_name_plural = "perfiles internos"
+
+    def __str__(self):
+        return f"Perfil interno de {self.user_id}"

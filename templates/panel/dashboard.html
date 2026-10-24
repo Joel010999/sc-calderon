@@ -28,6 +28,10 @@
         </div>
 
         <div class="stat-card">
+            <div class="stat-body"><div class="stat-info"><div class="stat-label">Reservas confirmadas</div><div class="stat-value">{{ confirmed_reservations_count|default:0 }}</div></div></div>
+        </div>
+
+        <div class="stat-card">
             <div class="stat-body">
                 <div class="stat-icon stat-icon-green">
                     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -49,6 +53,13 @@
                 <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
                 {% endif %}
             </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-body"><div class="stat-info"><div class="stat-label">Comisiones retenidas</div><div class="stat-value font-mono">$ {{ commission_total|floatformat:"2u" }}</div><div class="stat-subtext">{{ commissionable_units }} pasajes/tramos a ARS 5.000.</div></div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-body"><div class="stat-info"><div class="stat-label">Neto operativo</div><div class="stat-value font-mono">$ {{ net_operating_total|floatformat:"2u" }}</div><div class="stat-subtext">Bruto menos comisiones; no es rentabilidad contable.</div></div></div>
         </div>
 
         <div class="stat-card">

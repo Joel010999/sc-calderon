@@ -23,7 +23,7 @@ def _safe_csv(value):
 @require_GET
 @payments_access()
 def sales_report(request):
-    report = build_sales_report(request.GET)
+    report = build_sales_report(request.GET, actor=request.user)
     paginator = Paginator(report["queryset"], 25)
     page = paginator.get_page(request.GET.get("pagina", 1))
     context = {**report, "page": page, "paginator": paginator,
@@ -37,7 +37,7 @@ def sales_report(request):
 @require_GET
 @payments_access()
 def sales_report_csv(request):
-    report = build_sales_report(request.GET)
+    report = build_sales_report(request.GET, actor=request.user)
     if report["error"]:
         return HttpResponse(report["error"], status=400, content_type="text/plain; charset=utf-8")
     response = HttpResponse(content_type="text/csv; charset=utf-8")
