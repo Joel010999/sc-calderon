@@ -42,6 +42,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const passengersCountInput = document.getElementById('id_passengers_count');
   const passengersLimit = passengersCountInput ? parseInt(passengersCountInput.value, 10) : 1;
 
+  function ageOnToday(value) {
+    if (!value) return 99;
+    const birth = new Date(`${value}T00:00:00`);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const beforeBirthday = today.getMonth() < birth.getMonth()
+      || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate());
+    if (beforeBirthday) age--;
+    return age;
+  }
+
+  function requiredSeatCount() {
+    let freeInfants = 0;
+    for (let position = 1; position <= passengersLimit; position++) {
+      const birth = document.querySelector(`[name="passenger_${position}_birth_date"]`);
+      const mother = document.querySelector(`[name="passenger_${position}_accompanied_by_position"]`);
+      if (birth && ageOnToday(birth.value) < 2 && mother && mother.value) freeInfants++;
+    }
+    return passengersLimit - freeInfants;
+  }
+
   // Outbound seats
   const outboundCheckboxes = document.querySelectorAll('.outbound-seat-cb');
   const outboundCountDisplay = document.getElementById('outbound-count-display');
@@ -54,14 +75,14 @@ document.addEventListener('DOMContentLoaded', () => {
       outboundCountDisplay.textContent = count;
     }
     if (outboundPill) {
-      outboundPill.classList.toggle('is-complete', count === passengersLimit);
+      outboundPill.classList.toggle('is-complete', count === requiredSeatCount());
     }
   }
 
   outboundCheckboxes.forEach(cb => {
     cb.addEventListener('change', (e) => {
       const checkedBoxes = document.querySelectorAll('.outbound-seat-cb:checked');
-      if (checkedBoxes.length > passengersLimit) {
+      if (checkedBoxes.length > requiredSeatCount()) {
         e.preventDefault();
         cb.checked = false;
         alert(`Solo podés seleccionar hasta ${passengersLimit} butaca(s) para este viaje.`);
@@ -83,14 +104,14 @@ document.addEventListener('DOMContentLoaded', () => {
       returnCountDisplay.textContent = count;
     }
     if (returnPill) {
-      returnPill.classList.toggle('is-complete', count === passengersLimit);
+      returnPill.classList.toggle('is-complete', count === requiredSeatCount());
     }
   }
 
   returnCheckboxes.forEach(cb => {
     cb.addEventListener('change', (e) => {
       const checkedBoxes = document.querySelectorAll('.return-seat-cb:checked');
-      if (checkedBoxes.length > passengersLimit) {
+      if (checkedBoxes.length > requiredSeatCount()) {
         e.preventDefault();
         cb.checked = false;
         alert(`Solo podés seleccionar hasta ${passengersLimit} butaca(s) para el viaje de regreso.`);
@@ -100,14 +121,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   updateReturnCount();
 
+  document.querySelectorAll('[name$="_birth_date"], [name$="_accompanied_by_position"]').forEach((field) => {
+    field.addEventListener('change', () => {
+      updateOutboundCount();
+      updateReturnCount();
+    });
+  });
+
   // Form submission validation
   const checkoutForm = document.getElementById('checkout-main-form');
   if (checkoutForm) {
     checkoutForm.addEventListener('submit', (e) => {
       const outChecked = document.querySelectorAll('.outbound-seat-cb:checked');
-      if (outChecked.length !== passengersLimit) {
+      const required = requiredSeatCount();
+      if (outChecked.length !== required) {
         e.preventDefault();
-        alert(`Por favor seleccioná exactamente ${passengersLimit} butaca(s) para el viaje de ida.`);
+        alert(`Por favor seleccioná exactamente ${required} butaca(s) para el viaje de ida.`);
         const seatSection = document.querySelector('.seat-map-wrapper');
         if (seatSection) seatSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
@@ -116,9 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const returnSeatsExist = document.querySelector('.return-seat-cb');
       if (returnSeatsExist) {
         const retChecked = document.querySelectorAll('.return-seat-cb:checked');
-        if (retChecked.length !== passengersLimit) {
+        if (retChecked.length !== required) {
           e.preventDefault();
-          alert(`Por favor seleccioná exactamente ${passengersLimit} butaca(s) para el viaje de regreso.`);
+          alert(`Por favor seleccioná exactamente ${required} butaca(s) para el viaje de regreso.`);
           return;
         }
       }

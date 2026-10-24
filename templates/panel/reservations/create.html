@@ -325,6 +325,13 @@
                                 <option value="Otro">Otro</option>
                             </select>
                         </div>
+                        <div class="form-group">
+                            <label class="form-label" for="id_p_{{ p_num }}_accompanied_by_position">Madre acompañante (solo menor gratuito)</label>
+                            <select name="p_{{ p_num }}_accompanied_by_position" id="id_p_{{ p_num }}_accompanied_by_position" class="form-input">
+                                <option value="">No corresponde</option>
+                                {% for mother_pos in passengers_range %}<option value="{{ mother_pos }}">Pasajera {{ mother_pos }}</option>{% endfor %}
+                            </select>
+                        </div>
                     </div>
                 </fieldset>
                 {% endfor %}

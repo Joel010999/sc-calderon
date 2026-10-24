@@ -3,6 +3,7 @@
 import hashlib
 import secrets
 import uuid
+from decimal import Decimal
 from datetime import timedelta
 from urllib.parse import urlparse
 
@@ -111,6 +112,7 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
             legs = list(booking.legs.order_by("sequence"))
             passengers = list(booking.passengers.order_by("position"))
             expected_count = len(legs) * len(passengers)
+            expected_assignment_count = len(legs) * sum(not passenger.is_lap_infant for passenger in passengers)
 
             assignments = list(
                 SeatAssignment.objects.filter(leg__booking=booking).select_related(
@@ -118,10 +120,10 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                 )
             )
 
-            if len(assignments) != expected_count:
+            if len(assignments) != expected_assignment_count:
                 raise InvalidTicketError(
                     f"La cantidad de asignaciones ({len(assignments)}) no coincide con la matriz "
-                    f"exacta de tramos x pasajeros ({expected_count})."
+                    f"de tramos x pasajeros con butaca ({expected_assignment_count})."
                 )
 
             if any(a.status != AssignmentStatus.CONFIRMED for a in assignments):
@@ -140,10 +142,12 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         (a for a in assignments if a.leg_id == leg.id and a.passenger_id == passenger.id),
                         None,
                     )
-                    if not assignment:
+                    if not assignment and not passenger.is_lap_infant:
                         raise InvalidTicketError(
                             f"Falta asignación de butaca para el tramo {leg.sequence} y pasajero {passenger.position}."
                         )
+                    if assignment and passenger.is_lap_infant:
+                        raise InvalidTicketError("Un menor gratuito no puede tener una asignación de butaca.")
 
                     # Generar tokens criptográficos seguros (>= 256 bits de entropía)
                     raw_verification_token = secrets.token_urlsafe(32)
@@ -156,7 +160,7 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                     qr_url = build_verification_url(raw_verification_token)
 
                     masked_doc = mask_document(passenger.document_type, passenger.document_number)
-                    cat_display = assignment.get_category_display()
+                    cat_display = assignment.get_category_display() if assignment else "Sin butaca"
                     p_name = f"{passenger.first_name} {passenger.last_name}".strip()
                     if not p_name:
                         p_name = f"Pasajero {passenger.position}"
@@ -173,10 +177,10 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         departure_time=leg.departure_at.strftime("%H:%M"),
                         boarding_place=leg.origin_stop_name,
                         arrival_time=leg.arrival_at.strftime("%H:%M"),
-                        seat_number=str(assignment.seat_number),
+                        seat_number=str(assignment.seat_number) if assignment else "Sin butaca",
                         category_display=cat_display,
                         price_display=(
-                            f"{assignment.currency} {assignment.price:,.2f}"
+                            f"{assignment.currency if assignment else 'ARS'} {(assignment.price if assignment else 0):,.2f}"
                             .replace(",", "X")
                             .replace(".", ",")
                             .replace("X", ".")
@@ -208,11 +212,11 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         destination_stop_name=leg.destination_stop_name,
                         departure_at=leg.departure_at,
                         arrival_at=leg.arrival_at,
-                        seat_number=assignment.seat_number,
-                        seat_category=assignment.category,
+                        seat_number=assignment.seat_number if assignment else None,
+                        seat_category=assignment.category if assignment else "LAP_INFANT",
                         seat_category_display=cat_display,
-                        price=assignment.price,
-                        currency=assignment.currency,
+                        price=assignment.price if assignment else Decimal("0.00"),
+                        currency=assignment.currency if assignment else "ARS",
                         booking_public_id=booking.public_id,
                     )
                     ticket.full_clean()
