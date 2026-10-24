@@ -142,6 +142,9 @@ def _find_available_trips(origin_stop, destination_stop, travel_date, passengers
         if ts_orig.sequence >= ts_dest.sequence:
             continue
 
+        if ts_orig.stop.province == ts_dest.stop.province:
+            continue
+
         orig_local_dt = timezone.localtime(ts_orig.scheduled_at, AR_TZ)
         if travel_date and orig_local_dt.date() != travel_date:
             continue
@@ -283,6 +286,8 @@ def search_trips(request):
 
     if origin_stop and dest_stop and origin_stop.pk == dest_stop.pk:
         errors.append("El origen y el destino deben ser paradas diferentes.")
+    elif origin_stop and dest_stop and origin_stop.province == dest_stop.province:
+        errors.append("El origen y el destino deben pertenecer a provincias diferentes.")
 
     # Resolver fecha de ida
     outbound_date = None

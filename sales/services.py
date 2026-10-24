@@ -217,6 +217,8 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
             raise ValidationError(f"La parada {origin_stop.stop.name} no permite subir pasajeros.")
         if not destination_stop.allows_alighting:
             raise ValidationError(f"La parada {destination_stop.stop.name} no permite bajar pasajeros.")
+        if origin_stop.stop.province == destination_stop.stop.province:
+            raise ValidationError("El origen y el destino deben pertenecer a provincias diferentes.")
 
         fares_qs = TripFare.objects.filter(
             trip=trip,
@@ -412,6 +414,8 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
             raise ValidationError(f"La parada {orig.stop.name} no permite subir pasajeros.")
         if not dest.allows_alighting:
             raise ValidationError(f"La parada {dest.stop.name} no permite bajar pasajeros.")
+        if orig.stop.province == dest.stop.province:
+            raise ValidationError("El origen y el destino deben pertenecer a provincias diferentes.")
 
         # Validar butacas y tarifas actuales
         fares_for_seats = {}

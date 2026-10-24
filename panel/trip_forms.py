@@ -108,6 +108,17 @@ class TripFareForm(OperationalForm):
             for value, label in self.fields["seat_category"].choices
         ]
 
+    def clean(self):
+        cleaned = super().clean()
+        origin = cleaned.get("origin_stop")
+        destination = cleaned.get("destination_stop")
+        if origin and destination and origin.stop.province == destination.stop.province:
+            self.add_error(
+                "destination_stop",
+                "El origen y el destino deben pertenecer a provincias diferentes.",
+            )
+        return cleaned
+
     def _post_clean(self):
         super()._post_clean()
         if not self.errors:

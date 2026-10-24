@@ -65,7 +65,8 @@ class Route(TimestampedModel):
         )}
         start, end = stops.get(origin.pk), stops.get(destination.pk)
         return bool(start and end and start.sequence < end.sequence
-                    and start.allows_boarding and end.allows_alighting)
+                    and start.allows_boarding and end.allows_alighting
+                    and origin.province != destination.province)
 
 
 class RouteStop(models.Model):
@@ -240,5 +241,7 @@ class TripFare(TimestampedModel):
                 errors["origin_stop"] = "El origen debe permitir subir pasajeros."
             if not destination.allows_alighting:
                 errors["destination_stop"] = "El destino debe permitir bajar pasajeros."
+            if origin.stop.province == destination.stop.province:
+                errors["destination_stop"] = "El origen y el destino deben pertenecer a provincias diferentes."
         if errors:
             raise ValidationError(errors)
