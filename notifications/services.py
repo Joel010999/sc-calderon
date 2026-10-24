@@ -54,7 +54,7 @@ def _message(notification):
     messages = {
         NotificationType.BOOKING_HELD: ("Reserva recibida", "Tu reserva fue creada y las butacas quedaron retenidas."),
         NotificationType.TRANSFER_STARTED: ("Transferencia iniciada", "Tenés 5 minutos para cargar el comprobante de transferencia."),
-        NotificationType.VOUCHER_RECEIVED: ("Comprobante recibido", "Recibimos el comprobante. La reserva queda en revisión hasta 24 horas."),
+        NotificationType.VOUCHER_RECEIVED: ("Comprobante recibido", "Recibimos el comprobante. La reserva queda en revisión según la política operativa vigente."),
         NotificationType.TRANSFER_APPROVED: ("Transferencia aprobada", "La transferencia fue aprobada. Los pasajes se enviarán por el flujo correspondiente."),
         NotificationType.TRANSFER_REJECTED: ("Transferencia rechazada", "La transferencia fue rechazada. Consultá el estado de tu reserva para conocer los próximos pasos."),
         NotificationType.BOOKING_EXPIRED: ("Reserva vencida", "La reserva venció y las butacas fueron liberadas."),

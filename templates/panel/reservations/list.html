@@ -121,7 +121,7 @@
                             {% elif booking.status == 'RELEASED' %}
                                 <span class="muted">Liberada</span>
                             {% else %}
-                                {{ booking.expires_at|date:"d/m/Y H:i" }}
+                                {% if booking.expires_at %}{{ booking.expires_at|date:"d/m/Y H:i" }}{% else %}Sin vencimiento automático{% endif %}
                             {% endif %}
                         </td>
                         <td>

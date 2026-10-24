@@ -12,8 +12,6 @@ from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
-from django.utils import timezone
-
 from payments.exceptions import (
     InvalidPaymentStatusError,
     PaymentDuplicateError,
@@ -21,7 +19,6 @@ from payments.exceptions import (
 )
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import (
-    expire_public_transfer_if_expired,
     register_cash_payment,
     register_transfer_payment,
     review_transfer_payment,
@@ -32,11 +29,29 @@ from .models import AuditEvent
 from .permissions import payments_access
 
 
+def _payment_admin(user):
+    return user.is_superuser or user.groups.filter(name="Administrador").exists()
+
+
+def _visible_payments(user):
+    queryset = Payment.objects
+    if not _payment_admin(user):
+        queryset = queryset.filter(booking__seller=user)
+    return queryset
+
+
+def _visible_bookings(user):
+    queryset = Booking.objects
+    if not _payment_admin(user):
+        queryset = queryset.filter(seller=user)
+    return queryset
+
+
 @payments_access()
 @require_GET
 def payment_list(request):
     """Listado paginado de pagos con filtros y búsqueda."""
-    queryset = Payment.objects.select_related(
+    queryset = _visible_payments(request.user).select_related(
         "booking", "registered_by", "reviewed_by"
     ).order_by("-created_at", "-pk")
 
@@ -120,17 +135,7 @@ def payment_list(request):
 @require_GET
 def pending_transfers(request):
     """Listado de transferencias bancarias pendientes de revisión."""
-    now = timezone.now()
-    # Expiración oportunista de transferencias pendientes cuya reserva haya vencido
-    pending_to_check = Payment.objects.filter(
-        method=PaymentMethod.BANK_TRANSFER,
-        status=PaymentStatus.UNDER_REVIEW,
-    ).select_related("booking")
-    for p in pending_to_check:
-        if p.booking.expires_at <= now or p.booking.status == BookingStatus.EXPIRED:
-            expire_public_transfer_if_expired(p.booking, now=now)
-
-    transfers = Payment.objects.filter(
+    transfers = _visible_payments(request.user).filter(
         method=PaymentMethod.BANK_TRANSFER,
         status=PaymentStatus.UNDER_REVIEW,
     ).select_related(
@@ -141,6 +146,7 @@ def pending_transfers(request):
 
     return render(request, "panel/payments/pending_transfers.html", {
         "transfers": transfers,
+        "can_review": _payment_admin(request.user),
     })
 
 
@@ -149,7 +155,7 @@ def pending_transfers(request):
 def payment_detail(request, public_id):
     """Detalle completo de un pago, con comprobante, auditoría y acciones si está en revisión."""
     payment = get_object_or_404(
-        Payment.objects.select_related(
+        _visible_payments(request.user).select_related(
             "booking__seller", "registered_by", "reviewed_by"
         ).prefetch_related(
             "booking__legs__origin_stop__stop",
@@ -160,13 +166,6 @@ def payment_detail(request, public_id):
         public_id=public_id,
     )
 
-    # Expiración oportunista si está en revisión y venció la reserva
-    now = timezone.now()
-    if payment.status == PaymentStatus.UNDER_REVIEW:
-        if payment.booking.expires_at <= now or payment.booking.status == BookingStatus.EXPIRED:
-            expire_public_transfer_if_expired(payment.booking, now=now)
-            payment.refresh_from_db()
-
     audit_events = AuditEvent.objects.filter(
         entity_type=payment._meta.label,
         entity_id=str(payment.pk),
@@ -175,6 +174,7 @@ def payment_detail(request, public_id):
     return render(request, "panel/payments/detail.html", {
         "payment": payment,
         "audit_events": audit_events,
+        "can_review": _payment_admin(request.user),
     })
 
 
@@ -182,7 +182,7 @@ def payment_detail(request, public_id):
 @require_POST
 def transfer_review(request, public_id):
     """Revisa una transferencia bancaria en revisión: aprueba o rechaza."""
-    payment = get_object_or_404(Payment.objects.select_related("booking"), public_id=public_id)
+    payment = get_object_or_404(_visible_payments(request.user).select_related("booking"), public_id=public_id)
     action = request.POST.get("action", "").strip().lower()
 
     if action == "approve":
@@ -241,7 +241,7 @@ def booking_pay_cash(request, public_id):
 
     No confía en importes del formulario; calcula server-side y revalida.
     """
-    booking = get_object_or_404(Booking, public_id=public_id)
+    booking = get_object_or_404(_visible_bookings(request.user), public_id=public_id)
 
     if booking.status != BookingStatus.HELD:
         messages.error(
@@ -280,7 +280,7 @@ def booking_pay_transfer(request, public_id):
 
     No confía en importes del formulario; calcula server-side y revalida.
     """
-    booking = get_object_or_404(Booking, public_id=public_id)
+    booking = get_object_or_404(_visible_bookings(request.user), public_id=public_id)
 
     if booking.status != BookingStatus.HELD:
         messages.error(
@@ -322,7 +322,7 @@ def booking_pay_transfer(request, public_id):
 @require_GET
 def download_voucher(request, public_id):
     """Descarga autenticada y autorizada de comprobante desde el panel."""
-    payment = get_object_or_404(Payment, public_id=public_id)
+    payment = get_object_or_404(_visible_payments(request.user), public_id=public_id)
 
     if not payment.voucher:
         raise Http404("El pago no posee comprobante adjunto.")

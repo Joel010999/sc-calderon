@@ -483,6 +483,28 @@ están documentadas en [CODE_QUALITY.md](CODE_QUALITY.md); no se modificaron
 migraciones ni dependencias de producción.
 ## 2026-10-10 — restore drill PostgreSQL
 
+## Integración Sandro — reservas, permisos y balance (2026-10-24)
+
+Integradas localmente las ramas `feature/sandro-reservas-pagos-20261024` y
+`feature/sandro-permisos-balance-20261024` desde la base común
+`3398bb5ff9d9e5d1b87aead90e71f39297d94cc5` en la rama
+`integration/sandro-20261024`. Las reservas manuales no vencen automáticamente,
+el alcance de vendedores se aplica antes de filtros y exportaciones, las
+transferencias solo las revisan Administradores activos y el balance separa
+compras, pasajes, tramos y comisiones sin rendiciones automáticas.
+
+Se verificaron las migraciones `sales.0003_booking_internal_note_alter_booking_email_and_more`
+y `panel.0003_staffprofile` en SQLite efímero, tanto desde esquema vacío como
+actualizando desde las migraciones comunes previas. No se ejecutaron migraciones
+contra bases persistentes. Pendientes conservados: Güemes, tarifas por salida,
+menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
+
+La suite combinada de Django terminó con 560 pruebas OK y 7 omitidas. El fixture
+de `panel/test_reports.py` fue completado con datos sintéticos de venta exigidos
+por la validación de pagos. Ruff y los checks de Django pasaron. PostgreSQL no se
+validó porque Docker Desktop no tenía el daemon activo; Playwright/axe no se
+validó porque no estaban instaladas las dependencias de `node_modules`.
+
 Se agregó un restore drill temporal y reproducible con PostgreSQL, conteos y
 comparación de esquema sanitizados, inventario/checksum de archivos privados
 sintéticos, limpieza ante fallos y workflow CI aislado. No se ejecuta contra

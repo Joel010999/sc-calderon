@@ -122,7 +122,7 @@ class PaymentsBaseTestCase(TestCase):
         shutil.rmtree(self.temp_public_media, ignore_errors=True)
         super().tearDown()
 
-    def create_held_manual_booking(self, email="cliente@correo.com", hours_held=24, seats=None):
+    def create_held_manual_booking(self, email="cliente@correo.com", hours_held=None, seats=None):
         """Crea una reserva manual HELD con asignaciones válidas."""
         now = timezone.now()
         booking = Booking.objects.create(
@@ -131,7 +131,7 @@ class PaymentsBaseTestCase(TestCase):
             email=email,
             phone="3511234567",
             seller=self.seller_user,
-            expires_at=now + timedelta(hours=hours_held),
+            expires_at=(now + timedelta(hours=hours_held)) if hours_held is not None else None,
         )
         leg = BookingLeg.objects.create(
             booking=booking,
@@ -154,6 +154,8 @@ class PaymentsBaseTestCase(TestCase):
                 last_name="Prueba",
                 document_type="DNI",
                 document_number=f"3000000{idx}",
+                birth_date=date(1988, 4, 4),
+                nationality="Argentina",
             )
             fare_amount = self.fare_cama.amount if seat.category == SeatCategory.CAMA else self.fare_semi.amount
             SeatAssignment.objects.create(
@@ -532,10 +534,12 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         booking1 = self.create_held_manual_booking(email="b1@correo.com")
         p1 = register_transfer_payment(booking_or_id=booking1, seller=self.seller_user, voucher=self.sample_pdf_voucher())
 
-        review_transfer_payment(payment_or_id=p1, reviewer=self.seller_user, approved=True)
+        with self.assertRaises(ValidationError):
+            review_transfer_payment(payment_or_id=p1, reviewer=self.seller_user, approved=True)
+        review_transfer_payment(payment_or_id=p1, reviewer=self.admin_user, approved=True)
         p1.refresh_from_db()
         self.assertEqual(p1.status, PaymentStatus.APPROVED)
-        self.assertEqual(p1.reviewed_by, self.seller_user)
+        self.assertEqual(p1.reviewed_by, self.admin_user)
         booking1.refresh_from_db()
         self.assertEqual(booking1.status, BookingStatus.CONFIRMED)
 
@@ -556,20 +560,18 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         payment = register_transfer_payment(booking_or_id=booking, seller=self.seller_user, voucher=self.sample_pdf_voucher())
 
         # Vencer la reserva posteriormente a la presentación
-        future_now = booking.expires_at + timedelta(minutes=5)
-
-        with self.assertRaises(BookingExpiredError):
-            review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True, now=future_now)
+        future_now = timezone.now() + timedelta(days=30)
+        review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True, now=future_now)
 
         # El pago manual conserva el comprobante para auditoría; la política pública
         # de expiración de pagos se cubre en PublicTransferPaymentTests.
         payment.refresh_from_db()
-        self.assertEqual(payment.status, PaymentStatus.UNDER_REVIEW)
+        self.assertEqual(payment.status, PaymentStatus.APPROVED)
 
         # Booking y butacas deben haberse vencido y liberado
         booking.refresh_from_db()
-        self.assertEqual(booking.status, BookingStatus.EXPIRED)
-        self.assertEqual(booking.legs.first().seat_assignments.first().status, AssignmentStatus.RELEASED)
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        self.assertEqual(booking.legs.first().seat_assignments.first().status, AssignmentStatus.CONFIRMED)
 
     def test_review_transfer_rejection_requires_reason(self):
         booking = self.create_held_manual_booking()
@@ -588,7 +590,7 @@ class PaymentServicesTests(PaymentsBaseTestCase):
 
         review_transfer_payment(
             payment_or_id=payment,
-            reviewer=self.seller_user,
+            reviewer=self.admin_user,
             approved=False,
             rejection_reason="Comprobante con datos ilegibles",
         )
@@ -618,7 +620,7 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         self.assertEqual(p2.status, PaymentStatus.UNDER_REVIEW)
 
         # Aprobación del segundo pago
-        review_transfer_payment(payment_or_id=p2, reviewer=self.seller_user, approved=True)
+        review_transfer_payment(payment_or_id=p2, reviewer=self.admin_user, approved=True)
         p2.refresh_from_db()
         self.assertEqual(p2.status, PaymentStatus.APPROVED)
         booking.refresh_from_db()
@@ -680,7 +682,16 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
             departure_at=self.ts1.scheduled_at,
             arrival_at=self.ts2.scheduled_at,
         )
-        self.passenger = BookingPassenger.objects.create(booking=self.booking, position=1, first_name="Juan", last_name="Perez", document_type="DNI", document_number="30111222")
+        self.passenger = BookingPassenger.objects.create(
+            booking=self.booking,
+            position=1,
+            first_name="Juan",
+            last_name="Perez",
+            document_type="DNI",
+            document_number="30111222",
+            birth_date=date(1988, 4, 4),
+            nationality="Argentina",
+        )
         SeatAssignment.objects.create(
             leg=self.leg,
             passenger=self.passenger,

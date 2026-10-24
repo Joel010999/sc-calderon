@@ -77,6 +77,7 @@ class SalesReportTests(TestCase):
             position: BookingPassenger.objects.create(
                 booking=booking, position=position, first_name="Pasajero", last_name="Privado",
                 document_type="DNI", document_number="30123456",
+                birth_date=datetime(1988, 4, 4).date(), nationality="Argentina",
             )
             for position in range(1, passengers + 1)
         }
@@ -182,7 +183,7 @@ class SalesReportTests(TestCase):
         self.assertEqual(response.context["payment_count"], 1)
         with override_settings(PANEL_REPORTS_MAX_RANGE_DAYS=2):
             response = self.client.get(self.report_url(), {"desde": "2026-09-01", "hasta": "2026-09-03"})
-            self.assertContains(response, "El rango no puede superar 2 días")
+            self.assertContains(response, "El rango de confirmación no puede superar 2 días")
             self.assertEqual(response.context["payment_count"], 2)
 
     def test_pagination_keeps_full_totals(self):
@@ -252,3 +253,28 @@ class SalesReportTests(TestCase):
             response = self.client.get(self.report_url())
         self.assertLessEqual(len(queries), 20)
         self.assertEqual(response.status_code, 200)
+
+    def test_seller_scope_isolated_in_html_csv_dashboard_and_tampered_filters(self):
+        seller_b = User.objects.create_user(username="report-seller-b", password="pass")
+        seller_b.groups.add(self.seller_group)
+        own = self.booking(seller=self.seller, email="own@example.com")
+        other = self.booking(seller=seller_b, email="other@example.com")
+        self.approved_payment(own, PaymentMethod.CASH)
+        self.approved_payment(other, PaymentMethod.CASH)
+
+        self.client.force_login(self.seller)
+        html = self.client.get(self.report_url(), {"vendedor": str(seller_b.pk)})
+        self.assertEqual(html.context["payment_count"], 1)
+        self.assertContains(html, str(own.public_id))
+        self.assertNotContains(html, str(other.public_id))
+        csv_response = self.client.get(self.csv_url(), {"vendedor": "sin-vendedor"})
+        self.assertNotIn(str(other.public_id), csv_response.content.decode("utf-8"))
+        self.assertIn(str(own.public_id), csv_response.content.decode("utf-8"))
+        dashboard = self.client.get(reverse("panel:dashboard"))
+        self.assertEqual(dashboard.context["confirmed_sales_count"], 1)
+        self.assertEqual(dashboard.context["confirmed_reservations_count"], 1)
+
+        self.client.force_login(self.admin)
+        admin_html = self.client.get(self.report_url())
+        self.assertEqual(admin_html.context["payment_count"], 2)
+        self.assertContains(admin_html, str(other.public_id))

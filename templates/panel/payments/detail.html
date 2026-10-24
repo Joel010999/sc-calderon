@@ -101,7 +101,7 @@
     </section>
 
     <!-- Acciones si está en revisión -->
-    {% if payment.status == 'UNDER_REVIEW' %}
+    {% if payment.status == 'UNDER_REVIEW' and can_review %}
     <section class="ops-card" aria-label="Revisión de comprobante">
         <h2>Resolución de transferencia</h2>
         <p class="muted" style="margin-bottom: 1.25rem;">
@@ -168,7 +168,7 @@
             </div>
             <div>
                 <dt>Vencimiento de retención</dt>
-                <dd>{{ payment.booking.expires_at|date:"d/m/Y H:i" }}</dd>
+                <dd>{% if payment.booking.expires_at %}{{ payment.booking.expires_at|date:"d/m/Y H:i" }}{% else %}Sin vencimiento automático{% endif %}</dd>
             </div>
         </dl>
 

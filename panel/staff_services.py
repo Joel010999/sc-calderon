@@ -12,7 +12,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.utils import timezone
 from customers.models import Customer, normalize_email
-from .models import AuditEvent, StaffInvitation
+from .models import AuditEvent, StaffInvitation, StaffProfile
+from .permissions import can_create_administrator, can_manage_staff
 from core.site_config import public_url
 
 ROLES = ("Administrador", "Vendedor")
@@ -36,9 +37,11 @@ def _audit(actor, target, action, before, after):
 
 @transaction.atomic
 def invite_staff(*, actor, email, role):
+    if not can_manage_staff(actor):
+        raise ValidationError("No tenés permiso para administrar usuarios internos.")
     if role not in ROLES: raise ValidationError("Rol inválido.")
-    if role == "Administrador" and not actor.is_superuser:
-        raise ValidationError("La invitación de Administrador requiere un superusuario autorizado.")
+    if role == "Administrador" and not can_create_administrator(actor):
+        raise ValidationError("Solo el propietario provisionado puede crear Administradores.")
     normalized = normalize_email(email); validate_email(normalized)
     User = get_user_model()
     if Customer.objects.filter(normalized_email=normalized).exists(): raise ValidationError("El correo pertenece a una cuenta de cliente.")
@@ -49,6 +52,7 @@ def invite_staff(*, actor, email, role):
     user = User.objects.create(username=normalized[:150], email=normalized, is_active=False, is_staff=True)
     user.set_unusable_password()
     user.save(update_fields=["password"])
+    StaffProfile.objects.create(user=user)
     _audit(actor, user, AuditEvent.Action.CREATE, {}, {"role": role, "active": False})
     invitation_url = public_url(f"/panel/invitacion/{raw}/")
     send_mail("Invitación al panel de SC Viajes", f"Establecé tu contraseña: {invitation_url}", settings.DEFAULT_FROM_EMAIL, [normalized])
@@ -65,21 +69,49 @@ def accept_invitation(raw_token, password):
     if invitation.role == "Administrador":
         _lock_active_administrators(User)
     user.set_password(password); user.is_active=True; user.is_staff=True; user.save(update_fields=["password", "is_active", "is_staff"])
+    StaffProfile.objects.get_or_create(user=user)
     group, _ = Group.objects.get_or_create(name=invitation.role); user.groups.set([group])
     invitation.used_at=timezone.now(); invitation.save(update_fields=["used_at"])
     return user
 
 @transaction.atomic
-def update_staff(*, actor, user_id, role=None, active=None):
+def update_staff(*, actor, user_id, role=None, active=None, first_name=None, last_name=None, dni=None, whatsapp=None):
     User = get_user_model()
+    if not can_manage_staff(actor):
+        raise ValidationError("No tenés permiso para administrar usuarios internos.")
     _lock_active_administrators(User)
     user = User.objects.select_for_update().get(pk=user_id)
     if user.is_superuser: raise ValidationError("Los superusuarios no se administran desde esta interfaz.")
     old_role = user.groups.filter(name__in=ROLES).values_list("name", flat=True).first(); new_role = role or old_role
     if new_role not in ROLES: raise ValidationError("El usuario no tiene un rol válido.")
+    if new_role == "Administrador" and old_role != "Administrador" and not can_create_administrator(actor):
+        raise ValidationError("Solo el propietario provisionado puede promover Administradores.")
     admins = User.objects.filter(is_active=True, groups__name="Administrador").exclude(pk=user.pk).distinct().count()
     if user.pk == actor.pk and (active is False or (role and role != "Administrador")): raise ValidationError("No podés desactivarte ni quitarte el rol Administrador.")
     if user.is_active and old_role == "Administrador" and (active is False or new_role != "Administrador") and admins < 1: raise ValidationError("No se puede dejar el panel sin un Administrador activo.")
-    before={"role":old_role,"active":user.is_active}; group,_=Group.objects.get_or_create(name=new_role); user.groups.set([group]); user.is_active=user.is_active if active is None else active; user.save(update_fields=["is_active"]); invalidate_user_sessions(user); after={"role":new_role,"active":user.is_active}
+    before={"role":old_role,"active":user.is_active}
+    group,_=Group.objects.get_or_create(name=new_role)
+    user.groups.set([group])
+    user.is_active=user.is_active if active is None else active
+    user_fields=["is_active"]
+    if first_name is not None:
+        user.first_name=first_name.strip()
+        user_fields.append("first_name")
+    if last_name is not None:
+        user.last_name=last_name.strip()
+        user_fields.append("last_name")
+    user.save(update_fields=user_fields)
+    profile,_=StaffProfile.objects.get_or_create(user=user)
+    profile_fields=[]
+    if dni is not None:
+        profile.dni=dni.strip()
+        profile_fields.append("dni")
+    if whatsapp is not None:
+        profile.whatsapp=whatsapp.strip()
+        profile_fields.append("whatsapp")
+    if profile_fields:
+        profile.save(update_fields=profile_fields)
+    invalidate_user_sessions(user)
+    after={"role":new_role,"active":user.is_active}
     if before != after: _audit(actor,user,AuditEvent.Action.UPDATE if after["active"] else AuditEvent.Action.DEACTIVATE,before,after)
     return user

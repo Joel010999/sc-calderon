@@ -45,6 +45,7 @@ def dashboard(request):
         return HttpResponseForbidden("No tienes autorización para acceder a este panel.")
 
     held_count = 0
+    confirmed_reservations_count = 0
     confirmed_sales_count = 0
     confirmed_revenue_total = Decimal("0.00")
     cash_sales_count = 0
@@ -55,7 +56,9 @@ def dashboard(request):
 
     if can_manage_reservations(request.user):
         from sales.models import Booking, BookingStatus
-        held_count = Booking.objects.filter(status=BookingStatus.HELD).count()
+        reservation_scope = Booking.objects.all() if request.user.is_superuser or request.user.groups.filter(name="Administrador").exists() else Booking.objects.filter(seller=request.user)
+        held_count = reservation_scope.filter(status=BookingStatus.HELD).count()
+        confirmed_reservations_count = reservation_scope.filter(status=BookingStatus.CONFIRMED).count()
 
     if can_manage_payments(request.user):
         from payments.models import Payment, PaymentMethod, PaymentStatus
@@ -66,6 +69,8 @@ def dashboard(request):
             status=PaymentStatus.APPROVED,
             booking__status=BookingStatus.CONFIRMED,
         )
+        if not request.user.is_superuser and not request.user.groups.filter(name="Administrador").exists():
+            confirmed_payments = confirmed_payments.filter(booking__seller=request.user)
         confirmed_sales_count = confirmed_payments.count()
         confirmed_revenue_total = (
             confirmed_payments.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
@@ -82,13 +87,29 @@ def dashboard(request):
         transfer_revenue = transfer_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
 
         # Transferencias en revisión
-        pending_transfers_count = Payment.objects.filter(
+        pending_transfers = Payment.objects.filter(
             method=PaymentMethod.BANK_TRANSFER,
             status=PaymentStatus.UNDER_REVIEW,
+        )
+        if not request.user.is_superuser and not request.user.groups.filter(name="Administrador").exists():
+            pending_transfers = pending_transfers.filter(booking__seller=request.user)
+        pending_transfers_count = pending_transfers.count()
+
+        from .report_services import COMMISSION_PER_TICKET
+        from sales.models import AssignmentStatus, SeatAssignment
+        commissionable_units = SeatAssignment.objects.filter(
+            leg__booking_id__in=confirmed_payments.values("booking_id"),
+            status=AssignmentStatus.CONFIRMED,
+            price__gt=Decimal("0.00"),
         ).count()
+        commission_total = COMMISSION_PER_TICKET * commissionable_units
+    else:
+        commissionable_units = 0
+        commission_total = Decimal("0.00")
 
     return render(request, 'panel/dashboard.html', {
         'held_reservations_count': held_count,
+        'confirmed_reservations_count': confirmed_reservations_count,
         'confirmed_sales_count': confirmed_sales_count,
         'confirmed_revenue_total': confirmed_revenue_total,
         'cash_sales_count': cash_sales_count,
@@ -96,4 +117,7 @@ def dashboard(request):
         'transfer_sales_count': transfer_sales_count,
         'transfer_revenue': transfer_revenue,
         'pending_transfers_count': pending_transfers_count,
+        'commissionable_units': commissionable_units,
+        'commission_total': commission_total,
+        'net_operating_total': confirmed_revenue_total - commission_total,
     })
