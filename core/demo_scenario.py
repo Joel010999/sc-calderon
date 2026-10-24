@@ -26,7 +26,13 @@ from tickets.services import issue_tickets_for_booking
 
 DEMO_PREFIX = "DEMO-20261005"
 DEMO_DOMAIN = "demo.scviajes.invalid"
-DEMO_STOPS = {"CBA": "Cordoba Demo", "JMA": "Jesus Maria Demo", "PER": "Perico Demo", "PAL": "P al pala Demo", "SSJ": "Jujuy Demo"}
+DEMO_STOPS = {
+    "CBA": ("Cordoba Demo", "Cordoba"),
+    "JMA": ("Jesus Maria Demo", "Cordoba"),
+    "PER": ("Perico Demo", "Jujuy"),
+    "PAL": ("P al pala Demo", "Jujuy"),
+    "SSJ": ("Jujuy Demo", "Jujuy"),
+}
 
 def assert_demo_environment():
     environment = os.getenv("SCVIAJES_ENVIRONMENT", "development").lower()
@@ -47,7 +53,13 @@ def _user(suffix, email, group_name):
     return user
 
 def _stops():
-    return {code: Stop.objects.get_or_create(code=f"{DEMO_PREFIX}-{code}", defaults={"name": name, "city": name, "province": "Demo"})[0] for code, name in DEMO_STOPS.items()}
+    return {
+        code: Stop.objects.get_or_create(
+            code=f"{DEMO_PREFIX}-{code}",
+            defaults={"name": name, "city": name, "province": province},
+        )[0]
+        for code, (name, province) in DEMO_STOPS.items()
+    }
 
 def _route(code, entries):
     route, _ = Route.objects.get_or_create(code=f"{DEMO_PREFIX}-{code}", defaults={"name": f"{DEMO_PREFIX} {code}"})

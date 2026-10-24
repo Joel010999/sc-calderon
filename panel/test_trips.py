@@ -76,7 +76,7 @@ class TripDataMixin:
 
     def fare_data(self, trip, **changes):
         data = {"origin_stop": trip.trip_stops.get(sequence=1).pk,
-                "destination_stop": trip.trip_stops.get(sequence=5).pk,
+                "destination_stop": trip.trip_stops.get(sequence=6).pk,
                 "seat_category": SeatCategory.CAMA, "amount": "12345.67", "currency": "ARS"}
         data.update(changes)
         return data
@@ -162,7 +162,7 @@ class TripCreationTests(TripDataMixin, TestCase):
         response = self.client.post(self.url("trip_create"), {"route": self.route.pk, "bus": self.bus.pk}, secure=True)
         self.assertRedirects(response, self.schedule_url(), fetch_redirect_response=False)
         response = self.client.get(self.schedule_url(), secure=True)
-        self.assertContains(response, 'type="datetime-local"', count=5)
+        self.assertContains(response, 'type="datetime-local"', count=6)
         self.assertContains(response, "Subida: sí. Bajada: no.")
         self.assertFalse(Trip.objects.exists())
         review = self.review()
@@ -300,7 +300,7 @@ class TripCreationTests(TripDataMixin, TestCase):
         with patch("panel.services.AuditEvent.objects.create", side_effect=fail_audit):
             response = self.create()
         self.assertContains(response, "No se guardó ningún cambio")
-        self.assertEqual(observed, [(1, 5)])
+        self.assertEqual(observed, [(1, 6)])
         self.assertFalse(Trip.objects.exists())
         self.assertFalse(TripStop.objects.exists())
         self.assertFalse(AuditEvent.objects.exists())
@@ -342,8 +342,8 @@ class OverlapTests(TripDataMixin, TestCase):
 
     def test_touching_intervals_are_allowed_on_both_ends(self):
         self.make_trip()
-        self.make_trip(self.start + timedelta(hours=4))
-        self.make_trip(self.start - timedelta(hours=4))
+        self.make_trip(self.start + timedelta(hours=5))
+        self.make_trip(self.start - timedelta(hours=5))
         self.assertEqual(Trip.objects.count(), 3)
 
     def test_other_bus_can_overlap(self):
@@ -508,7 +508,7 @@ class TripFarePanelTests(TripDataMixin, TestCase):
 
     def test_foreign_stops_are_rejected_and_foreign_trip_post_is_ignored(self):
         other = self.make_trip(self.start + timedelta(days=1))
-        for field, sequence in (("origin_stop", 1), ("destination_stop", 5)):
+        for field, sequence in (("origin_stop", 1), ("destination_stop", 6)):
             before = self.database_state()
             data = self.fare_data(self.trip, **{field: other.trip_stops.get(sequence=sequence).pk})
             response = self.client.post(self.url("fare_create", trip_pk=self.trip.pk), data, secure=True)
@@ -523,13 +523,25 @@ class TripFarePanelTests(TripDataMixin, TestCase):
 
     def test_invalid_segment_or_nonpositive_amount_is_rejected(self):
         for changes in ({"amount": "0"}, {"amount": "-1"}, {"amount": "1.001"},
-                        {"origin_stop": self.trip.trip_stops.get(sequence=5).pk},
+                        {"origin_stop": self.trip.trip_stops.get(sequence=6).pk},
                         {"destination_stop": self.trip.trip_stops.get(sequence=1).pk}):
             response = self.client.post(self.url("fare_create", trip_pk=self.trip.pk), self.fare_data(self.trip, **changes), secure=True)
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.context["form"].errors)
             self.assertFalse(TripFare.objects.exists())
             self.assertFalse(AuditEvent.objects.exists())
+
+    def test_post_cannot_create_same_province_fare_even_if_permissions_allow(self):
+        same_province_destination = self.trip.trip_stops.get(sequence=2)
+        TripStop.objects.filter(pk=same_province_destination.pk).update(allows_alighting=True)
+        data = self.fare_data(
+            self.trip,
+            destination_stop=same_province_destination.pk,
+        )
+        response = self.client.post(self.url("fare_create", trip_pk=self.trip.pk), data, secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "provincias diferentes")
+        self.assertFalse(TripFare.objects.exists())
 
     def test_duplicate_fare_is_controlled_even_if_inactive(self):
         fare = self.make_fare(self.trip)
@@ -614,8 +626,8 @@ class TripReadTests(TripDataMixin, TestCase):
         fare = self.make_fare(trip)
         response = self.client.get(self.url("trip_detail", pk=trip.pk), secure=True)
         self.assertContains(response, self.start.strftime("%d/%m/%Y %H:%M"))
-        self.assertContains(response, (self.start + timedelta(hours=4)).strftime("%d/%m/%Y %H:%M"))
-        self.assertEqual(len(response.context["trip"].trip_stops.all()), 5)
+        self.assertContains(response, (self.start + timedelta(hours=5)).strftime("%d/%m/%Y %H:%M"))
+        self.assertEqual(len(response.context["trip"].trip_stops.all()), 6)
         self.assertEqual([item.pk for item in response.context["trip"].fares.all()], [fare.pk])
         for item in trip.trip_stops.select_related("stop"):
             self.assertContains(response, item.stop.name)

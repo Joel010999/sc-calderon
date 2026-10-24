@@ -168,6 +168,18 @@ class SearchTripsViewTests(CheckoutBaseTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "El origen y el destino deben ser paradas diferentes.")
 
+    def test_search_same_province_shows_error(self):
+        same_province = Stop.objects.create(
+            code="JMA", name="Jesús María", city="Jesús María", province="Córdoba"
+        )
+        response = self.client.get(reverse("buscar_viajes"), {
+            "origin": str(self.stop_cba.pk),
+            "destination": str(same_province.pk),
+            "date": self.future_date.isoformat(),
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "El origen y el destino deben pertenecer a provincias diferentes.")
+
     def test_search_finds_real_trips_by_argentine_date(self):
         response = self.client.get(reverse("buscar_viajes"), {
             "origin": str(self.stop_cba.pk),

@@ -568,6 +568,21 @@ class SalesStopsAndRouteValidationTests(SalesBaseTestCase):
             )
         self.assertIn("no permite bajar", str(ctx.exception))
 
+    def test_same_province_segment_is_rejected_even_with_stop_permissions(self):
+        TripStop.objects.filter(pk=self.ts_out_jma.pk).update(allows_alighting=True)
+        self.ts_out_jma.refresh_from_db()
+        with self.assertRaises(ValidationError) as ctx:
+            create_online_booking(
+                email="misma_provincia@correo.com",
+                legs=[{
+                    "trip": self.trip_outbound,
+                    "origin_stop": self.ts_out_cba,
+                    "destination_stop": self.ts_out_jma,
+                    "seats": [self.seat_cama_1],
+                }],
+            )
+        self.assertIn("provincias diferentes", str(ctx.exception))
+
     def test_route_stop_change_after_trip_creation_does_not_invalidate_booking(self):
         """El snapshot TripStop es la autoridad para orden y permisos; cambios posteriores de RouteStop no invalidan reserva."""
         # Modificamos el RouteStop base para que no permita subir (sino sólo bajar, cumpliendo con ops_route_stop_permission)

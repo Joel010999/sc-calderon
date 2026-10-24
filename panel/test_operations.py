@@ -146,10 +146,10 @@ class OperationsPanelTests(TestCase):
         response = self.client.get(self.url("routes"), secure=True)
         rendered = response.content.decode()
         expected = {
-            "CBA-JUJ": [("CBA", True, False), ("JMA", True, False), ("PER", False, True),
-                        ("PAL", False, True), ("SSJ", False, True)],
+            "CBA-JUJ": [("CBA", True, False), ("JMA", True, False), ("GUE", False, True),
+                        ("PER", False, True), ("PAL", False, True), ("SSJ", False, True)],
             "JUJ-CBA": [("SSJ", True, False), ("PAL", True, False), ("PER", True, False),
-                        ("JMA", False, True), ("CBA", False, True)],
+                        ("GUE", True, False), ("JMA", False, True), ("CBA", False, True)],
         }
         self.assertEqual(len(response.context["routes"]), 2)
         for route in response.context["routes"]:

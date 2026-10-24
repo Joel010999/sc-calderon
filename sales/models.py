@@ -158,6 +158,8 @@ class BookingLeg(TimestampedModel):
                 errors["origin_stop"] = "La parada de subida debe permitir el ascenso de pasajeros."
             if not self.destination_stop.allows_alighting:
                 errors["destination_stop"] = "La parada de bajada debe permitir el descenso de pasajeros."
+            if self.origin_stop.stop.province == self.destination_stop.stop.province:
+                errors["destination_stop"] = "El origen y el destino deben pertenecer a provincias diferentes."
         if errors:
             raise ValidationError(errors)
 
