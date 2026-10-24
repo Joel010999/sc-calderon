@@ -8,7 +8,7 @@
             <p class="ops-eyebrow"><a href="{% url 'panel:booking_list' %}">← Volver a Reservas</a></p>
             <h1>Nueva reserva manual</h1>
             <p class="ops-intro">
-                Las reservas manuales se generan en estado Retenida (HELD) con vencimiento configurable de {{ manual_hold_hours }} horas.
+                Las reservas rápidas manuales retienen la butaca sin vencimiento automático. Completá los datos de venta antes de cobrar.
             </p>
         </div>
     </header>
@@ -269,7 +269,7 @@
                 <div class="form-row-grid">
                     <div class="form-group">
                         <label class="form-label" for="id_contact_email">Correo electrónico de contacto *</label>
-                        <input type="email" name="contact_email" id="id_contact_email" class="form-input" required value="{{ contact_email }}">
+                        <input type="email" name="contact_email" id="id_contact_email" class="form-input" value="{{ contact_email }}">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="id_contact_phone">Teléfono de contacto (opcional)</label>
@@ -309,11 +309,11 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="id_p_{{ p_num }}_birth_date">Fecha de nacimiento *</label>
-                            <input type="date" name="p_{{ p_num }}_birth_date" id="id_p_{{ p_num }}_birth_date" class="form-input" required>
+                        <input type="date" name="p_{{ p_num }}_birth_date" id="id_p_{{ p_num }}_birth_date" class="form-input">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="id_p_{{ p_num }}_nationality">Nacionalidad *</label>
-                            <input type="text" name="p_{{ p_num }}_nationality" id="id_p_{{ p_num }}_nationality" class="form-input" required value="Argentina">
+                        <input type="text" name="p_{{ p_num }}_nationality" id="id_p_{{ p_num }}_nationality" class="form-input" value="Argentina">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="id_p_{{ p_num }}_gender">Género (opcional)</label>
@@ -329,6 +329,12 @@
                 </fieldset>
                 {% endfor %}
             </div>
+        </section>
+
+        <section class="ops-card">
+            <h2>Comentario interno</h2>
+            <p class="muted">Solo visible en el panel. No se incluye en comunicaciones públicas.</p>
+            <textarea name="internal_note" id="id_internal_note" class="form-input" rows="3">{{ internal_note }}</textarea>
         </section>
 
         <!-- Confirmación y Botón Final -->

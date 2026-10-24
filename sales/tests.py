@@ -875,7 +875,7 @@ class SalesCutoffAndDeadlinesTests(SalesBaseTestCase):
             )
             self.assertEqual(b2.expires_at, now + timedelta(minutes=30))
 
-    def test_manual_hold_duration_24_hours_and_configurable(self):
+    def test_manual_hold_has_no_automatic_expiry(self):
         now = timezone.now()
         b1 = create_manual_booking(
             seller=self.seller_user,
@@ -888,7 +888,7 @@ class SalesCutoffAndDeadlinesTests(SalesBaseTestCase):
             }],
             now=now,
         )
-        self.assertEqual(b1.expires_at, now + timedelta(hours=24))
+        self.assertIsNone(b1.expires_at)
 
         with override_settings(SALES_MANUAL_HOLD_HOURS=48):
             b2 = create_manual_booking(
@@ -902,7 +902,28 @@ class SalesCutoffAndDeadlinesTests(SalesBaseTestCase):
                 }],
                 now=now,
             )
-            self.assertEqual(b2.expires_at, now + timedelta(hours=48))
+            self.assertIsNone(b2.expires_at)
+
+    def test_sandro_manual_cutoff_allows_30_and_rejects_29_minutes(self):
+        departure = self.ts_out_cba.scheduled_at
+        common = {
+            "trip": self.trip_outbound,
+            "origin_stop": self.ts_out_cba,
+            "destination_stop": self.ts_out_ssj,
+        }
+        create_manual_booking(
+            seller=self.seller_user,
+            email="sandro-corte-30@correo.com",
+            legs=[{**common, "seats": [self.seat_cama_1]}],
+            now=departure - timedelta(minutes=30),
+        )
+        with self.assertRaisesMessage(ValidationError, "La fecha límite expiró."):
+            create_manual_booking(
+                seller=self.seller_user,
+                email="sandro-corte-29@correo.com",
+                legs=[{**common, "seats": [self.seat_cama_2]}],
+                now=departure - timedelta(minutes=29),
+            )
 
     def test_create_booking_rereads_clock_after_locks_detects_cutoff(self):
         """Si create_booking espera locks y pasa el corte online, la relectura de timezone.now detecta el cutoff y rechaza."""

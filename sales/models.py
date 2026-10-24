@@ -42,7 +42,7 @@ class Booking(TimestampedModel):
     public_id = models.UUIDField("identificador público", default=uuid.uuid4, editable=False, unique=True, db_index=True)
     channel = models.CharField("canal", max_length=10, choices=BookingChannel.choices)
     status = models.CharField("estado", max_length=10, choices=BookingStatus.choices, default=BookingStatus.HELD)
-    email = models.EmailField("correo electrónico")
+    email = models.EmailField("correo electrónico", blank=True, default="")
     phone = models.CharField("teléfono", max_length=50, blank=True, default="")
     seller = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -52,7 +52,8 @@ class Booking(TimestampedModel):
         blank=True,
         related_name="manual_bookings",
     )
-    expires_at = models.DateTimeField("fecha de vencimiento", validators=[validate_aware_datetime])
+    expires_at = models.DateTimeField("fecha de vencimiento", null=True, blank=True, validators=[validate_aware_datetime])
+    internal_note = models.TextField("comentario interno", blank=True, default="")
     confirmed_at = models.DateTimeField("fecha de confirmación", null=True, blank=True, validators=[validate_aware_datetime])
 
     class Meta:
@@ -80,6 +81,11 @@ class Booking(TimestampedModel):
                 name="sales_booking_confirmed_at_required",
                 violation_error_message="Las reservas confirmadas deben registrar fecha de confirmación.",
             ),
+            models.CheckConstraint(
+                condition=Q(channel=BookingChannel.MANUAL) | Q(expires_at__isnull=False),
+                name="sales_online_booking_expiry_required",
+                violation_error_message="Las reservas online deben registrar fecha de vencimiento.",
+            ),
         ]
         indexes = [
             models.Index(fields=["status", "expires_at"], name="sales_bk_status_exp_idx"),
@@ -94,6 +100,8 @@ class Booking(TimestampedModel):
         errors = {}
         if self.channel == BookingChannel.ONLINE and self.seller_id is not None:
             errors["seller"] = "Las reservas online no llevan vendedor asignado."
+        if self.channel == BookingChannel.ONLINE and self.expires_at is None:
+            errors["expires_at"] = "Las reservas online deben registrar fecha de vencimiento."
         if self.status == BookingStatus.CONFIRMED and self.confirmed_at is None:
             errors["confirmed_at"] = "Las reservas confirmadas deben registrar fecha de confirmación."
         if errors:

@@ -55,14 +55,15 @@ AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def _booking_effectively_expired(booking, now):
-    return booking.status == BookingStatus.HELD and booking.expires_at <= now
+    return booking.status == BookingStatus.HELD and booking.expires_at is not None and booking.expires_at <= now
 
 
 def _payment_effectively_expired(payment, booking, now):
     if not payment or payment.status not in (PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW):
         return False
     deadline = payment.proof_deadline_at if payment.status == PaymentStatus.AWAITING_VOUCHER else payment.review_deadline_at
-    return bool((deadline or booking.expires_at) <= now)
+    effective_deadline = deadline or booking.expires_at
+    return bool(effective_deadline is not None and effective_deadline <= now)
 
 
 def _booking_read_queryset():

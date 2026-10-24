@@ -23,7 +23,7 @@ from sales.models import (
     SeatAssignment,
     normalize_document,
 )
-from sales.services import get_trip_availability, validate_passenger_data
+from sales.services import get_trip_availability, validate_quick_passenger_data
 from tickets.models import TicketFulfillment
 from tickets.services import process_booking_fulfillment
 from .models import AuditEvent
@@ -34,11 +34,22 @@ from .reservation_services import (
 )
 
 
+def _reservation_admin(user):
+    return user.is_superuser or user.groups.filter(name="Administrador").exists()
+
+
+def _visible_bookings(user):
+    queryset = Booking.objects
+    if not _reservation_admin(user):
+        queryset = queryset.filter(seller=user)
+    return queryset
+
+
 @reservations_access()
 @require_GET
 def booking_list(request):
     """Listado paginado de reservas con filtros y búsqueda."""
-    queryset = Booking.objects.select_related("seller").prefetch_related(
+    queryset = _visible_bookings(request.user).select_related("seller").prefetch_related(
         "legs__trip__route", "passengers"
     ).order_by("-created_at", "-pk")
 
@@ -89,7 +100,7 @@ def booking_list(request):
     matching_ids = list(dict.fromkeys(queryset.values_list("pk", flat=True)))
     if matching_ids:
         # Reconstruir queryset ordenado
-        queryset = Booking.objects.filter(pk__in=matching_ids).select_related("seller").prefetch_related(
+        queryset = _visible_bookings(request.user).filter(pk__in=matching_ids).select_related("seller").prefetch_related(
             "legs__trip__route", "passengers"
         ).order_by("-created_at", "-pk")
     else:
@@ -105,9 +116,14 @@ def booking_list(request):
 
     # Datos para filtros en el template
     all_trips = Trip.objects.select_related("route").order_by("-departure_at")[:50]
-    all_sellers = Booking.objects.filter(seller__isnull=False).values(
-        "seller_id", "seller__username"
-    ).distinct()
+    if _reservation_admin(request.user):
+        all_sellers = Booking.objects.filter(seller__isnull=False).values(
+            "seller_id", "seller__username"
+        ).distinct()
+    else:
+        all_sellers = Booking.objects.filter(seller=request.user).values(
+            "seller_id", "seller__username"
+        ).distinct()
 
     return render(request, "panel/reservations/list.html", {
         "page_obj": page_obj,
@@ -127,7 +143,7 @@ def booking_list(request):
 def booking_detail(request, public_id):
     """Detalle completo de una reserva con auditoría y acción de liberación (solo HELD)."""
     booking = get_object_or_404(
-        Booking.objects.select_related("seller").prefetch_related(
+        _visible_bookings(request.user).select_related("seller").prefetch_related(
             "legs__trip__route",
             "legs__trip__bus",
             "legs__origin_stop__stop",
@@ -151,7 +167,7 @@ def booking_detail(request, public_id):
         entity_id=str(booking.pk),
     ).select_related("actor").order_by("-created_at", "-pk")
 
-    can_release = (booking.status == BookingStatus.HELD)
+    can_release = (booking.status == BookingStatus.HELD and booking.seller_id == request.user.pk)
 
     from payments.models import Payment, PaymentStatus
     active_payment = Payment.objects.filter(
@@ -185,7 +201,7 @@ def booking_detail(request, public_id):
 @reservations_access()
 @require_POST
 def booking_fulfillment_retry(request, public_id):
-    booking = get_object_or_404(Booking, public_id=public_id)
+    booking = get_object_or_404(_visible_bookings(request.user), public_id=public_id)
     if booking.status != BookingStatus.CONFIRMED:
         messages.error(request, "Solo se pueden reintentar pasajes de reservas confirmadas.")
         return redirect("panel:booking_detail", public_id=public_id)
@@ -204,7 +220,7 @@ def booking_fulfillment_retry(request, public_id):
 @require_POST
 def booking_release(request, public_id):
     """Libera una reserva en estado HELD (acción POST con CSRF). No admite confirmación."""
-    booking = get_object_or_404(Booking, public_id=public_id)
+    booking = get_object_or_404(_visible_bookings(request.user), public_id=public_id)
 
     if booking.status == BookingStatus.CONFIRMED:
         messages.error(request, "No se puede liberar una reserva confirmada sin una política de cancelación aprobada.")
@@ -305,6 +321,7 @@ def booking_create(request):
 
     contact_email = (request.POST.get("contact_email") or "").strip()
     contact_phone = (request.POST.get("contact_phone") or "").strip()
+    internal_note = (request.POST.get("internal_note") or "").strip()
 
     # Resolver viajes y paradas de ida
     outbound_trip = None
@@ -399,9 +416,6 @@ def booking_create(request):
     if request.method == "POST" and request.POST.get("action") == "create_booking":
         form_errors = []
 
-        if not contact_email:
-            form_errors.append("El correo de contacto es obligatorio.")
-
         if not outbound_trip or not outbound_orig or not outbound_dest:
             form_errors.append("Debés seleccionar el viaje y las paradas de ida válidas.")
 
@@ -440,7 +454,7 @@ def booking_create(request):
                 "gender": (request.POST.get(f"p_{p_idx}_gender") or "").strip(),
             }
             try:
-                validate_passenger_data(p_data, position=p_idx)
+                validate_quick_passenger_data(p_data, position=p_idx)
             except ValidationError as ve:
                 for err_field, err_msg in ve.message_dict.items():
                     form_errors.extend(err_msg)
@@ -467,12 +481,13 @@ def booking_create(request):
                     actor=request.user,
                     email=contact_email,
                     phone=contact_phone,
+                    internal_note=internal_note,
                     legs=legs,
                     passengers_data=passengers_data,
                 )
                 messages.success(
                     request,
-                    f"Reserva manual {booking.public_id} creada exitosamente con vencimiento de {manual_hold_hours} horas."
+                    f"Reserva manual {booking.public_id} creada exitosamente. La butaca queda retenida hasta completar la venta."
                 )
                 return redirect("panel:booking_detail", public_id=booking.public_id)
             except (ValidationError, SeatUnavailableError, InvalidBookingError) as exc:
@@ -514,4 +529,5 @@ def booking_create(request):
         "return_fares": return_fares,
         "contact_email": contact_email,
         "contact_phone": contact_phone,
+        "internal_note": internal_note,
     })
