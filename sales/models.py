@@ -182,6 +182,19 @@ class BookingPassenger(TimestampedModel):
     birth_date = models.DateField("fecha de nacimiento", null=True, blank=True)
     nationality = models.CharField("nacionalidad", max_length=50, blank=True, default="Argentina")
     gender = models.CharField("género", max_length=20, blank=True, default="")
+    accompanied_by = models.ForeignKey(
+        "self",
+        verbose_name="madre acompañante",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="accompanied_minors",
+    )
+    is_lap_infant = models.BooleanField(
+        "menor gratuito sin butaca",
+        default=False,
+        help_text="Snapshot provisional al crear la reserva; no se recalcula al confirmar.",
+    )
 
     class Meta:
         verbose_name = "pasajero de reserva"
@@ -212,6 +225,10 @@ class BookingPassenger(TimestampedModel):
         max_allowed = get_max_passengers_per_booking()
         if self.position is not None and (self.position < 1 or self.position > max_allowed):
             raise ValidationError({"position": f"La posición debe estar entre 1 y {max_allowed}."})
+        if self.accompanied_by_id is not None and self.accompanied_by_id == self.pk:
+            raise ValidationError({"accompanied_by": "Un pasajero no puede acompañarse a sí mismo."})
+        if self.accompanied_by_id and self.accompanied_by.booking_id != self.booking_id:
+            raise ValidationError({"accompanied_by": "La madre acompañante debe pertenecer a la misma compra."})
 
     def save(self, *args, **kwargs):
         # Mantener el indice de busqueda sincronizado si se corrige el documento.

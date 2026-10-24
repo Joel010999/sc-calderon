@@ -23,6 +23,7 @@ from .models import (
     SeatAssignment,
     normalize_document,
 )
+from .minors import classify_passengers
 from .validators import validate_aware_datetime
 
 
@@ -281,22 +282,28 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
             raise ValidationError("Una reserva de dos tramos debe corresponder a viajes distintos.")
 
     max_passengers = get_max_passengers_per_booking()
-    passenger_count = len(legs[0].get("seats", []))
+    passenger_count = len(passengers_data) if passengers_data is not None else len(legs[0].get("seats", []))
     if passenger_count < 1:
         raise ValidationError("Debe seleccionar al menos una butaca.")
     if passenger_count > max_passengers:
         raise ValidationError(f"El límite máximo de pasajeros por reserva es de {max_passengers}.")
 
+    passenger_snapshots = None
     if passengers_data is not None:
         if len(passengers_data) != passenger_count:
-            raise ValidationError("La cantidad de pasajeros no coincide con las butacas seleccionadas.")
+            raise ValidationError("La cantidad de personas no coincide con los datos enviados.")
         for idx, p_info in enumerate(passengers_data, start=1):
             validate_passenger_data(p_info, position=idx)
+        passenger_snapshots = classify_passengers(passengers_data, effective_now)
+    required_seats = sum(not item["is_lap_infant"] for item in passenger_snapshots) if passenger_snapshots is not None else passenger_count
 
     for idx, leg_data in enumerate(legs, start=1):
         leg_seats = leg_data.get("seats", [])
-        if len(leg_seats) != passenger_count:
-            raise ValidationError("Cada tramo debe tener exactamente la misma cantidad de butacas que pasajeros.")
+        if len(leg_seats) != required_seats:
+            raise ValidationError(
+                f"Cada tramo debe tener la misma cantidad de butacas: exactamente {required_seats} "
+                "para las personas que ocupan asiento."
+            )
         seat_pks = [s.pk if hasattr(s, "pk") else s for s in leg_seats]
         if len(seat_pks) != len(set(seat_pks)):
             raise ValidationError(f"No se puede asignar la misma butaca más de una vez en el tramo {idx}.")
@@ -499,11 +506,17 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
                     "birth_date": b_date,
                     "nationality": (p_info.get("nationality") or "Argentina").strip(),
                     "gender": (p_info.get("gender") or "").strip(),
+                    "is_lap_infant": passenger_snapshots[pos - 1]["is_lap_infant"],
                 })
             passenger = BookingPassenger(**p_kwargs)
             passenger.full_clean()
             passenger.save()
             passengers.append(passenger)
+
+        for pos, snapshot in enumerate(passenger_snapshots or [], start=1):
+            if snapshot["mother_position"] is not None:
+                passengers[pos - 1].accompanied_by = passengers[snapshot["mother_position"] - 1]
+                passengers[pos - 1].save(update_fields=["accompanied_by", "updated_at"])
 
         for seq, r_leg in enumerate(resolved_legs, start=1):
             trip = r_leg["trip"]
@@ -524,7 +537,8 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
             leg.full_clean()
             leg.save()
 
-            for passenger, seat in zip(passengers, r_leg["seats"]):
+            seat_passengers = [p for p in passengers if not p.is_lap_infant]
+            for passenger, seat in zip(seat_passengers, r_leg["seats"]):
                 fare = r_leg["fares_for_seats"][seat.pk]
                 assignment = SeatAssignment(
                     leg=leg,

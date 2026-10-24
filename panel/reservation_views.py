@@ -24,6 +24,7 @@ from sales.models import (
     normalize_document,
 )
 from sales.services import get_trip_availability, validate_quick_passenger_data
+from sales.minors import required_seat_count
 from tickets.models import TicketFulfillment
 from tickets.services import process_booking_fulfillment
 from .models import AuditEvent
@@ -149,8 +150,8 @@ def booking_detail(request, public_id):
             "legs__origin_stop__stop",
             "legs__destination_stop__stop",
             "legs__seat_assignments__seat",
-            "legs__seat_assignments__passenger",
-            "passengers",
+        "legs__seat_assignments__passenger",
+            "passengers__accompanied_by",
         ),
         public_id=public_id,
     )
@@ -426,20 +427,11 @@ def booking_create(request):
         outbound_selected_seats = [
             int(s) for s in request.POST.getlist("outbound_seats") if s.isdigit()
         ]
-        if len(outbound_selected_seats) != passenger_count:
-            form_errors.append(
-                f"Debés seleccionar exactamente {passenger_count} butaca(s) para el viaje de ida."
-            )
-
         return_selected_seats = []
         if is_roundtrip:
             return_selected_seats = [
                 int(s) for s in request.POST.getlist("return_seats") if s.isdigit()
             ]
-            if len(return_selected_seats) != passenger_count:
-                form_errors.append(
-                    f"Debés seleccionar exactamente {passenger_count} butaca(s) para el viaje de vuelta."
-                )
 
         # Recoger y validar datos de cada pasajero
         passengers_data = []
@@ -452,6 +444,7 @@ def booking_create(request):
                 "birth_date": (request.POST.get(f"p_{p_idx}_birth_date") or "").strip(),
                 "nationality": (request.POST.get(f"p_{p_idx}_nationality") or "Argentina").strip(),
                 "gender": (request.POST.get(f"p_{p_idx}_gender") or "").strip(),
+                "accompanied_by_position": (request.POST.get(f"p_{p_idx}_accompanied_by_position") or "").strip(),
             }
             try:
                 validate_quick_passenger_data(p_data, position=p_idx)
@@ -459,6 +452,16 @@ def booking_create(request):
                 for err_field, err_msg in ve.message_dict.items():
                     form_errors.extend(err_msg)
             passengers_data.append(p_data)
+
+        if not form_errors:
+            try:
+                required_seats = required_seat_count(passengers_data, timezone.now())
+                if len(outbound_selected_seats) != required_seats:
+                    form_errors.append("Debés seleccionar exactamente la cantidad de butacas correspondiente a quienes ocupan asiento.")
+                if is_roundtrip and len(return_selected_seats) != required_seats:
+                    form_errors.append("Debés seleccionar la misma cantidad de butacas para la vuelta; los menores gratuitos no ocupan asiento.")
+            except ValidationError as exc:
+                form_errors.extend(exc.messages)
 
         if not form_errors:
             # Armar los tramos para create_manual_booking

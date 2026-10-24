@@ -152,6 +152,13 @@
             </tbody>
           </table>
         </div>
+        {% if booking.passengers.all %}
+          <div class="mt-3">
+            {% for passenger in booking.passengers.all %}
+              {% if passenger.is_lap_infant %}<p class="muted"><strong>{{ passenger.first_name }} {{ passenger.last_name }}</strong>: menor gratuito, viaja en la falda de {{ passenger.accompanied_by.first_name }} {{ passenger.accompanied_by.last_name }} y no ocupa butaca.</p>{% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
     {% endfor %}
 

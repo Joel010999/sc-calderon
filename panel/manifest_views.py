@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
 
 from operations.models import Trip, TripStop
-from sales.models import AssignmentStatus, BookingStatus, SeatAssignment
+from sales.models import AssignmentStatus, BookingLeg, BookingPassenger, BookingStatus, SeatAssignment
 from tickets.models import BoardingRecord, BoardingStatus
 
 from .permissions import can_manage_operations, reservations_access
@@ -20,7 +20,7 @@ class ManifestRow:
     passenger_name: str
     document_type: str
     document_number: str
-    seat_number: int
+    seat_number: str
     category: str
     category_display: str
     origin_stop: str
@@ -76,7 +76,7 @@ def _manifest_data(trip_pk):
             passenger_name=" ".join(filter(None, [assignment.passenger.first_name, assignment.passenger.last_name])),
             document_type=assignment.passenger.document_type,
             document_number=assignment.passenger.document_number,
-            seat_number=assignment.seat_number,
+            seat_number=str(assignment.seat_number),
             category=assignment.category,
             category_display=assignment.get_category_display(),
             origin_stop=assignment.leg.origin_stop.stop.name,
@@ -88,6 +88,46 @@ def _manifest_data(trip_pk):
         )
         for assignment in assignments
     ]
+
+    minor_passengers = list(
+        BookingPassenger.objects.filter(
+            booking__status=BookingStatus.CONFIRMED,
+            booking__legs__trip_id=trip.pk,
+            is_lap_infant=True,
+        ).select_related("booking").distinct()
+    )
+    legs_by_booking = {
+        leg.booking_id: leg
+        for leg in BookingLeg.objects.filter(
+            booking_id__in={p.booking_id for p in minor_passengers}, trip_id=trip.pk
+        ).select_related("booking", "origin_stop__stop", "destination_stop__stop")
+    }
+    minor_keys = set(
+        BoardingRecord.objects.filter(
+            trip_id=trip.pk,
+            status=BoardingStatus.ACTIVE,
+            passenger_id__in=[p.pk for p in minor_passengers],
+        ).values_list("passenger_id", "ticket__leg_id")
+    )
+    for passenger in minor_passengers:
+        leg = legs_by_booking.get(passenger.booking_id)
+        if not leg:
+            continue
+        rows.append(ManifestRow(
+            passenger_name=" ".join(filter(None, [passenger.first_name, passenger.last_name])),
+            document_type=passenger.document_type,
+            document_number=passenger.document_number,
+            seat_number="Sin butaca",
+            category="LAP_INFANT",
+            category_display="Menor gratuito en falda",
+            origin_stop=leg.origin_stop.stop.name,
+            destination_stop=leg.destination_stop.stop.name,
+            booking_public_id=str(passenger.booking.public_id),
+            origin_sequence=leg.origin_stop.sequence,
+            destination_sequence=leg.destination_stop.sequence,
+            boarded=(passenger.pk, leg.pk) in minor_keys,
+        ))
+    rows.sort(key=lambda row: (row.origin_sequence, row.category, row.seat_number, row.passenger_name))
 
     summaries = [
         ManifestStopSummary(

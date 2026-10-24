@@ -120,7 +120,7 @@
                         <div style="display: flex; align-items: center; justify-content: space-between; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 0.6rem 1rem; gap: 1rem;">
                           <div>
                             <strong style="font-family: monospace; font-size: 0.9rem; color: #15803d;">{{ ticket.ticket_code }}</strong>
-                            <div style="font-size: 0.82rem; color: #4b5563;">{{ ticket.passenger_name }} (Butaca {{ ticket.seat_number }})</div>
+                            <div style="font-size: 0.82rem; color: #4b5563;">{{ ticket.passenger_name }} ({% if ticket.seat_number %}Butaca {{ ticket.seat_number }}{% else %}Sin butaca{% endif %})</div>
                           </div>
                           <a href="{% url 'customer_ticket_download' public_id=ticket.public_id %}" class="button" style="padding: 0.45rem 0.85rem; font-size: 0.85rem; background: #166534; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500;">
                             Descargar PDF

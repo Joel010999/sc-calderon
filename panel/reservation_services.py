@@ -51,6 +51,8 @@ def booking_snapshot(booking):
             "birth_date": p.birth_date.isoformat() if p.birth_date else None,
             "nationality": p.nationality,
             "gender": p.gender,
+            "is_lap_infant": p.is_lap_infant,
+            "accompanied_by_position": p.accompanied_by.position if p.accompanied_by_id else None,
         })
 
     return {
