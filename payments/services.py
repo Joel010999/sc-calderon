@@ -819,7 +819,7 @@ def _upload_public_transfer_voucher_atomic(*, booking_or_id, voucher_file, now=N
     is_expired = False
     if payment.proof_deadline_at and effective_now >= payment.proof_deadline_at:
         is_expired = True
-    elif effective_now >= booking.expires_at:
+    elif booking.expires_at is not None and effective_now >= booking.expires_at:
         is_expired = True
 
     if is_expired:

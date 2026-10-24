@@ -547,7 +547,10 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
         schedule_notification(
             booking=booking, notification_type=NotificationType.BOOKING_HELD,
             event_key=f"booking:{booking.public_id}:held",
-            payload={"booking_ref": str(booking.public_id), "deadline": booking.expires_at.isoformat()},
+            payload={
+                "booking_ref": str(booking.public_id),
+                "deadline": booking.expires_at.isoformat() if booking.expires_at else "",
+            },
         )
     return booking
 

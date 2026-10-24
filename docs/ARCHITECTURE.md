@@ -118,6 +118,16 @@ Las transiciones `SCHEDULED -> STARTED` y `STARTED -> COMPLETED` se ejecutan med
 
 ## Módulos conceptuales
 
+## Consolidación de reservas, permisos y balance (2026-10-24)
+
+`Booking` continúa siendo la raíz transaccional bloqueada. Las reservas manuales usan `expires_at=NULL` con una restricción que exige vencimiento para el canal online; todos los consumidores que calculan vencimientos deben tratar el valor nulo como indefinido. La retención manual ocupa la butaca hasta una liberación autorizada por el creador.
+
+El alcance de vendedores se aplica en el queryset base antes de filtros, búsquedas, detalles, descargas, HTML y CSV. La revisión de transferencias se valida en el servicio para Administradores activos. Los intentos rechazados son inmutables y un nuevo comprobante crea un intento nuevo; la aprobación es terminal y dispara fulfillment durable sin un correo independiente de aprobación.
+
+Los reportes y el dashboard separan compras, pasajes y tramos comisionables. La comisión se calcula con `Decimal` por asignación confirmada de precio positivo; ventas web sin vendedor, reservas impagas y rechazos no generan comisión. Las rendiciones bancarias no se marcan automáticamente.
+
+Güemes, tarifas por salida, menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway permanecen fuera de esta consolidación.
+
 | Módulo | Responsabilidad |
 | --- | --- |
 | `operations` | Paradas, recorridos, colectivos, butacas, viajes y tarifas. |

@@ -51,8 +51,8 @@ La solución debe validar origen y destino según el orden y los permisos de sub
 ## Disponibilidad y vencimientos
 
 - Una selección online mantiene la butaca durante 15 minutos.
-- Una reserva manual del panel vence inicialmente a las 24 horas.
-- Ambos plazos deben ser configurables.
+- Una reserva manual rápida del panel no vence automáticamente y conserva la butaca hasta liberación autorizada, mientras que una selección online mantiene la butaca durante 15 minutos.
+- La reserva manual exige DNI y nombre completo para retener; email y datos completos de venta se validan antes de iniciar o confirmar el pago.
 - Al subir un comprobante de transferencia, la operación pasa a revisión manual.
 - La conducta exacta del vencimiento durante la revisión queda pendiente de definición.
 - La venta online cierra una hora antes del horario de subida del pasajero.
@@ -69,6 +69,12 @@ Métodos previstos:
 - Tarjetas de crédito y débito mediante Payway.
 
 Las integraciones reales de Mercado Pago y Payway se harán después de la migración desde Google Sheets.
+
+## Consolidación Sandro 2026-10-24
+
+Las reservas manuales se atribuyen al vendedor autenticado, y solo su creador puede liberarlas. Los vendedores consultan únicamente sus reservas y pagos; la revisión de transferencias corresponde a Administradores activos. Los rechazos conservan el intento y permiten un nuevo comprobante sin liberar automáticamente la butaca. El corte manual se permite exactamente 30 minutos antes de la subida y se rechaza a los 29 minutos; la referencia a la subida queda provisional hasta validación comercial.
+
+El balance calcula comisiones por asignación confirmada con precio positivo, separa compras de pasajes/tramos y no marca rendiciones bancarias automáticamente. Siguen pendientes Güemes, tarifas por salida, menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
 
 ## Pasajes
 

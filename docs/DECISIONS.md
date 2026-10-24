@@ -396,6 +396,15 @@ Se adopta `@axe-core/playwright` como dependencia de desarrollo para detectar re
   PostgreSQL. Las sesiones se revocan al desactivar o cambiar el rol.
 ## Distributed abuse protection (2026-10-10)
 
+## Reservas, permisos y balance Sandro (2026-10-24)
+
+- La reserva rápida manual no tiene vencimiento automático (`expires_at` nulo); la reserva online conserva 15 minutos y exige un vencimiento explícito.
+- La identidad del vendedor se toma del actor autenticado. Solo el creador libera una reserva manual; Administrador puede consultar, pero no obtiene una excepción de liberación ajena.
+- La revisión de transferencias queda limitada a Administradores activos. Un rechazo conserva historial y butaca; el comprobante posterior es un intento nuevo. Un aprobado es terminal e idempotente.
+- El corte manual permite el instante exacto de 30 minutos y cierra después. Se mide provisionalmente respecto de la subida inicial; queda pendiente validar salida inicial versus parada de subida.
+- El balance usa pagos aprobados de reservas confirmadas y asignaciones confirmadas con precio positivo. No se agregan rendiciones bancarias automáticas.
+- Pendientes expresos: Güemes, tarifas por salida, menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
+
 Use a Django table with HMAC counters per window instead of process memory,
 sessions, Redis, or an external provider. The HMAC secret is configurable and
 required in production; rotating it invalidates active windows without exposing

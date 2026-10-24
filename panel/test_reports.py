@@ -77,6 +77,7 @@ class SalesReportTests(TestCase):
             position: BookingPassenger.objects.create(
                 booking=booking, position=position, first_name="Pasajero", last_name="Privado",
                 document_type="DNI", document_number="30123456",
+                birth_date=datetime(1988, 4, 4).date(), nationality="Argentina",
             )
             for position in range(1, passengers + 1)
         }
