@@ -19,7 +19,7 @@ from operations.services import schedule_trip
 from payments.models import PaymentStatus
 from payments.services import initiate_public_transfer_payment, register_cash_payment, register_transfer_payment, review_transfer_payment
 from cash_register.services import current_cash, open_cash
-from sales.models import Booking, BookingChannel, BookingStatus, SeatAssignment
+from sales.models import AssignmentStatus, Booking, BookingChannel, BookingStatus, SeatAssignment
 from sales.services import create_manual_booking, create_online_booking
 from tickets.models import BoardingRecord, BoardingStatus, FulfillmentEmailStatus, FulfillmentIssueStatus, Ticket, TicketFulfillment
 from tickets.services import issue_tickets_for_booking
@@ -162,6 +162,12 @@ def seed_demo(*, dry_run=False):
     if expired.status != BookingStatus.EXPIRED:
         expired.status, expired.expires_at = BookingStatus.EXPIRED, now - timedelta(minutes=1)
         expired.save(update_fields=["status", "expires_at", "updated_at"])
+    # El registro demo se fuerza a EXPIRED para ser reproducible; liberar también
+    # cualquier asignación HELD evita que el dato sintético ocupe una butaca.
+    SeatAssignment.objects.filter(
+        leg__booking=expired,
+        status=AssignmentStatus.HELD,
+    ).update(status=AssignmentStatus.RELEASED, updated_at=now)
     if not Ticket.objects.filter(booking=confirmed, status="ISSUED").exists():
         issue_tickets_for_booking(confirmed, now=now)
     for booking in (confirmed, manual):
