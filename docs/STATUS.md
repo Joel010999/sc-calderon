@@ -535,9 +535,9 @@ pendiente cualquier política adicional de embarque de menores. Continúan fuera
 de alcance tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y
 Payway. La validación PostgreSQL, Browser E2E/axe y restore drill debe ejecutarse
 en los workflows sobre el SHA final; no se conectan proveedores reales.
-## CI de rutas y menores (SHA acf0073)
+## CI de rutas y menores
 
-Quality Gate, Sales PostgreSQL, Tickets PostgreSQL, Browser E2E con axe y
-PostgreSQL restore drill terminaron exitosamente sobre el SHA
-`acf0073dc593b14ebfef371f7bb6de6bc55af000`, en entornos aislados y sin
-proveedores reales. Esta seccion actualiza el estado pendiente anterior.
+Los workflows de Quality Gate, Sales PostgreSQL, Tickets PostgreSQL, Browser
+E2E con axe y PostgreSQL restore drill se ejecutan sobre cada SHA publicado;
+sus resultados y el SHA exacto de la validacion final se entregan junto con la
+rama. Los entornos son aislados y no conectan proveedores reales.
