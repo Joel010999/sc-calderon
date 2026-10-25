@@ -75,7 +75,8 @@ class MinorPassengerPolicyTests(SalesBaseTestCase):
 
     def test_exact_second_birthday_and_later_purchase_require_seat(self):
         purchase_at = timezone.now()
-        exactly_two = purchase_at.date().replace(year=purchase_at.date().year - 2)
+        local_purchase_date = timezone.localtime(purchase_at).date()
+        exactly_two = local_purchase_date.replace(year=local_purchase_date.year - 2)
         self.assertFalse(is_free_lap_infant(exactly_two, purchase_at))
 
         with self.assertRaises(ValidationError):
@@ -86,7 +87,7 @@ class MinorPassengerPolicyTests(SalesBaseTestCase):
                 now=purchase_at,
             )
 
-        later_birth = purchase_at.date().replace(year=purchase_at.date().year - 2) - timedelta(days=1)
+        later_birth = local_purchase_date.replace(year=local_purchase_date.year - 2) - timedelta(days=1)
         self.assertFalse(is_free_lap_infant(later_birth, purchase_at))
 
     def test_free_minor_must_reference_a_seated_passenger_in_same_purchase(self):
