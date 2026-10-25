@@ -17,11 +17,13 @@ from operations.models import Seat, Trip
 from sales.conf import get_manual_hold_hours, get_max_passengers_per_booking
 from sales.exceptions import InvalidBookingError, SeatUnavailableError
 from sales.models import (
-    AssignmentStatus,
     Booking,
     BookingStatus,
-    SeatAssignment,
     normalize_document,
+)
+from sales.priority_seats import (
+    is_priority_seat,
+    is_seat_blocked_for_general_sale,
 )
 from sales.services import get_trip_availability, validate_quick_passenger_data
 from sales.minors import required_seat_count
@@ -150,7 +152,7 @@ def booking_detail(request, public_id):
             "legs__origin_stop__stop",
             "legs__destination_stop__stop",
             "legs__seat_assignments__seat",
-        "legs__seat_assignments__passenger",
+            "legs__seat_assignments__passenger",
             "passengers__accompanied_by",
         ),
         public_id=public_id,
@@ -244,13 +246,24 @@ def booking_release(request, public_id):
     return redirect("panel:booking_detail", public_id=public_id)
 
 
-def _build_deck_map(bus, active_seats, occupied_seat_ids, fares_by_category, selected_seat_ids=None):
+def _build_deck_map(
+    bus,
+    active_seats,
+    occupied_seat_ids,
+    fares_by_category,
+    selected_seat_ids=None,
+    *,
+    trip=None,
+    now=None,
+    priority_blocked_seat_ids=None,
+):
     """Construye la distribución de butacas por planta para el colectivo."""
     if selected_seat_ids is None:
         selected_seat_ids = set()
 
     occupied_set = set(occupied_seat_ids)
     selected_set = set(selected_seat_ids)
+    priority_blocked_set = set(priority_blocked_seat_ids) if priority_blocked_seat_ids is not None else None
 
     decks = []
     for deck_val, deck_lbl in Seat.Deck.choices:
@@ -259,7 +272,14 @@ def _build_deck_map(bus, active_seats, occupied_seat_ids, fares_by_category, sel
             if seat.deck != deck_val:
                 continue
             is_occupied = seat.pk in occupied_set
-            is_selected = seat.pk in selected_set
+            is_priority = is_priority_seat(seat)
+            if priority_blocked_set is not None:
+                is_priority_blocked = (not is_occupied) and (seat.pk in priority_blocked_set)
+            elif trip is not None:
+                is_priority_blocked = (not is_occupied) and is_seat_blocked_for_general_sale(trip, seat, now=now)
+            else:
+                is_priority_blocked = False
+            is_selected = (seat.pk in selected_set) and (not is_occupied) and (not is_priority_blocked)
             fare_amount = fares_by_category.get(seat.category)
             has_fare = fare_amount is not None
 
@@ -268,8 +288,10 @@ def _build_deck_map(bus, active_seats, occupied_seat_ids, fares_by_category, sel
                 "column": seat.position_x + 1,
                 "row": seat.position_y + 1,
                 "is_occupied": is_occupied,
+                "is_priority": is_priority,
+                "is_priority_blocked": is_priority_blocked,
                 "is_selected": is_selected,
-                "is_available": (not is_occupied) and has_fare,
+                "is_available": (not is_occupied) and (not is_priority_blocked) and has_fare,
                 "has_fare": has_fare,
                 "fare_amount": fare_amount,
                 "category_display": seat.get_category_display(),
@@ -345,20 +367,24 @@ def booking_create(request):
 
         if outbound_orig and outbound_dest and outbound_orig.sequence < outbound_dest.sequence:
             try:
-                outbound_avail = get_trip_availability(outbound_trip, outbound_orig, outbound_dest)
-                outbound_fares = outbound_avail["fares_by_category"]
-                occupied_ids = set(
-                    SeatAssignment.objects.filter(
-                        trip=outbound_trip,
-                        status__in=[AssignmentStatus.HELD, AssignmentStatus.CONFIRMED],
-                    ).values_list("seat_id", flat=True)
+                outbound_avail = get_trip_availability(
+                    outbound_trip, outbound_orig, outbound_dest, now=now, mutate=False
                 )
+                outbound_fares = outbound_avail["fares_by_category"]
+                occupied_ids = outbound_avail["occupied_seat_ids"]
                 active_seats = list(Seat.objects.filter(bus=outbound_trip.bus, is_active=True).order_by("number"))
                 selected_out_seats = {
                     int(s) for s in request.POST.getlist("outbound_seats") if s.isdigit()
                 } if request.method == "POST" else set()
                 outbound_decks = _build_deck_map(
-                    outbound_trip.bus, active_seats, occupied_ids, outbound_fares, selected_out_seats
+                    outbound_trip.bus,
+                    active_seats,
+                    occupied_ids,
+                    outbound_fares,
+                    selected_out_seats,
+                    trip=outbound_trip,
+                    now=now,
+                    priority_blocked_seat_ids=outbound_avail["priority_blocked_seat_ids"],
                 )
             except ValidationError:
                 pass
@@ -395,20 +421,24 @@ def booking_create(request):
             if match:
                 return_trip, return_orig, return_dest = match
                 try:
-                    return_avail = get_trip_availability(return_trip, return_orig, return_dest)
-                    return_fares = return_avail["fares_by_category"]
-                    occupied_ret_ids = set(
-                        SeatAssignment.objects.filter(
-                            trip=return_trip,
-                            status__in=[AssignmentStatus.HELD, AssignmentStatus.CONFIRMED],
-                        ).values_list("seat_id", flat=True)
+                    return_avail = get_trip_availability(
+                        return_trip, return_orig, return_dest, now=now, mutate=False
                     )
+                    return_fares = return_avail["fares_by_category"]
+                    occupied_ret_ids = return_avail["occupied_seat_ids"]
                     active_ret_seats = list(Seat.objects.filter(bus=return_trip.bus, is_active=True).order_by("number"))
                     selected_ret_seats = {
                         int(s) for s in request.POST.getlist("return_seats") if s.isdigit()
                     } if request.method == "POST" else set()
                     return_decks = _build_deck_map(
-                        return_trip.bus, active_ret_seats, occupied_ret_ids, return_fares, selected_ret_seats
+                        return_trip.bus,
+                        active_ret_seats,
+                        occupied_ret_ids,
+                        return_fares,
+                        selected_ret_seats,
+                        trip=return_trip,
+                        now=now,
+                        priority_blocked_seat_ids=return_avail["priority_blocked_seat_ids"],
                     )
                 except ValidationError:
                     pass

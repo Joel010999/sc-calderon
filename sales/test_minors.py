@@ -102,3 +102,28 @@ class MinorPassengerPolicyTests(SalesBaseTestCase):
                     now=purchase_at,
                 )
 
+    def test_free_lap_infant_remains_zero_amount_when_departure_fare_changes(self):
+        """Los menores gratuitos sin asiento permanecen en importe cero aunque cambie la tarifa de la salida."""
+        from decimal import Decimal
+        from payments.services import calculate_booking_total
+
+        purchase_at = timezone.now()
+        infant_birth = purchase_at.date() - timedelta(days=365)
+        booking = create_online_booking(
+            email="menor-tarifa-cambio@correo.com",
+            legs=[self._leg([self.seat_cama_1])],
+            passengers_data=[
+                self._passenger(1, date(1990, 1, 1)),
+                self._passenger(2, infant_birth, mother=1),
+            ],
+            now=purchase_at,
+        )
+
+        # Se modifica la tarifa CAMA de la salida antes de partir
+        self.fare_out_cba_ssj_cama.amount = Decimal("28000.00")
+        self.fare_out_cba_ssj_cama.save()
+
+        # La reserva previa mantiene el importe del adulto (12000.00) y 0.00 para el menor en brazos
+        self.assertEqual(calculate_booking_total(booking), Decimal("12000.00"))
+        prices = list(booking.legs.first().seat_assignments.values_list("price", flat=True))
+        self.assertEqual(prices, [Decimal("12000.00")])

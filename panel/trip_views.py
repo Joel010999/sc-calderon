@@ -12,7 +12,7 @@ from operations.models import Bus, Route, Trip, TripFare, TripStop
 from .operations_views import render_operations
 from .permissions import can_manage_reservations, operations_access, reservations_access
 from .trip_forms import TripFareForm, TripScheduleForm, TripSelectionForm
-from .trip_services import FARE_ERROR, create_panel_trip, save_fare, set_fare_active, start_trip, complete_trip, trip_pending_summary
+from .trip_services import FARE_ERROR, can_modify_trip_fares, create_panel_trip, save_fare, set_fare_active, start_trip, complete_trip, trip_pending_summary
 
 
 CONFIRMATION_SALT = "panel.trip-schedule"
@@ -42,15 +42,14 @@ def trips(request):
 def trip_detail(request, pk):
     queryset = trips_with_arrival().prefetch_related(
         Prefetch("trip_stops", queryset=TripStop.objects.select_related("stop").order_by("sequence")),
-        Prefetch("fares", queryset=TripFare.objects.select_related(
-            "origin_stop__stop", "destination_stop__stop"
-        ).order_by("origin_stop__sequence", "destination_stop__sequence", "seat_category", "pk")),
+        Prefetch("fares", queryset=TripFare.objects.order_by("seat_category", "pk")),
     )
     trip = get_object_or_404(queryset, pk=pk)
     pending = trip_pending_summary(trip.pk)
     return render_operations(request, "trip_detail", title=f"Viaje {trip.pk}",
                              trip=trip, display_timezone=settings.TIME_ZONE,
                              can_access_manifest=can_manage_reservations(request.user),
+                             can_modify_fares=can_modify_trip_fares(trip),
                              pending_summary=pending)
 
 
@@ -161,7 +160,9 @@ def fare_form(request, trip_pk, pk=None):
 def fare_state(request, trip_pk, pk, active):
     try:
         changed = set_fare_active(actor=request.user, trip_pk=trip_pk, pk=pk, active=active)
-    except (ValidationError, IntegrityError):
+    except ValidationError as error:
+        messages.error(request, error.messages[0] if getattr(error, "messages", None) else str(error))
+    except IntegrityError:
         messages.error(request, FARE_ERROR)
     else:
         messages.success(request, "Estado de la tarifa actualizado." if changed else "La tarifa ya tenía ese estado.")

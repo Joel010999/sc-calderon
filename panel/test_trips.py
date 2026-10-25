@@ -75,16 +75,13 @@ class TripDataMixin:
         return trip
 
     def fare_data(self, trip, **changes):
-        data = {"origin_stop": trip.trip_stops.get(sequence=1).pk,
-                "destination_stop": trip.trip_stops.get(sequence=6).pk,
-                "seat_category": SeatCategory.CAMA, "amount": "12345.67", "currency": "ARS"}
+        data = {"seat_category": SeatCategory.CAMA, "amount": "12345.67", "currency": "ARS"}
         data.update(changes)
         return data
 
     def make_fare(self, trip, **changes):
         data = self.fare_data(trip, **changes)
-        return TripFare.objects.create(trip=trip, origin_stop_id=data["origin_stop"],
-            destination_stop_id=data["destination_stop"], seat_category=data["seat_category"],
+        return TripFare.objects.create(trip=trip, seat_category=data["seat_category"],
             amount=Decimal(data["amount"]), currency=data["currency"])
 
     def database_state(self):
@@ -494,54 +491,89 @@ class TripFarePanelTests(TripDataMixin, TestCase):
         self.assertEqual(event.before["amount"], "12345.67")
         self.assertEqual(event.after["amount"], "987.65")
 
-    def test_options_are_scoped_to_trip_and_permissions(self):
-        other = self.make_trip(self.start + timedelta(days=1))
+    def test_options_are_scoped_to_trip_and_categories(self):
         form = TripFareForm(trip=self.trip)
-        self.assertEqual(list(form.fields), ["origin_stop", "destination_stop", "seat_category", "amount", "currency"])
-        for field, permission in (("origin_stop", "allows_boarding"), ("destination_stop", "allows_alighting")):
-            choices = list(form.fields[field].queryset)
-            self.assertTrue(choices)
-            self.assertTrue(all(item.trip_id == self.trip.pk and getattr(item, permission) for item in choices))
-            self.assertFalse(any(item.trip_id == other.pk for item in choices))
+        self.assertEqual(list(form.fields), ["seat_category", "amount", "currency"])
+        self.assertEqual(form.instance.trip, self.trip)
         self.assertNotIn("Select an option", form.as_p())
         self.assertIn("Seleccioná una categoría", form.as_p())
 
-    def test_foreign_stops_are_rejected_and_foreign_trip_post_is_ignored(self):
+    def test_foreign_trip_post_is_ignored(self):
         other = self.make_trip(self.start + timedelta(days=1))
-        for field, sequence in (("origin_stop", 1), ("destination_stop", 6)):
-            before = self.database_state()
-            data = self.fare_data(self.trip, **{field: other.trip_stops.get(sequence=sequence).pk})
-            response = self.client.post(self.url("fare_create", trip_pk=self.trip.pk), data, secure=True)
-            self.assertEqual(response.status_code, 200)
-            self.assertIn(field, response.context["form"].errors)
-            self.assertEqual(self.database_state(), before)
         data = {**self.fare_data(self.trip), "trip": other.pk, "is_active": False}
         self.client.post(self.url("fare_create", trip_pk=self.trip.pk), data, secure=True)
         fare = TripFare.objects.get()
         self.assertEqual(fare.trip, self.trip)
         self.assertTrue(fare.is_active)
 
-    def test_invalid_segment_or_nonpositive_amount_is_rejected(self):
+    def test_invalid_category_or_nonpositive_amount_is_rejected(self):
         for changes in ({"amount": "0"}, {"amount": "-1"}, {"amount": "1.001"},
-                        {"origin_stop": self.trip.trip_stops.get(sequence=6).pk},
-                        {"destination_stop": self.trip.trip_stops.get(sequence=1).pk}):
+                        {"seat_category": "OTRA"}, {"currency": "ars"}):
             response = self.client.post(self.url("fare_create", trip_pk=self.trip.pk), self.fare_data(self.trip, **changes), secure=True)
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.context["form"].errors)
             self.assertFalse(TripFare.objects.exists())
             self.assertFalse(AuditEvent.objects.exists())
 
-    def test_post_cannot_create_same_province_fare_even_if_permissions_allow(self):
-        same_province_destination = self.trip.trip_stops.get(sequence=2)
-        TripStop.objects.filter(pk=same_province_destination.pk).update(allows_alighting=True)
-        data = self.fare_data(
-            self.trip,
-            destination_stop=same_province_destination.pk,
+    def test_fare_changes_rejected_once_departure_time_reached_or_trip_started_completed_cancelled(self):
+        fare = self.make_fare(self.trip, seat_category=SeatCategory.CAMA, amount="12000.00")
+        # 1. Cuando ya se alcanzó o superó el horario de salida (inclusive en estado SCHEDULED)
+        past_trip = self.make_trip(start=timezone.now() - timedelta(hours=2))
+        past_fare = self.make_fare(past_trip, seat_category=SeatCategory.CAMA, amount="10000.00")
+        before = self.database_state()
+        for url, payload in (
+            (self.url("fare_create", trip_pk=past_trip.pk), self.fare_data(past_trip, seat_category=SeatCategory.SEMI_CAMA)),
+            (self.url("fare_edit", trip_pk=past_trip.pk, pk=past_fare.pk), self.fare_data(past_trip, amount="15000.00")),
+            (self.url("fare_deactivate", trip_pk=past_trip.pk, pk=past_fare.pk), {}),
+        ):
+            response = self.client.post(url, payload, secure=True)
+            self.assertIn(response.status_code, (200, 302))
+        self.assertEqual(self.database_state(), before)
+
+        # 2. En el instante exacto de salida (now == trip.departure_at) por servicio directo
+        form_exact, saved_exact = save_fare(
+            actor=self.admin,
+            trip_pk=self.trip.pk,
+            pk=fare.pk,
+            data=self.fare_data(self.trip, amount="19000.00"),
+            now=self.trip.departure_at,
         )
-        response = self.client.post(self.url("fare_create", trip_pk=self.trip.pk), data, secure=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "provincias diferentes")
-        self.assertFalse(TripFare.objects.exists())
+        self.assertIsNone(saved_exact)
+        self.assertTrue(form_exact.non_field_errors())
+        with self.assertRaises(ValidationError):
+            set_fare_active(
+                actor=self.admin,
+                trip_pk=self.trip.pk,
+                pk=fare.pk,
+                active=False,
+                now=self.trip.departure_at,
+            )
+
+        # 3. En estados STARTED, COMPLETED y CANCELLED aun con departure_at en el futuro
+        for blocked_status in (Trip.Status.STARTED, Trip.Status.COMPLETED, Trip.Status.CANCELLED):
+            Trip.objects.filter(pk=self.trip.pk).update(status=blocked_status)
+            before = self.database_state()
+            resp_create = self.client.post(
+                self.url("fare_create", trip_pk=self.trip.pk),
+                self.fare_data(self.trip, seat_category=SeatCategory.SEMI_CAMA),
+                secure=True,
+            )
+            self.assertEqual(resp_create.status_code, 200)
+            self.assertContains(resp_create, "antes de la salida")
+            resp_edit = self.client.post(
+                self.url("fare_edit", trip_pk=self.trip.pk, pk=fare.pk),
+                self.fare_data(self.trip, amount="18000.00"),
+                secure=True,
+            )
+            self.assertEqual(resp_edit.status_code, 200)
+            self.assertContains(resp_edit, "antes de la salida")
+            resp_deact = self.client.post(
+                self.url("fare_deactivate", trip_pk=self.trip.pk, pk=fare.pk),
+                secure=True,
+            )
+            self.assertEqual(resp_deact.status_code, 302)
+            self.assertEqual(self.database_state(), before)
+        Trip.objects.filter(pk=self.trip.pk).update(status=Trip.Status.SCHEDULED)
 
     def test_duplicate_fare_is_controlled_even_if_inactive(self):
         fare = self.make_fare(self.trip)

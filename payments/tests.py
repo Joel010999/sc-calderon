@@ -112,8 +112,8 @@ class PaymentsBaseTestCase(TestCase):
         self.ts_cba = TripStop.objects.create(trip=self.trip, stop=self.stop_cba, sequence=1, scheduled_at=dep, allows_boarding=True, allows_alighting=False)
         self.ts_ssj = TripStop.objects.create(trip=self.trip, stop=self.stop_ssj, sequence=2, scheduled_at=arr, allows_boarding=False, allows_alighting=True)
 
-        self.fare_cama = TripFare.objects.create(trip=self.trip, origin_stop=self.ts_cba, destination_stop=self.ts_ssj, seat_category=SeatCategory.CAMA, amount=Decimal("15000.00"), is_active=True)
-        self.fare_semi = TripFare.objects.create(trip=self.trip, origin_stop=self.ts_cba, destination_stop=self.ts_ssj, seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("10000.00"), is_active=True)
+        self.fare_cama = TripFare.objects.create(trip=self.trip, seat_category=SeatCategory.CAMA, amount=Decimal("15000.00"), is_active=True)
+        self.fare_semi = TripFare.objects.create(trip=self.trip, seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("10000.00"), is_active=True)
 
 
     def tearDown(self):
@@ -447,6 +447,22 @@ class PaymentServicesTests(PaymentsBaseTestCase):
         )
         self.assertEqual(payment.amount, Decimal("25000.00"))
 
+    def test_unpaid_held_booking_keeps_original_snapshot_when_departure_fare_changes(self):
+        # Reserva manual impaga creada con CAMA=15000 y SEMI_CAMA=10000 (total 25000)
+        booking = self.create_held_manual_booking(seats=[self.seat_cama_1, self.seat_semi_2])
+        self.assertEqual(calculate_booking_total(booking), Decimal("25000.00"))
+
+        # Cambio posterior de tarifa en la salida antes de cobrar la reserva
+        self.fare_cama.amount = Decimal("22000.00")
+        self.fare_cama.save(update_fields=["amount", "updated_at"])
+        self.fare_semi.amount = Decimal("16000.00")
+        self.fare_semi.save(update_fields=["amount", "updated_at"])
+
+        # La reserva existente pendiente de pago conserva su snapshot original de 25000.00
+        self.assertEqual(calculate_booking_total(booking), Decimal("25000.00"))
+        payment = register_cash_payment(booking_or_id=booking, seller=self.seller_user)
+        self.assertEqual(payment.amount, Decimal("25000.00"))
+
     def test_register_cash_payment_rejects_expired_booking(self):
         booking = self.create_held_manual_booking(hours_held=-1)  # ya vencida
         with self.assertRaises(BookingExpiredError):
@@ -661,7 +677,7 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
         self.trip = Trip.objects.create(route=self.route, bus=self.bus, departure_at=now + timedelta(days=1), status=Trip.Status.SCHEDULED)
         self.ts1 = TripStop.objects.create(trip=self.trip, stop=self.stop1, sequence=1, scheduled_at=now + timedelta(days=1), allows_boarding=True, allows_alighting=False)
         self.ts2 = TripStop.objects.create(trip=self.trip, stop=self.stop2, sequence=2, scheduled_at=now + timedelta(days=1, hours=4), allows_boarding=False, allows_alighting=True)
-        self.fare = TripFare.objects.create(trip=self.trip, origin_stop=self.ts1, destination_stop=self.ts2, seat_category=SeatCategory.CAMA, amount=Decimal("8000.00"), is_active=True)
+        self.fare = TripFare.objects.create(trip=self.trip, seat_category=SeatCategory.CAMA, amount=Decimal("8000.00"), is_active=True)
 
 
         self.booking = Booking.objects.create(

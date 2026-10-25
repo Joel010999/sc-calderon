@@ -299,3 +299,9 @@ scope/hash/window constraint. SQLite remains functional for development and
 tests without equivalent cross-process guarantees. Cleanup is bounded and runs
 through operational maintenance. Some GET requests write only this technical
 counter; they never mutate domain entities or create audit events.
+
+## Tarifas por salida y butacas prioritarias (2026-10-25)
+
+`TripFare` es una tarifa por salida y categoría, no por tramo. La actualización administrativa y la creación de reserva bloquean el viaje y la tarifa en orden determinista; las reservas conservan su snapshot aunque sigan impagas. La migración `operations.0003` consolida duplicados históricos idénticos y rechaza conflictos sin elegir precios arbitrarios.
+
+Las butacas 51 y 54 se calculan como prioritarias por número y viaje, con liberación a medianoche de Argentina dos días calendario antes. La regla se aplica en disponibilidad, panel, web y servicio de creación, sin worker ni escrituras GET. Las ocupaciones previas no se modifican.

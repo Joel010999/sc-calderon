@@ -19,7 +19,7 @@ from operations.services import schedule_trip
 from payments.models import PaymentStatus
 from payments.services import initiate_public_transfer_payment, register_cash_payment, register_transfer_payment, review_transfer_payment
 from cash_register.services import current_cash, open_cash
-from sales.models import Booking, BookingChannel, BookingStatus, SeatAssignment
+from sales.models import AssignmentStatus, Booking, BookingChannel, BookingStatus, SeatAssignment
 from sales.services import create_manual_booking, create_online_booking
 from tickets.models import BoardingRecord, BoardingStatus, FulfillmentEmailStatus, FulfillmentIssueStatus, Ticket, TicketFulfillment
 from tickets.services import issue_tickets_for_booking
@@ -81,14 +81,15 @@ def _trip(route, bus, days):
     start = timezone.now() + timedelta(days=days)
     route_stops = list(route.route_stops.order_by("sequence"))
     trip = schedule_trip(route=route, bus=bus, schedules={item.stop_id: start + timedelta(hours=index * 2) for index, item in enumerate(route_stops)})
-    trip_stops = list(trip.trip_stops.order_by("sequence"))
-    for origin in trip_stops:
-        for destination in trip_stops:
-            if origin.sequence >= destination.sequence or not origin.allows_boarding or not destination.allows_alighting:
-                continue
-            distance = destination.sequence - origin.sequence
-            for category, amount in ((SeatCategory.SEMI_CAMA, Decimal("10000.00") + distance * Decimal("500.00")), (SeatCategory.CAMA, Decimal("15000.00") + distance * Decimal("750.00"))):
-                TripFare.objects.get_or_create(trip=trip, origin_stop=origin, destination_stop=destination, seat_category=category, defaults={"amount": amount})
+    for category, amount in (
+        (SeatCategory.SEMI_CAMA, Decimal("12500.00")),
+        (SeatCategory.CAMA, Decimal("18750.00")),
+    ):
+        TripFare.objects.get_or_create(
+            trip=trip,
+            seat_category=category,
+            defaults={"amount": amount},
+        )
     return trip
 
 def _passenger(number):
@@ -161,6 +162,12 @@ def seed_demo(*, dry_run=False):
     if expired.status != BookingStatus.EXPIRED:
         expired.status, expired.expires_at = BookingStatus.EXPIRED, now - timedelta(minutes=1)
         expired.save(update_fields=["status", "expires_at", "updated_at"])
+    # El registro demo se fuerza a EXPIRED para ser reproducible; liberar también
+    # cualquier asignación HELD evita que el dato sintético ocupe una butaca.
+    SeatAssignment.objects.filter(
+        leg__booking=expired,
+        status=AssignmentStatus.HELD,
+    ).update(status=AssignmentStatus.RELEASED, updated_at=now)
     if not Ticket.objects.filter(booking=confirmed, status="ISSUED").exists():
         issue_tickets_for_booking(confirmed, now=now)
     for booking in (confirmed, manual):

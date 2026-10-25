@@ -24,11 +24,14 @@ from sales.conf import (
 )
 from sales.exceptions import BookingExpiredError, InvalidBookingError, SeatUnavailableError
 from sales.models import (
-    AssignmentStatus,
     Booking,
     BookingChannel,
     BookingStatus,
     SeatAssignment,
+)
+from sales.priority_seats import (
+    is_priority_seat,
+    is_seat_blocked_for_general_sale,
 )
 from sales.services import (
     create_online_booking,
@@ -85,13 +88,24 @@ def _get_active_stops():
     return Stop.objects.filter(route_stops__isnull=False).distinct().order_by("name")
 
 
-def _build_deck_map(bus, active_seats, occupied_seat_ids, fares_by_category, selected_seat_ids=None):
+def _build_deck_map(
+    bus,
+    active_seats,
+    occupied_seat_ids,
+    fares_by_category,
+    selected_seat_ids=None,
+    *,
+    trip=None,
+    now=None,
+    priority_blocked_seat_ids=None,
+):
     """Construye la distribución dinámica de butacas por planta y coordenadas."""
     if selected_seat_ids is None:
         selected_seat_ids = set()
 
     occupied_set = set(occupied_seat_ids)
     selected_set = set(selected_seat_ids)
+    priority_blocked_set = set(priority_blocked_seat_ids) if priority_blocked_seat_ids is not None else None
 
     decks = []
     for deck_val, deck_lbl in Seat.Deck.choices:
@@ -100,7 +114,14 @@ def _build_deck_map(bus, active_seats, occupied_seat_ids, fares_by_category, sel
             if seat.deck != deck_val:
                 continue
             is_occupied = seat.pk in occupied_set
-            is_selected = seat.pk in selected_set
+            is_priority = is_priority_seat(seat)
+            if priority_blocked_set is not None:
+                is_priority_blocked = (not is_occupied) and (seat.pk in priority_blocked_set)
+            elif trip is not None:
+                is_priority_blocked = (not is_occupied) and is_seat_blocked_for_general_sale(trip, seat, now=now)
+            else:
+                is_priority_blocked = False
+            is_selected = (seat.pk in selected_set) and (not is_occupied) and (not is_priority_blocked)
             fare_amount = fares_by_category.get(seat.category)
             has_fare = fare_amount is not None
 
@@ -109,8 +130,10 @@ def _build_deck_map(bus, active_seats, occupied_seat_ids, fares_by_category, sel
                 "column": seat.position_x + 1,
                 "row": seat.position_y + 1,
                 "is_occupied": is_occupied,
+                "is_priority": is_priority,
+                "is_priority_blocked": is_priority_blocked,
                 "is_selected": is_selected,
-                "is_available": (not is_occupied) and has_fare,
+                "is_available": (not is_occupied) and (not is_priority_blocked) and has_fare,
                 "has_fare": has_fare,
                 "fare_amount": fare_amount,
                 "category_display": seat.get_category_display(),
@@ -155,8 +178,8 @@ def _find_available_trips(origin_stop, destination_stop, travel_date, passengers
         if now >= cutoff_time:
             continue
 
-        # Consultar disponibilidad real y tarifas activas
-        avail = get_trip_availability(trip, ts_orig, ts_dest, now=now)
+        # Consultar disponibilidad real y tarifas activas sin mutar estado en GET
+        avail = get_trip_availability(trip, ts_orig, ts_dest, now=now, mutate=False)
         fares = avail.get("fares_by_category", {})
         if not fares:
             continue
@@ -431,7 +454,7 @@ def checkout_view(request):
         messages.error(request, "Las paradas seleccionadas no admiten ascenso o descenso de pasajeros.")
         return redirect("buscar_viajes")
 
-    outbound_avail = get_trip_availability(outbound_trip, outbound_orig, outbound_dest, now=now)
+    outbound_avail = get_trip_availability(outbound_trip, outbound_orig, outbound_dest, now=now, mutate=False)
     outbound_fares = outbound_avail.get("fares_by_category", {})
     if not outbound_fares:
         messages.error(request, "No existen tarifas activas para el tramo seleccionado.")
@@ -482,7 +505,7 @@ def checkout_view(request):
             messages.error(request, "El viaje de regreso debe salir después de la llegada del viaje de ida.")
             return redirect("buscar_viajes")
 
-        return_avail = get_trip_availability(return_trip, return_orig, return_dest, now=now)
+        return_avail = get_trip_availability(return_trip, return_orig, return_dest, now=now, mutate=False)
         return_fares = return_avail.get("fares_by_category", {})
         if not return_fares:
             messages.error(request, "No existen tarifas activas para el regreso.")
@@ -490,23 +513,29 @@ def checkout_view(request):
 
         # Butacas de regreso
         ret_active_seats = list(Seat.objects.filter(bus=return_trip.bus, is_active=True).order_by("number"))
-        ret_occupied_seat_ids = set(
-            SeatAssignment.objects.filter(
-                trip=return_trip,
-                status__in=[AssignmentStatus.HELD, AssignmentStatus.CONFIRMED],
-            ).values_list("seat_id", flat=True)
+        ret_occupied_seat_ids = return_avail["occupied_seat_ids"]
+        return_decks = _build_deck_map(
+            return_trip.bus,
+            ret_active_seats,
+            ret_occupied_seat_ids,
+            return_fares,
+            trip=return_trip,
+            now=now,
+            priority_blocked_seat_ids=return_avail["priority_blocked_seat_ids"],
         )
-        return_decks = _build_deck_map(return_trip.bus, ret_active_seats, ret_occupied_seat_ids, return_fares)
 
     # Butacas de ida
     out_active_seats = list(Seat.objects.filter(bus=outbound_trip.bus, is_active=True).order_by("number"))
-    out_occupied_seat_ids = set(
-        SeatAssignment.objects.filter(
-            trip=outbound_trip,
-            status__in=[AssignmentStatus.HELD, AssignmentStatus.CONFIRMED],
-        ).values_list("seat_id", flat=True)
+    out_occupied_seat_ids = outbound_avail["occupied_seat_ids"]
+    outbound_decks = _build_deck_map(
+        outbound_trip.bus,
+        out_active_seats,
+        out_occupied_seat_ids,
+        outbound_fares,
+        trip=outbound_trip,
+        now=now,
+        priority_blocked_seat_ids=outbound_avail["priority_blocked_seat_ids"],
     )
-    outbound_decks = _build_deck_map(outbound_trip.bus, out_active_seats, out_occupied_seat_ids, outbound_fares)
 
     return render(request, "core/checkout.html", {
         "is_roundtrip": is_roundtrip,

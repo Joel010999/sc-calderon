@@ -118,11 +118,9 @@ class SalesBaseTestCase(TestCase):
         cls.ts_out_pal = TripStop.objects.create(trip=cls.trip_outbound, stop=cls.stop_pal, sequence=4, scheduled_at=cls.base_time + timedelta(hours=11), allows_boarding=False, allows_alighting=True)
         cls.ts_out_ssj = TripStop.objects.create(trip=cls.trip_outbound, stop=cls.stop_ssj, sequence=5, scheduled_at=cls.base_time + timedelta(hours=12), allows_boarding=False, allows_alighting=True)
 
-        # Tarifas viaje ida
+        # Tarifas viaje ida (por salida y categoría)
         cls.fare_out_cba_ssj_cama = TripFare.objects.create(
             trip=cls.trip_outbound,
-            origin_stop=cls.ts_out_cba,
-            destination_stop=cls.ts_out_ssj,
             seat_category=SeatCategory.CAMA,
             amount=Decimal("12000.00"),
             currency="ARS",
@@ -130,19 +128,8 @@ class SalesBaseTestCase(TestCase):
         )
         cls.fare_out_cba_ssj_semi = TripFare.objects.create(
             trip=cls.trip_outbound,
-            origin_stop=cls.ts_out_cba,
-            destination_stop=cls.ts_out_ssj,
             seat_category=SeatCategory.SEMI_CAMA,
             amount=Decimal("9500.00"),
-            currency="ARS",
-            is_active=True,
-        )
-        cls.fare_out_jma_per_cama = TripFare.objects.create(
-            trip=cls.trip_outbound,
-            origin_stop=cls.ts_out_jma,
-            destination_stop=cls.ts_out_per,
-            seat_category=SeatCategory.CAMA,
-            amount=Decimal("11000.00"),
             currency="ARS",
             is_active=True,
         )
@@ -161,11 +148,9 @@ class SalesBaseTestCase(TestCase):
         cls.ts_ret_jma = TripStop.objects.create(trip=cls.trip_return, stop=cls.stop_jma, sequence=4, scheduled_at=return_time + timedelta(hours=11), allows_boarding=False, allows_alighting=True)
         cls.ts_ret_cba = TripStop.objects.create(trip=cls.trip_return, stop=cls.stop_cba, sequence=5, scheduled_at=return_time + timedelta(hours=12), allows_boarding=False, allows_alighting=True)
 
-        # Tarifas viaje vuelta
+        # Tarifas viaje vuelta (por salida y categoría)
         cls.fare_ret_ssj_cba_cama = TripFare.objects.create(
             trip=cls.trip_return,
-            origin_stop=cls.ts_ret_ssj,
-            destination_stop=cls.ts_ret_cba,
             seat_category=SeatCategory.CAMA,
             amount=Decimal("12000.00"),
             currency="ARS",
@@ -173,8 +158,6 @@ class SalesBaseTestCase(TestCase):
         )
         cls.fare_ret_ssj_cba_semi = TripFare.objects.create(
             trip=cls.trip_return,
-            origin_stop=cls.ts_ret_ssj,
-            destination_stop=cls.ts_ret_cba,
             seat_category=SeatCategory.SEMI_CAMA,
             amount=Decimal("9500.00"),
             currency="ARS",
@@ -679,7 +662,7 @@ class SalesSeatsAndFaresValidationTests(SalesBaseTestCase):
         self.assertIn("no está activa", str(ctx.exception))
 
     def test_missing_active_fare_rejected(self):
-        # JMA -> SSJ no tiene tarifa cargada
+        self.fare_out_cba_ssj_cama.delete()
         with self.assertRaises(ValidationError) as ctx:
             create_online_booking(
                 email="sin_tarifa@correo.com",
@@ -691,6 +674,34 @@ class SalesSeatsAndFaresValidationTests(SalesBaseTestCase):
                 }],
             )
         self.assertIn("No existe una tarifa activa", str(ctx.exception))
+
+    def test_all_permitted_segments_of_departure_share_same_category_fares(self):
+        """En una misma salida, todos los tramos permitidos aplican la misma tarifa cama y semicama."""
+        permitted_outbound_segments = [
+            (self.ts_out_cba, self.ts_out_per),
+            (self.ts_out_cba, self.ts_out_pal),
+            (self.ts_out_cba, self.ts_out_ssj),
+            (self.ts_out_jma, self.ts_out_per),
+            (self.ts_out_jma, self.ts_out_pal),
+            (self.ts_out_jma, self.ts_out_ssj),
+        ]
+        for orig, dest in permitted_outbound_segments:
+            avail = get_trip_availability(self.trip_outbound, origin_stop=orig, destination_stop=dest)
+            self.assertEqual(avail["fares_by_category"][SeatCategory.CAMA], Decimal("12000.00"))
+            self.assertEqual(avail["fares_by_category"][SeatCategory.SEMI_CAMA], Decimal("9500.00"))
+
+        booking = create_online_booking(
+            email="tramo_intermedio@correo.com",
+            legs=[{
+                "trip": self.trip_outbound,
+                "origin_stop": self.ts_out_jma,
+                "destination_stop": self.ts_out_per,
+                "seats": [self.seat_cama_1, self.seat_semi_3],
+            }],
+        )
+        assignments = list(booking.legs.first().seat_assignments.order_by("passenger__position"))
+        self.assertEqual(assignments[0].price, Decimal("12000.00"))
+        self.assertEqual(assignments[1].price, Decimal("9500.00"))
 
     def test_inactive_fare_rejected(self):
         self.fare_out_cba_ssj_cama.is_active = False
@@ -722,13 +733,26 @@ class SalesSeatsAndFaresValidationTests(SalesBaseTestCase):
         self.assertEqual(assignment.price, Decimal("12000.00"))
         self.assertIsInstance(assignment.price, Decimal)
 
-        # Modificamos la tarifa de operaciones
+        # Modificamos la tarifa de operaciones antes de la salida
         self.fare_out_cba_ssj_cama.amount = Decimal("15000.00")
         self.fare_out_cba_ssj_cama.save()
 
-        # El snapshot histórico en sales no debe alterarse
+        # El snapshot histórico en sales (incluso estando HELD/pendiente de pago) no debe alterarse
         assignment.refresh_from_db()
         self.assertEqual(assignment.price, Decimal("12000.00"))
+
+        # Una nueva reserva sobre disponibilidad libre toma el nuevo valor
+        booking_new = create_online_booking(
+            email="nueva_reserva@correo.com",
+            legs=[{
+                "trip": self.trip_outbound,
+                "origin_stop": self.ts_out_jma,
+                "destination_stop": self.ts_out_pal,
+                "seats": [self.seat_cama_2],
+            }],
+        )
+        assignment_new = booking_new.legs.first().seat_assignments.first()
+        self.assertEqual(assignment_new.price, Decimal("15000.00"))
 
     def test_stale_seat_instance_deactivated_rejected(self):
         """Si una butaca fue desactivada en base de datos (e.g. por el panel), una instancia en memoria activa es rechazada."""
@@ -1955,7 +1979,7 @@ class SalesPostgresConcurrencyTests(TransactionTestCase):
         self.ts1 = TripStop.objects.create(trip=self.trip, stop=self.stop1, sequence=1, scheduled_at=dep_time, allows_boarding=True, allows_alighting=False)
         self.ts2 = TripStop.objects.create(trip=self.trip, stop=self.stop2, sequence=2, scheduled_at=dep_time + timedelta(hours=2), allows_boarding=False, allows_alighting=True)
 
-        TripFare.objects.create(trip=self.trip, origin_stop=self.ts1, destination_stop=self.ts2, seat_category=SeatCategory.CAMA, amount=Decimal("5000.00"), is_active=True)
+        self.fare = TripFare.objects.create(trip=self.trip, seat_category=SeatCategory.CAMA, amount=Decimal("5000.00"), is_active=True)
 
     def tearDown(self):
         from django.db import connections
@@ -2023,6 +2047,73 @@ class SalesPostgresConcurrencyTests(TransactionTestCase):
             SeatAssignment.objects.filter(trip=self.trip, seat=self.seat, status=AssignmentStatus.HELD).count(),
             1,
         )
+
+    def test_concurrent_fare_update_and_booking_creation_serialized_under_trip_lock(self):
+        """Verifica que la actualización de tarifa y la creación de reserva concurrentes
+        se serialicen bajo el bloqueo de Trip/TripFare en PostgreSQL sin corromper el snapshot.
+        """
+        from django.contrib.auth import get_user_model
+        from panel.trip_forms import TripFareForm
+        from panel.trip_services import save_fare
+
+        User = get_user_model()
+        admin = User.objects.create_user(username="pg_admin_fare", password="x", is_superuser=True)
+        barrier = threading.Barrier(2)
+        booking_results = []
+        unexpected_errors = []
+
+        def update_fare_worker():
+            from django.db import connections
+            try:
+                barrier.wait(timeout=10)
+                form = TripFareForm(
+                    data={"seat_category": SeatCategory.CAMA, "amount": "8500.00", "currency": "ARS"},
+                    instance=self.fare,
+                    trip=self.trip,
+                )
+                if form.is_valid():
+                    save_fare(
+                        actor=admin,
+                        trip_pk=self.trip.pk,
+                        data=form.data,
+                        pk=self.fare.pk,
+                    )
+                else:
+                    unexpected_errors.append(form.errors)
+            except Exception as e:
+                unexpected_errors.append(e)
+            finally:
+                connections.close_all()
+
+        def create_booking_worker():
+            from django.db import connections
+            try:
+                barrier.wait(timeout=10)
+                b = create_online_booking(
+                    email="pg_fare_race@correo.com",
+                    legs=[{"trip": self.trip, "origin_stop": self.ts1, "destination_stop": self.ts2, "seats": [self.seat]}],
+                )
+                booking_results.append(b)
+            except Exception as e:
+                unexpected_errors.append(e)
+            finally:
+                connections.close_all()
+
+        t_fare = threading.Thread(target=update_fare_worker)
+        t_book = threading.Thread(target=create_booking_worker)
+        t_fare.start()
+        t_book.start()
+        t_fare.join(timeout=15)
+        t_book.join(timeout=15)
+
+        self.assertFalse(t_fare.is_alive())
+        self.assertFalse(t_book.is_alive())
+        self.assertEqual(unexpected_errors, [], f"Errores inesperados: {unexpected_errors}")
+        self.assertEqual(len(booking_results), 1)
+        assignment = booking_results[0].legs.first().seat_assignments.first()
+        self.assertIn(assignment.price, (Decimal("5000.00"), Decimal("8500.00")))
+        self.fare.refresh_from_db()
+        self.assertEqual(self.fare.amount, Decimal("8500.00"))
 
     def test_postgres_conditional_unique_constraint_and_selective_translation(self):
         """Provoca directamente la restricción única condicional 'sales_active_trip_seat_unique' en PostgreSQL.

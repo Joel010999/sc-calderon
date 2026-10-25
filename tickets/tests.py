@@ -118,15 +118,11 @@ class TicketBaseMixin:
         # Tarifas Ida
         self.fare_semicama = TripFare.objects.create(
             trip=self.trip_ida,
-            origin_stop=self.ts_cba,
-            destination_stop=self.ts_jujuy,
             seat_category=SeatCategory.SEMI_CAMA,
             amount=Decimal("25000.00"),
         )
         self.fare_cama = TripFare.objects.create(
             trip=self.trip_ida,
-            origin_stop=self.ts_cba,
-            destination_stop=self.ts_jujuy,
             seat_category=SeatCategory.CAMA,
             amount=Decimal("32000.00"),
         )
@@ -198,15 +194,11 @@ class TicketBaseMixin:
 
             TripFare.objects.create(
                 trip=self.trip_vuelta,
-                origin_stop=self.ts_v_jujuy,
-                destination_stop=self.ts_v_cba,
                 seat_category=SeatCategory.SEMI_CAMA,
                 amount=Decimal("25000.00"),
             )
             TripFare.objects.create(
                 trip=self.trip_vuelta,
-                origin_stop=self.ts_v_jujuy,
-                destination_stop=self.ts_v_cba,
                 seat_category=SeatCategory.CAMA,
                 amount=Decimal("32000.00"),
             )

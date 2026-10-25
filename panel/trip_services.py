@@ -13,7 +13,16 @@ from .services import record_event, snapshot
 from .trip_forms import TripFareForm
 
 
-FARE_ERROR = "No se pudo guardar la tarifa. Revisá si ya existe una tarifa para ese tramo y categoría."
+FARE_ERROR = "No se pudo guardar la tarifa. Revisá si ya existe una tarifa para ese viaje y categoría."
+
+
+def can_modify_trip_fares(trip, now=None):
+    effective_now = now or timezone.now()
+    if trip.status not in (Trip.Status.SCHEDULED, Trip.Status.BOARDING):
+        return False
+    if trip.started_at is not None or trip.completed_at is not None:
+        return False
+    return effective_now < trip.departure_at
 
 
 def _trip_status_snapshot(trip):
@@ -96,7 +105,7 @@ def create_panel_trip(*, actor, route, bus, schedules):
     return trip
 
 
-def save_fare(*, actor, trip_pk, data, pk=None):
+def save_fare(*, actor, trip_pk, data, pk=None, now=None):
     require_operations_manager(actor)
     form = None
     try:
@@ -105,6 +114,12 @@ def save_fare(*, actor, trip_pk, data, pk=None):
             fare = get_object_or_404(TripFare.objects.select_for_update(), pk=pk, trip=trip) if pk is not None else TripFare(trip=trip)
             before = snapshot(fare) if pk is not None else {}
             form = TripFareForm(data, instance=fare, trip=trip)
+            if not can_modify_trip_fares(trip, now=now):
+                form.add_error(
+                    None,
+                    "Solo se pueden configurar o modificar tarifas antes de la salida del viaje.",
+                )
+                return form, None
             if not form.is_valid():
                 return form, None
             fare = form.save()
@@ -120,10 +135,12 @@ def save_fare(*, actor, trip_pk, data, pk=None):
 
 
 @transaction.atomic
-def set_fare_active(*, actor, trip_pk, pk, active):
+def set_fare_active(*, actor, trip_pk, pk, active, now=None):
     require_operations_manager(actor)
     trip = get_object_or_404(Trip.objects.select_for_update(), pk=trip_pk)
     fare = get_object_or_404(TripFare.objects.select_for_update(), pk=pk, trip=trip)
+    if not can_modify_trip_fares(trip, now=now):
+        raise ValidationError("Solo se pueden activar o desactivar tarifas antes de la salida del viaje.")
     if fare.is_active == active:
         return False
     before = snapshot(fare)
