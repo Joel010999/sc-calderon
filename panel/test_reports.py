@@ -57,7 +57,7 @@ class SalesReportTests(TestCase):
                                            scheduled_at=departure, allows_boarding=True, allows_alighting=False)
         cls.ts_b = TripStop.objects.create(trip=cls.trip, stop=cls.stop_b, sequence=2,
                                            scheduled_at=departure + timedelta(hours=10), allows_boarding=False, allows_alighting=True)
-        cls.fare = TripFare.objects.create(trip=cls.trip, origin_stop=cls.ts_a, destination_stop=cls.ts_b,
+        cls.fare = TripFare.objects.create(trip=cls.trip,
                                            seat_category=SeatCategory.CAMA, amount=Decimal("1000.00"), is_active=True)
 
     def setUp(self):
@@ -278,3 +278,36 @@ class SalesReportTests(TestCase):
         admin_html = self.client.get(self.report_url())
         self.assertEqual(admin_html.context["payment_count"], 2)
         self.assertContains(admin_html, str(other.public_id))
+
+    def test_fare_update_never_recalculates_historical_sales_or_seller_commissions_and_excludes_free_minors(self):
+        booking = self.booking(seller=self.seller, status=BookingStatus.HELD, passengers=1, legs=1)
+        adult = booking.passengers.first()
+        BookingPassenger.objects.create(
+            booking=booking,
+            position=2,
+            first_name="Menor",
+            last_name="Gratis",
+            document_type="DNI",
+            document_number="55123456",
+            birth_date=timezone.now().date() - timedelta(days=300),
+            nationality="Argentina",
+            is_lap_infant=True,
+            accompanied_by=adult,
+        )
+        cash = register_cash_payment(booking_or_id=booking, seller=self.seller)
+        self.assertEqual(cash.amount, Decimal("1000.00"))
+
+        # Modificar la tarifa de la salida después de la venta
+        self.fare.amount = Decimal("88000.00")
+        self.fare.save(update_fields=["amount", "updated_at"])
+        try:
+            self.client.force_login(self.admin)
+            response = self.client.get(self.report_url())
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.context["total_amount"], Decimal("1000.00"))
+            self.assertEqual(response.context["cash_amount"], Decimal("1000.00"))
+            self.assertEqual(response.context["commissionable_units"], 1)
+            self.assertEqual(response.context["commission_total"], Decimal("5000.00"))
+        finally:
+            self.fare.amount = Decimal("1000.00")
+            self.fare.save(update_fields=["amount", "updated_at"])

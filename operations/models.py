@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.db.models import F, Q
+from django.db.models import Q
 from django.utils import timezone
 
 from .validators import validate_aware_datetime, validate_code, validate_currency
@@ -199,8 +199,16 @@ class TripStop(models.Model):
 
 class TripFare(TimestampedModel):
     trip = models.ForeignKey(Trip, verbose_name="viaje", on_delete=models.PROTECT, related_name="fares")
-    origin_stop = models.ForeignKey(TripStop, verbose_name="origen", on_delete=models.PROTECT, related_name="origin_fares")
-    destination_stop = models.ForeignKey(TripStop, verbose_name="destino", on_delete=models.PROTECT, related_name="destination_fares")
+    # Legacy segment coordinates remain nullable so historical rows and integrations
+    # can be read while the active tariff is defined once per departure/category.
+    origin_stop = models.ForeignKey(
+        TripStop, verbose_name="origen", on_delete=models.PROTECT,
+        related_name="origin_fares", null=True, blank=True,
+    )
+    destination_stop = models.ForeignKey(
+        TripStop, verbose_name="destino", on_delete=models.PROTECT,
+        related_name="destination_fares", null=True, blank=True,
+    )
     seat_category = models.CharField("categoría", max_length=9, choices=SeatCategory.choices)
     amount = models.DecimalField("importe", max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     currency = models.CharField("moneda", max_length=3, default="ARS", validators=[validate_currency])
@@ -210,14 +218,16 @@ class TripFare(TimestampedModel):
         verbose_name = "tarifa del viaje"
         verbose_name_plural = "tarifas del viaje"
         constraints = [
-            models.UniqueConstraint(fields=["trip", "origin_stop", "destination_stop", "seat_category"], name="ops_fare_segment_unique", violation_error_message="Ya existe una tarifa para ese viaje, tramo y categoría."),
+            models.UniqueConstraint(fields=["trip", "seat_category"], name="ops_fare_trip_category_unique", violation_error_message="Ya existe una tarifa para ese viaje y categoría."),
             models.CheckConstraint(condition=Q(amount__gt=0), name="ops_fare_amount_positive", violation_error_message="El importe debe ser mayor que cero."),
-            models.CheckConstraint(condition=~Q(origin_stop=F("destination_stop")), name="ops_fare_distinct_stops", violation_error_message="El origen y el destino deben ser diferentes."),
             models.CheckConstraint(condition=Q(seat_category__in=SeatCategory.values), name="ops_fare_category_valid", violation_error_message="La categoría no es válida."),
         ]
 
     def __str__(self):
-        return f"Viaje {self.trip_id} · {self.origin_stop.stop.name} → {self.destination_stop.stop.name} · {self.get_seat_category_display()}: {self.currency} {self.amount}"
+        segment = ""
+        if self.origin_stop_id and self.destination_stop_id:
+            segment = f" · {self.origin_stop.stop.name} → {self.destination_stop.stop.name}"
+        return f"Viaje {self.trip_id}{segment} · {self.get_seat_category_display()}: {self.currency} {self.amount}"
 
     def clean_fields(self, exclude=None):
         if "amount" not in (exclude or ()) and isinstance(self.amount, float):
@@ -226,12 +236,20 @@ class TripFare(TimestampedModel):
 
     def clean(self):
         super().clean()
-        stops = {item.pk: item for item in TripStop.objects.filter(
-            pk__in=[self.origin_stop_id, self.destination_stop_id]
-        )}
-        origin, destination = stops.get(self.origin_stop_id), stops.get(self.destination_stop_id)
+        if self.currency:
+            self.currency = self.currency.strip().upper()
+        if not self.origin_stop_id and not self.destination_stop_id:
+            return
         errors = {}
-        for field, stop in [("origin_stop", origin), ("destination_stop", destination)]:
+        if not self.origin_stop_id:
+            errors["origin_stop"] = "Indicá el origen o dejá ambos tramos vacíos para una tarifa por salida."
+        if not self.destination_stop_id:
+            errors["destination_stop"] = "Indicá el destino o dejá ambos tramos vacíos para una tarifa por salida."
+        if errors:
+            raise ValidationError(errors)
+        stops = {item.pk: item for item in TripStop.objects.filter(pk__in=[self.origin_stop_id, self.destination_stop_id])}
+        origin, destination = stops.get(self.origin_stop_id), stops.get(self.destination_stop_id)
+        for field, stop in (("origin_stop", origin), ("destination_stop", destination)):
             if stop is not None and stop.trip_id != self.trip_id:
                 errors[field] = "La parada debe pertenecer al viaje indicado."
         if origin and destination:

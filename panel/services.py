@@ -30,8 +30,7 @@ def snapshot(instance):
         }
     if isinstance(instance, TripFare):
         return {
-            "trip_id": instance.trip_id, "origin_stop_id": instance.origin_stop_id,
-            "destination_stop_id": instance.destination_stop_id,
+            "trip_id": instance.trip_id,
             "seat_category": instance.seat_category, "amount": format(instance.amount, ".2f"),
             "currency": instance.currency, "is_active": instance.is_active,
         }

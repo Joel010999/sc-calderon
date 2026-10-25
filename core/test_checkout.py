@@ -86,11 +86,11 @@ class CheckoutBaseTestCase(TestCase):
 
         # Tarifas de ida
         self.fare_out_cama = TripFare.objects.create(
-            trip=self.trip_out, origin_stop=self.ts_out_orig, destination_stop=self.ts_out_dest,
+            trip=self.trip_out,
             seat_category=SeatCategory.CAMA, amount=Decimal("60000.00"), currency="ARS", is_active=True
         )
         self.fare_out_semi = TripFare.objects.create(
-            trip=self.trip_out, origin_stop=self.ts_out_orig, destination_stop=self.ts_out_dest,
+            trip=self.trip_out,
             seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("50000.00"), currency="ARS", is_active=True
         )
 
@@ -113,11 +113,11 @@ class CheckoutBaseTestCase(TestCase):
 
         # Tarifas de regreso
         self.fare_ret_cama = TripFare.objects.create(
-            trip=self.trip_ret, origin_stop=self.ts_ret_orig, destination_stop=self.ts_ret_dest,
+            trip=self.trip_ret,
             seat_category=SeatCategory.CAMA, amount=Decimal("62000.00"), currency="ARS", is_active=True
         )
         self.fare_ret_semi = TripFare.objects.create(
-            trip=self.trip_ret, origin_stop=self.ts_ret_orig, destination_stop=self.ts_ret_dest,
+            trip=self.trip_ret,
             seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("52000.00"), currency="ARS", is_active=True
         )
 
@@ -744,3 +744,36 @@ class SalesOnlineBookingServiceTests(CheckoutBaseTestCase):
                 }],
                 passengers_data=p_data,  # 1 pasajero -> debe fallar
             )
+
+    def test_search_and_checkout_preserve_prior_held_booking_and_apply_new_fare_to_new_bookings(self):
+        # Reserva online previa impaga (HELD) con tarifa original CAMA = 60000.00
+        prior_booking = create_online_booking(
+            email="previa@correo.com",
+            legs=[{
+                "trip": self.trip_out,
+                "origin_stop": self.ts_out_orig,
+                "destination_stop": self.ts_out_dest,
+                "seats": [self.seat_cama],
+            }],
+        )
+        # Cambia la tarifa de la salida antes de partir
+        self.fare_out_cama.amount = Decimal("75000.00")
+        self.fare_out_cama.save(update_fields=["amount", "updated_at"])
+        self.fare_out_semi.amount = Decimal("58000.00")
+        self.fare_out_semi.save(update_fields=["amount", "updated_at"])
+
+        # La reserva previa impaga mantiene su snapshot original (60000.00)
+        prior_booking.refresh_from_db()
+        self.assertEqual(prior_booking.legs.first().seat_assignments.first().price, Decimal("60000.00"))
+
+        # Una reserva nueva sobre disponibilidad libre toma la nueva tarifa (58000.00 en SEMI_CAMA)
+        new_booking = create_online_booking(
+            email="nueva@correo.com",
+            legs=[{
+                "trip": self.trip_out,
+                "origin_stop": self.ts_out_orig,
+                "destination_stop": self.ts_out_dest,
+                "seats": [self.seat_semicama1],
+            }],
+        )
+        self.assertEqual(new_booking.legs.first().seat_assignments.first().price, Decimal("58000.00"))

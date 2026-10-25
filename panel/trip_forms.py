@@ -91,33 +91,15 @@ class TripScheduleForm(forms.Form):
 class TripFareForm(OperationalForm):
     class Meta:
         model = TripFare
-        fields = ["origin_stop", "destination_stop", "seat_category", "amount", "currency"]
+        fields = ["seat_category", "amount", "currency"]
 
     def __init__(self, *args, trip, **kwargs):
         super().__init__(*args, **kwargs)
         self.instance.trip = trip
-        stops = trip.trip_stops.select_related("stop").order_by("sequence")
-        self.fields["origin_stop"].queryset = stops.filter(allows_boarding=True)
-        self.fields["destination_stop"].queryset = stops.filter(allows_alighting=True)
-        self.fields["origin_stop"].empty_label = "Seleccioná una parada de subida"
-        self.fields["destination_stop"].empty_label = "Seleccioná una parada de bajada"
-        for name in ("origin_stop", "destination_stop"):
-            self.fields[name].error_messages["invalid_choice"] = "Seleccioná una parada válida de este viaje."
         self.fields["seat_category"].choices = [
             (value, label if value else "Seleccioná una categoría")
             for value, label in self.fields["seat_category"].choices
         ]
-
-    def clean(self):
-        cleaned = super().clean()
-        origin = cleaned.get("origin_stop")
-        destination = cleaned.get("destination_stop")
-        if origin and destination and origin.stop.province == destination.stop.province:
-            self.add_error(
-                "destination_stop",
-                "El origen y el destino deben pertenecer a provincias diferentes.",
-            )
-        return cleaned
 
     def _post_clean(self):
         super()._post_clean()

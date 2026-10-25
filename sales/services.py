@@ -223,8 +223,6 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
 
         fares_qs = TripFare.objects.filter(
             trip=trip,
-            origin_stop=origin_stop,
-            destination_stop=destination_stop,
             is_active=True,
         )
         fares_by_category = {fare.seat_category: fare.amount for fare in fares_qs}
@@ -445,13 +443,15 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
             if is_occupied:
                 raise SeatUnavailableError(f"La butaca {seat.number} no está disponible en este viaje.")
 
-            fare = TripFare.objects.filter(
-                trip=trip,
-                origin_stop=orig,
-                destination_stop=dest,
-                seat_category=seat.category,
-                is_active=True,
-            ).first()
+            fare = (
+                TripFare.objects.select_for_update()
+                .filter(
+                    trip=trip,
+                    seat_category=seat.category,
+                    is_active=True,
+                )
+                .first()
+            )
             if not fare:
                 raise ValidationError(
                     f"No existe una tarifa activa para la butaca {seat.number} ({seat.get_category_display()}) "

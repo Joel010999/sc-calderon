@@ -92,8 +92,8 @@ class PanelPaymentsTestCase(TestCase):
         self.ts_cba = TripStop.objects.create(trip=self.trip, stop=self.stop_cba, sequence=1, scheduled_at=dep, allows_boarding=True, allows_alighting=False)
         self.ts_ssj = TripStop.objects.create(trip=self.trip, stop=self.stop_ssj, sequence=2, scheduled_at=arr, allows_boarding=False, allows_alighting=True)
 
-        self.fare_cama = TripFare.objects.create(trip=self.trip, origin_stop=self.ts_cba, destination_stop=self.ts_ssj, seat_category=SeatCategory.CAMA, amount=Decimal("12000.00"), is_active=True)
-        self.fare_semi = TripFare.objects.create(trip=self.trip, origin_stop=self.ts_cba, destination_stop=self.ts_ssj, seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("8000.00"), is_active=True)
+        self.fare_cama = TripFare.objects.create(trip=self.trip, seat_category=SeatCategory.CAMA, amount=Decimal("12000.00"), is_active=True)
+        self.fare_semi = TripFare.objects.create(trip=self.trip, seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("8000.00"), is_active=True)
 
 
     def tearDown(self):
