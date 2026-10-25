@@ -170,6 +170,7 @@
                 <span class="legend-item"><span class="legend-swatch swatch-available"></span> Disponible</span>
                 <span class="legend-item"><span class="legend-swatch swatch-selected"></span> Seleccionada</span>
                 <span class="legend-item"><span class="legend-swatch swatch-occupied"></span> Ocupada / Retenida</span>
+                <span class="legend-item"><span class="legend-swatch swatch-priority"></span> Prioritaria</span>
                 <span class="legend-item"><span class="legend-swatch swatch-cama"></span> Cama</span>
                 <span class="legend-item"><span class="legend-swatch swatch-semicama"></span> Semicama</span>
             </div>
@@ -186,7 +187,7 @@
                         <div class="seat-map">
                             {% for item in deck.items %}
                             {% with seat=item.seat %}
-                            <label class="seat-card-interactive {% if item.is_occupied %}occupied{% elif not item.has_fare %}no-fare{% else %}available{% endif %}"
+                            <label class="seat-card-interactive {% if item.is_occupied %}occupied{% elif item.is_priority_blocked %}priority-blocked{% elif not item.has_fare %}no-fare{% else %}available{% endif %}"
                                    style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
                                 {% if item.is_available %}
                                     <input type="checkbox" name="outbound_seats" value="{{ seat.pk }}" {% if item.is_selected %}checked{% endif %} class="seat-checkbox">
@@ -198,6 +199,8 @@
                                     <span class="seat-cat badge-category badge-{{ seat.category|lower }}">{{ seat.get_category_display }}</span>
                                     {% if item.is_occupied %}
                                         <span class="seat-status-tag occupied-tag">Ocupada</span>
+                                    {% elif item.is_priority_blocked %}
+                                        <span class="seat-status-tag priority-tag">Prioritaria</span>
                                     {% elif item.fare_amount %}
                                         <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
                                     {% else %}
@@ -228,7 +231,7 @@
                         <div class="seat-map">
                             {% for item in deck.items %}
                             {% with seat=item.seat %}
-                            <label class="seat-card-interactive {% if item.is_occupied %}occupied{% elif not item.has_fare %}no-fare{% else %}available{% endif %}"
+                            <label class="seat-card-interactive {% if item.is_occupied %}occupied{% elif item.is_priority_blocked %}priority-blocked{% elif not item.has_fare %}no-fare{% else %}available{% endif %}"
                                    style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
                                 {% if item.is_available %}
                                     <input type="checkbox" name="return_seats" value="{{ seat.pk }}" {% if item.is_selected %}checked{% endif %} class="seat-checkbox">
@@ -240,6 +243,8 @@
                                     <span class="seat-cat badge-category badge-{{ seat.category|lower }}">{{ seat.get_category_display }}</span>
                                     {% if item.is_occupied %}
                                         <span class="seat-status-tag occupied-tag">Ocupada</span>
+                                    {% elif item.is_priority_blocked %}
+                                        <span class="seat-status-tag priority-tag">Prioritaria</span>
                                     {% elif item.fare_amount %}
                                         <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
                                     {% else %}

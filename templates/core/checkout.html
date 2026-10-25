@@ -85,6 +85,7 @@
           <span class="legend-item"><span class="swatch swatch-available"></span> Disponible</span>
           <span class="legend-item"><span class="swatch swatch-selected"></span> Seleccionada</span>
           <span class="legend-item"><span class="swatch swatch-occupied"></span> Ocupada</span>
+          <span class="legend-item"><span class="swatch swatch-priority"></span> Prioritaria</span>
           <span class="legend-item"><span class="swatch swatch-cama"></span> Cama</span>
           <span class="legend-item"><span class="swatch swatch-semicama"></span> Semicama</span>
         </div>
@@ -105,7 +106,7 @@
             <div class="seat-scroll-container" tabindex="0">
               <div class="seat-grid">
                 {% for item in deck.items %}
-                  <label class="seat-card {% if item.is_occupied %}is-occupied{% elif not item.has_fare %}is-no-fare{% else %}is-available{% endif %}"
+                  <label class="seat-card {% if item.is_occupied %}is-occupied{% elif item.is_priority_blocked %}is-priority-blocked{% elif not item.has_fare %}is-no-fare{% else %}is-available{% endif %}"
                          style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
                     {% if item.is_available %}
                         <input type="checkbox" name="outbound_seats" value="{{ item.seat.pk }}"
@@ -114,13 +115,15 @@
                              aria-label="Butaca {{ item.seat.number }}, {{ item.seat.get_category_display }}, disponible">
                     {% else %}
                       <input type="checkbox" disabled class="seat-checkbox"
-                             aria-label="Butaca {{ item.seat.number }}, {% if item.is_occupied %}ocupada{% else %}sin tarifa{% endif %}">
+                             aria-label="Butaca {{ item.seat.number }}, {% if item.is_occupied %}ocupada{% elif item.is_priority_blocked %}prioritaria reservada{% else %}sin tarifa{% endif %}">
                     {% endif %}
                     <div class="seat-card-inner">
                       <span class="seat-number">Butaca {{ item.seat.number }}</span>
                       <span class="seat-category badge-{{ item.seat.category|lower }}">{{ item.seat.get_category_display }}</span>
                       {% if item.is_occupied %}
                         <span class="seat-status occupied-label">Ocupada</span>
+                      {% elif item.is_priority_blocked %}
+                        <span class="seat-status priority-label">Prioritaria</span>
                       {% elif item.fare_amount %}
                         <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
                       {% else %}
@@ -151,7 +154,7 @@
               <div class="seat-scroll-container" tabindex="0">
                 <div class="seat-grid">
                   {% for item in deck.items %}
-                    <label class="seat-card {% if item.is_occupied %}is-occupied{% elif not item.has_fare %}is-no-fare{% else %}is-available{% endif %}"
+                    <label class="seat-card {% if item.is_occupied %}is-occupied{% elif item.is_priority_blocked %}is-priority-blocked{% elif not item.has_fare %}is-no-fare{% else %}is-available{% endif %}"
                            style="grid-column: {{ item.column|unlocalize }}; grid-row: {{ item.row|unlocalize }};">
                       {% if item.is_available %}
                         <input type="checkbox" name="return_seats" value="{{ item.seat.pk }}"
@@ -160,13 +163,15 @@
                                aria-label="Butaca {{ item.seat.number }}, {{ item.seat.get_category_display }}, disponible">
                       {% else %}
                         <input type="checkbox" disabled class="seat-checkbox"
-                               aria-label="Butaca {{ item.seat.number }}, {% if item.is_occupied %}ocupada{% else %}sin tarifa{% endif %}">
+                               aria-label="Butaca {{ item.seat.number }}, {% if item.is_occupied %}ocupada{% elif item.is_priority_blocked %}prioritaria reservada{% else %}sin tarifa{% endif %}">
                       {% endif %}
                       <div class="seat-card-inner">
                         <span class="seat-number">Butaca {{ item.seat.number }}</span>
                         <span class="seat-category badge-{{ item.seat.category|lower }}">{{ item.seat.get_category_display }}</span>
                         {% if item.is_occupied %}
                           <span class="seat-status occupied-label">Ocupada</span>
+                        {% elif item.is_priority_blocked %}
+                          <span class="seat-status priority-label">Prioritaria</span>
                         {% elif item.fare_amount %}
                           <span class="seat-price">${{ item.fare_amount|unlocalize }}</span>
                         {% else %}
