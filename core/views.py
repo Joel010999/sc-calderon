@@ -36,6 +36,7 @@ from sales.services import (
     release_booking,
     validate_passenger_data,
 )
+from sales.minors import required_seat_count
 from payments.exceptions import (
     InvalidPaymentStatusError,
     PaymentDuplicateError,
@@ -74,7 +75,7 @@ def _booking_read_queryset():
         "legs__origin_stop__stop",
         "legs__destination_stop__stop",
         Prefetch("legs__seat_assignments", queryset=assignment_qs),
-        "passengers",
+        "passengers__accompanied_by",
         "tickets",
     )
 
@@ -140,6 +141,9 @@ def _find_available_trips(origin_stop, destination_stop, travel_date, passengers
             continue
 
         if ts_orig.sequence >= ts_dest.sequence:
+            continue
+
+        if ts_orig.stop.province == ts_dest.stop.province:
             continue
 
         orig_local_dt = timezone.localtime(ts_orig.scheduled_at, AR_TZ)
@@ -283,6 +287,8 @@ def search_trips(request):
 
     if origin_stop and dest_stop and origin_stop.pk == dest_stop.pk:
         errors.append("El origen y el destino deben ser paradas diferentes.")
+    elif origin_stop and dest_stop and origin_stop.province == dest_stop.province:
+        errors.append("El origen y el destino deben pertenecer a provincias diferentes.")
 
     # Resolver fecha de ida
     outbound_date = None
@@ -581,24 +587,9 @@ def create_public_booking(request):
 
     # 4. Extraer y validar butacas seleccionadas
     outbound_seat_pks = request.POST.getlist("outbound_seats")
-    if len(outbound_seat_pks) != passengers_count:
-        messages.error(
-            request,
-            f"Debes seleccionar exactamente {passengers_count} butaca(s) para el viaje de ida "
-            f"(seleccionaste {len(outbound_seat_pks)})."
-        )
-        return redirect("buscar_viajes")
-
     return_seat_pks = []
     if is_roundtrip:
         return_seat_pks = request.POST.getlist("return_seats")
-        if len(return_seat_pks) != passengers_count:
-            messages.error(
-                request,
-                f"Debes seleccionar exactamente {passengers_count} butaca(s) para el viaje de regreso "
-                f"(seleccionaste {len(return_seat_pks)})."
-            )
-            return redirect("buscar_viajes")
 
     # 5. Extraer y validar datos personales de cada pasajero
     passengers_data = []
@@ -611,6 +602,7 @@ def create_public_booking(request):
             "birth_date": request.POST.get(f"passenger_{pos}_birth_date", "").strip(),
             "nationality": request.POST.get(f"passenger_{pos}_nationality", "Argentina").strip(),
             "gender": request.POST.get(f"passenger_{pos}_gender", "").strip(),
+            "accompanied_by_position": request.POST.get(f"passenger_{pos}_accompanied_by_position", "").strip(),
         }
         try:
             validate_passenger_data(p_dict, position=pos)
@@ -619,6 +611,19 @@ def create_public_booking(request):
             messages.error(request, err_msg)
             return redirect("buscar_viajes")
         passengers_data.append(p_dict)
+
+    try:
+        required_seats = required_seat_count(passengers_data, timezone.now())
+    except ValidationError as ve:
+        err_msg = next(iter(ve.message_dict.values()))[0] if hasattr(ve, "message_dict") else str(ve)
+        messages.error(request, err_msg)
+        return redirect("buscar_viajes")
+    if len(outbound_seat_pks) != required_seats:
+        messages.error(request, f"Debes seleccionar exactamente {required_seats} butaca(s) para el viaje de ida (las personas restantes viajan sin butaca).")
+        return redirect("buscar_viajes")
+    if is_roundtrip and len(return_seat_pks) != required_seats:
+        messages.error(request, f"Debes seleccionar exactamente {required_seats} butaca(s) para el viaje de regreso (las personas restantes viajan sin butaca).")
+        return redirect("buscar_viajes")
 
     # 6. Revalidar viajes y paradas desde la base de datos
     outbound_trip_id = request.POST.get("outbound_trip")

@@ -95,7 +95,10 @@ def _find_ticket(scan_value):
     kind, value = _scan_kind(scan_value)
     if not value:
         return None
-    queryset = Ticket.objects.select_for_update().select_related(
+    # `seat_assignment` es nullable para menores gratuitos. En PostgreSQL un
+    # FOR UPDATE implícito sobre todo el queryset no puede bloquear el lado
+    # nullable del LEFT JOIN; el ticket es la fila que debe serializarse.
+    queryset = Ticket.objects.select_for_update(of=("self",)).select_related(
         "booking",
         "leg",
         "passenger",
@@ -131,7 +134,7 @@ def validate_boarding(scan_value, selected_trip_id, operator, now=None):
                 MESSAGES[BoardingCode.BOOKING_NOT_CONFIRMED],
                 ticket=ticket,
             )
-        if ticket.seat_assignment.status != AssignmentStatus.CONFIRMED:
+        if ticket.seat_assignment_id and ticket.seat_assignment.status != AssignmentStatus.CONFIRMED:
             return BoardingOutcome(
                 BoardingCode.ASSIGNMENT_NOT_CONFIRMED,
                 MESSAGES[BoardingCode.ASSIGNMENT_NOT_CONFIRMED],
@@ -141,9 +144,15 @@ def validate_boarding(scan_value, selected_trip_id, operator, now=None):
         relationships_match = (
             ticket.leg.booking_id == ticket.booking_id
             and ticket.passenger.booking_id == ticket.booking_id
-            and ticket.seat_assignment.leg_id == ticket.leg_id
-            and ticket.seat_assignment.passenger_id == ticket.passenger_id
-            and ticket.seat_assignment.trip_id == ticket.leg.trip_id
+            and (
+                ticket.passenger.is_lap_infant
+                or (
+                    ticket.seat_assignment_id
+                    and ticket.seat_assignment.leg_id == ticket.leg_id
+                    and ticket.seat_assignment.passenger_id == ticket.passenger_id
+                    and ticket.seat_assignment.trip_id == ticket.leg.trip_id
+                )
+            )
         )
         if not relationships_match:
             return BoardingOutcome(BoardingCode.INVALID_TICKET, MESSAGES[BoardingCode.INVALID_TICKET], ticket=ticket)

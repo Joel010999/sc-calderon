@@ -280,6 +280,7 @@
                         <td>
                             <strong>{{ passenger.first_name }} {{ passenger.last_name }}</strong>
                             {% if passenger.gender %}<small class="muted">{{ passenger.gender }}</small>{% endif %}
+                            {% if passenger.is_lap_infant %}<small class="muted">Menor gratuito en falda de {{ passenger.accompanied_by.first_name }} {{ passenger.accompanied_by.last_name }}</small>{% endif %}
                         </td>
                         <td>
                             {{ passenger.document_type }}: {{ passenger.document_number|default:"—" }}

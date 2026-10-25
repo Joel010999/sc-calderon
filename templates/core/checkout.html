@@ -95,7 +95,7 @@
         <div class="seat-map-header">
           <h3>Butacas viaje de ida · Colectivo {{ outbound_trip.bus.display_name }} ({{ outbound_trip.bus.code }})</h3>
           <div class="seat-counter-pill" id="outbound-counter-pill">
-            Seleccionadas: <strong id="outbound-count-display">0</strong> de <strong>{{ passengers_count }}</strong>
+            Seleccionadas: <strong id="outbound-count-display">0</strong> de <strong data-required-seat-count>{{ passengers_count }}</strong>
           </div>
         </div>
 
@@ -141,7 +141,7 @@
           <div class="seat-map-header">
             <h3>Butacas viaje de regreso · Colectivo {{ return_trip.bus.display_name }} ({{ return_trip.bus.code }})</h3>
             <div class="seat-counter-pill" id="return-counter-pill">
-              Seleccionadas: <strong id="return-count-display">0</strong> de <strong>{{ passengers_count }}</strong>
+              Seleccionadas: <strong id="return-count-display">0</strong> de <strong data-required-seat-count>{{ passengers_count }}</strong>
             </div>
           </div>
 
@@ -238,6 +238,13 @@
                   <option value="Masculino">Masculino</option>
                   <option value="No binario">No binario</option>
                   <option value="Otro">Otro / Prefiero no decir</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="p_{{ pos }}_accompanied_by_position">Madre acompañante (solo menor gratuito)</label>
+                <select id="p_{{ pos }}_accompanied_by_position" name="passenger_{{ pos }}_accompanied_by_position" class="form-control">
+                  <option value="">No corresponde</option>
+                  {% for mother_pos in passenger_range %}<option value="{{ mother_pos }}">Pasajera {{ mother_pos }}</option>{% endfor %}
                 </select>
               </div>
             </div>

@@ -509,3 +509,35 @@ Se agregó un restore drill temporal y reproducible con PostgreSQL, conteos y
 comparación de esquema sanitizados, inventario/checksum de archivos privados
 sintéticos, limpieza ante fallos y workflow CI aislado. No se ejecuta contra
 bases reales ni se almacenan credenciales.
+
+## Integración Sandro — rutas y menores (2026-10-24)
+
+Se integraron localmente `feature/sandro-rutas-guemes-20261024` y
+`feature/sandro-menores-sin-butaca-20261024` desde
+`2b47af4faf7e33eff5385c7bdd1b2f9739c3eaff` en la rama
+`feature/sandro-rutas-menores-integradas-20261024`.
+
+La entrega agrega Güemes con provincias explícitas, valida orden/permisos y
+prohíbe tramos dentro de una provincia. El comando de operaciones conserva
+históricos, es idempotente y soporta `--dry-run`. Los menores gratuitos sin
+butaca usan snapshots de gratuidad y madre, aparecen en tickets y manifiesto,
+pero no consumen asiento, ingreso ni comisión. Los tickets pagables mantienen
+precio y butaca obligatorios.
+
+Se generaron y verificaron en SQLite temporal `sales.0004_bookingpassenger_accompanied_by_and_more`
+y `tickets.0006_remove_ticket_tickets_ticket_price_positive_and_more`, tanto
+desde base vacía como actualizando desde los esquemas previos con un registro
+sintético preservado. No se ejecutaron migraciones persistentes.
+
+La fecha de compra sigue siendo provisionalmente la creación de la reserva,
+no `confirmed_at`; la diferencia queda pendiente de consulta. También queda
+pendiente cualquier política adicional de embarque de menores. Continúan fuera
+de alcance tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y
+Payway. La validación PostgreSQL, Browser E2E/axe y restore drill debe ejecutarse
+en los workflows sobre el SHA final; no se conectan proveedores reales.
+## CI de rutas y menores
+
+Los workflows de Quality Gate, Sales PostgreSQL, Tickets PostgreSQL, Browser
+E2E con axe y PostgreSQL restore drill se ejecutan sobre cada SHA publicado;
+sus resultados y el SHA exacto de la validacion final se entregan junto con la
+rama. Los entornos son aislados y no conectan proveedores reales.

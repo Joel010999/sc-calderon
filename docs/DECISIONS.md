@@ -403,7 +403,16 @@ Se adopta `@axe-core/playwright` como dependencia de desarrollo para detectar re
 - La revisión de transferencias queda limitada a Administradores activos. Un rechazo conserva historial y butaca; el comprobante posterior es un intento nuevo. Un aprobado es terminal e idempotente.
 - El corte manual permite el instante exacto de 30 minutos y cierra después. Se mide provisionalmente respecto de la subida inicial; queda pendiente validar salida inicial versus parada de subida.
 - El balance usa pagos aprobados de reservas confirmadas y asignaciones confirmadas con precio positivo. No se agregan rendiciones bancarias automáticas.
-- Pendientes expresos: Güemes, tarifas por salida, menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
+- Pendientes expresos: tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
+
+## Rutas con Güemes y menores gratuitos (2026-10-24)
+
+- Se incorpora Güemes con provincia explícita, orden y permisos de subida/bajada en ambos sentidos. No se permiten tramos cuyo origen y destino pertenezcan a la misma provincia.
+- La configuración se ejecuta mediante comando controlado e idempotente con `--dry-run`; no reescribe rutas históricas y rechaza completar una ruta parcial que ya tenga viajes.
+- Un menor de dos años según la fecha provisional de creación de la reserva puede viajar gratuitamente sin butaca. Debe asociarse a una madre de la misma compra; no se aceptan autorreferencias, ciclos ni una madre que sea otro menor gratuito.
+- La gratuidad, la asociación y la ausencia de butaca son snapshots. La ida/vuelta conserva la gratuidad en ambos tramos aunque cumpla dos años antes del regreso.
+- La fecha comercial definitiva queda pendiente: actualmente se usa el instante de creación de la reserva (`Booking.created_at`/`now` efectivo), no la confirmación (`confirmed_at`).
+- No se adopta una política nueva de embarque: el manifiesto muestra al menor sin ocupar asiento y cualquier criterio operativo adicional requiere decisión.
 
 Use a Django table with HMAC counters per window instead of process memory,
 sessions, Redis, or an external provider. The HMAC secret is configurable and

@@ -12,26 +12,30 @@ SC Viajes venderá pasajes online y permitirá gestionar operaciones y ventas de
 
 1. Córdoba Capital: suben pasajeros.
 2. Jesús María: solamente suben; nadie baja.
-3. Perico: solamente bajan; nadie sube.
-4. Palpalá: solamente bajan; nadie sube.
-5. San Salvador de Jujuy: terminal final; bajan todos los pasajeros restantes.
+3. Güemes: solamente bajan; nadie sube.
+4. Perico: solamente bajan; nadie sube.
+5. Palpalá: solamente bajan; nadie sube.
+6. San Salvador de Jujuy: terminal final; bajan todos los pasajeros restantes.
 
 ### Jujuy → Córdoba
 
 1. San Salvador de Jujuy: suben pasajeros.
 2. Palpalá: solamente suben; nadie baja.
 3. Perico: solamente suben; nadie baja.
-4. Jesús María: solamente bajan; nadie sube.
-5. Córdoba Capital: terminal final; bajan todos los pasajeros restantes.
+4. Güemes: solamente suben; nadie baja.
+5. Jesús María: solamente bajan; nadie sube.
+6. Córdoba Capital: terminal final; bajan todos los pasajeros restantes.
 
 La solución debe validar origen y destino según el orden y los permisos de subida y bajada de cada recorrido. Para el MVP no se revende una misma butaca por tramos dentro del mismo viaje.
+
+Origen y destino deben pertenecer a provincias diferentes. Se permiten varias paradas de una misma provincia dentro del recorrido, pero no se vende un tramo dentro de una sola provincia. La provincia se configura explícitamente en cada parada.
 
 ## Compra
 
 - Se permiten pasajes únicamente de ida o de ida y vuelta.
 - Una compra puede incluir varios pasajeros.
 - Los datos definitivos por pasajero se terminarán de validar con Sandro. La referencia actual es: nombre, apellido, DNI, fecha de nacimiento, nacionalidad, género, correo y teléfono.
-- Las reglas y tarifas para menores quedan pendientes.
+- La política provisional implementada permite gratuidad sin butaca para menores de dos años a la fecha de creación de la reserva, con snapshot inmutable y madre acompañante dentro de la misma compra. La confirmación, emisión y consulta no recalculan la edad.
 - Se puede comprar como invitado.
 - El cliente puede registrarse con correo y contraseña o iniciar sesión con Google.
 - No se utilizarán códigos enviados por correo para iniciar sesión.
@@ -74,7 +78,9 @@ Las integraciones reales de Mercado Pago y Payway se harán después de la migra
 
 Las reservas manuales se atribuyen al vendedor autenticado, y solo su creador puede liberarlas. Los vendedores consultan únicamente sus reservas y pagos; la revisión de transferencias corresponde a Administradores activos. Los rechazos conservan el intento y permiten un nuevo comprobante sin liberar automáticamente la butaca. El corte manual se permite exactamente 30 minutos antes de la subida y se rechaza a los 29 minutos; la referencia a la subida queda provisional hasta validación comercial.
 
-El balance calcula comisiones por asignación confirmada con precio positivo, separa compras de pasajes/tramos y no marca rendiciones bancarias automáticamente. Siguen pendientes Güemes, tarifas por salida, menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
+El balance calcula comisiones por asignación confirmada con precio positivo, separa compras de pasajes/tramos y no marca rendiciones bancarias automáticamente. Güemes y menores sin butaca están implementados en las entregas integradas. Siguen pendientes tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
+
+La fecha usada como “compra” es provisionalmente el instante efectivo de creación recibido por el servicio (`Booking.created_at` o el `now` inyectado), no `confirmed_at`. La gratuidad de ida/vuelta se conserva para ambos tramos aunque el menor cumpla dos años antes del regreso. La diferencia comercial entre creación de reserva y confirmación de pago queda pendiente de consulta.
 
 ## Pasajes
 

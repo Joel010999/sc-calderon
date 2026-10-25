@@ -126,7 +126,13 @@ El alcance de vendedores se aplica en el queryset base antes de filtros, búsque
 
 Los reportes y el dashboard separan compras, pasajes y tramos comisionables. La comisión se calcula con `Decimal` por asignación confirmada de precio positivo; ventas web sin vendedor, reservas impagas y rechazos no generan comisión. Las rendiciones bancarias no se marcan automáticamente.
 
-Güemes, tarifas por salida, menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway permanecen fuera de esta consolidación.
+Las tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y Payway permanecen fuera de esta consolidación.
+
+## Rutas con Güemes y menores gratuitos sin butaca (2026-10-24)
+
+`operations.Stop.province` es la fuente explícita de provincia. `Route.allows_journey`, las tarifas, las reservas, la búsqueda pública y el formulario del panel validan pertenencia al recorrido, orden, permisos de subida/bajada y provincias diferentes. La configuración controlada de operaciones agrega Güemes y su comando es idempotente; `--dry-run` no escribe y una ruta parcial con viajes existentes se rechaza para proteger históricos.
+
+La política provisional de menores vive en `sales.minors`: clasifica por la fecha efectiva de creación de la reserva, persiste `is_lap_infant` y `accompanied_by` como snapshot, exige madre dentro de la misma compra y rechaza autorreferencias, ciclos y acompañantes que también sean menores gratuitos. El menor cuenta como persona, pero no consume `SeatAssignment`, importe ni comisión. `tickets` mantiene un ticket por pasajero y tramo; solo permite precio cero y ausencia de butaca para el snapshot gratuito. El manifiesto consulta esos pasajeros sin convertirlos en ocupación. La fecha de compra y cualquier política nueva de embarque para menores siguen pendientes de confirmación comercial.
 
 | Módulo | Responsabilidad |
 | --- | --- |

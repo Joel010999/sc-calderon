@@ -29,9 +29,9 @@ class InitialOperationsTests(TestCase):
         self.seed()
         for model, rows in original.items():
             self.assertEqual(list(model.objects.order_by("pk").values()), rows)
-        self.assertEqual(Stop.objects.count(), 5)
+        self.assertEqual(Stop.objects.count(), 6)
         self.assertEqual(Route.objects.count(), 2)
-        self.assertEqual(RouteStop.objects.count(), 10)
+        self.assertEqual(RouteStop.objects.count(), 12)
         for model in (Bus, Seat, Trip, TripStop, TripFare):
             self.assertFalse(model.objects.exists())
 
@@ -39,9 +39,11 @@ class InitialOperationsTests(TestCase):
         self.seed()
         expected = {
             "CBA-JUJ": [("CBA", 1, True, False), ("JMA", 2, True, False),
-                        ("PER", 3, False, True), ("PAL", 4, False, True), ("SSJ", 5, False, True)],
+                        ("GUE", 3, False, True), ("PER", 4, False, True),
+                        ("PAL", 5, False, True), ("SSJ", 6, False, True)],
             "JUJ-CBA": [("SSJ", 1, True, False), ("PAL", 2, True, False),
-                        ("PER", 3, True, False), ("JMA", 4, False, True), ("CBA", 5, False, True)],
+                        ("PER", 3, True, False), ("GUE", 4, True, False),
+                        ("JMA", 5, False, True), ("CBA", 6, False, True)],
         }
         for code, rows in expected.items():
             route = Route.objects.get(code=code)
@@ -49,6 +51,7 @@ class InitialOperationsTests(TestCase):
                 "stop__code", "sequence", "allows_boarding", "allows_alighting"
             )), rows)
         self.assertEqual(dict(Stop.objects.values_list("code", "name")), {
+            "GUE": "G\u00fcemes",
             "CBA": "Córdoba Capital", "JMA": "Jesús María", "PER": "Perico",
             "PAL": "Palpalá", "SSJ": "San Salvador de Jujuy",
         })
@@ -58,8 +61,8 @@ class InitialOperationsTests(TestCase):
         stops = {stop.code: stop for stop in Stop.objects.all()}
         valid = {
             "CBA-JUJ": {(origin, destination) for origin in ("CBA", "JMA")
-                        for destination in ("PER", "PAL", "SSJ")},
-            "JUJ-CBA": {(origin, destination) for origin in ("SSJ", "PAL", "PER")
+                        for destination in ("GUE", "PER", "PAL", "SSJ")},
+            "JUJ-CBA": {(origin, destination) for origin in ("SSJ", "PAL", "PER", "GUE")
                         for destination in ("JMA", "CBA")},
         }
         for code, pairs in valid.items():
@@ -88,6 +91,54 @@ class InitialOperationsTests(TestCase):
         self.seed()
         self.assertEqual(Stop.objects.get(code="CBA").name, "Nombre editado")
         self.assertEqual(Route.objects.get(code="CBA-JUJ").name, "Recorrido editado")
+
+    def test_command_dry_run_does_not_write_guemes_configuration(self):
+        output = StringIO()
+        call_command("setup_initial_operations", dry_run=True, stdout=output)
+        self.assertIn("GUE", output.getvalue())
+        self.assertEqual(Stop.objects.count(), 0)
+        self.assertEqual(Route.objects.count(), 0)
+
+    def test_command_adds_guemes_without_rewriting_existing_trips(self):
+        self.seed()
+        route = Route.objects.get(code="CBA-JUJ")
+        bus = Bus.objects.create(code="PRE-GUE", display_name="Prueba")
+        Seat.objects.create(bus=bus, number=1, deck=Seat.Deck.UPPER,
+                            category=SeatCategory.SEMI_CAMA, position_x=0, position_y=0)
+        trip = self.create_trip_for_command(route, bus)
+        RouteStop.objects.filter(route=route, stop__code="GUE").delete()
+        with self.assertRaises(CommandError):
+            self.seed()
+        self.assertEqual(trip.trip_stops.count(), 6)
+
+    def test_command_upgrades_legacy_route_without_trips(self):
+        self.seed()
+        route = Route.objects.get(code="CBA-JUJ")
+        RouteStop.objects.filter(route=route, stop__code="GUE").delete()
+        for item in sorted(route.route_stops.all(), key=lambda row: row.sequence):
+            if item.sequence >= 4:
+                item.sequence += 10
+                item.save(update_fields=["sequence"])
+        for item in sorted(route.route_stops.all(), key=lambda row: row.sequence):
+            if item.sequence >= 14:
+                item.sequence -= 11
+                item.save(update_fields=["sequence"])
+        self.seed()
+        self.assertEqual(
+            list(route.route_stops.order_by("sequence").values_list("stop__code", "sequence")),
+            [("CBA", 1), ("JMA", 2), ("GUE", 3), ("PER", 4), ("PAL", 5), ("SSJ", 6)],
+        )
+
+    def create_trip_for_command(self, route, bus):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        start = datetime(2030, 1, 10, 8, tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))
+        return schedule_trip(
+            route=route,
+            bus=bus,
+            schedules={item.stop_id: start + timedelta(hours=item.sequence)
+                       for item in route.route_stops.all()},
+        )
 
     def test_command_rejects_conflicting_route_without_partial_changes(self):
         route = Route.objects.create(code="CBA-JUJ", name="Existente")
@@ -355,7 +406,7 @@ class SchedulingTests(OperationsDataMixin, TestCase):
         times = self.schedules()
         times[self.stops["JMA"].pk] = times[self.stops["JMA"].pk].astimezone(timezone.utc)
         trip = schedule_trip(route=self.route, bus=self.bus, schedules=times)
-        self.assertEqual(trip.trip_stops.count(), 5)
+        self.assertEqual(trip.trip_stops.count(), 6)
         times[self.stops["JMA"].pk] = self.start.astimezone(timezone.utc)
         self.assert_schedule_rejected(times)
 
@@ -438,8 +489,8 @@ class FareTests(OperationsDataMixin, TestCase):
         for index, route in enumerate(Route.objects.order_by("code"), 1):
             trip = self.create_trip(route, days_offset=index)
             items = {item.stop.code: item for item in trip.trip_stops.select_related("stop")}
-            origins = ("CBA", "JMA") if route.code == "CBA-JUJ" else ("SSJ", "PAL", "PER")
-            destinations = ("PER", "PAL", "SSJ") if route.code == "CBA-JUJ" else ("JMA", "CBA")
+            origins = ("CBA", "JMA") if route.code == "CBA-JUJ" else ("SSJ", "PAL", "PER", "GUE")
+            destinations = ("GUE", "PER", "PAL", "SSJ") if route.code == "CBA-JUJ" else ("JMA", "CBA")
             for origin_code, origin in items.items():
                 for destination_code, destination in items.items():
                     with self.subTest(route=route.code, origin=origin_code, destination=destination_code):
@@ -508,6 +559,15 @@ class FareTests(OperationsDataMixin, TestCase):
         )
         self.assertFalse(self.route.allows_journey(self.stops["CBA"], self.stops["SSJ"]))
         self.make_fare().full_clean()
+
+    def test_fare_rejects_same_province_segment(self):
+        origin = self.trip_stops["CBA"]
+        destination = self.trip_stops["JMA"]
+        destination.allows_alighting = True
+        fare = self.make_fare(origin_stop=origin, destination_stop=destination)
+        with self.assertRaises(ValidationError) as ctx:
+            fare.full_clean()
+        self.assertIn("provincias diferentes", str(ctx.exception))
 
     def test_fare_protects_its_historical_trip_stops(self):
         fare = self.make_fare()

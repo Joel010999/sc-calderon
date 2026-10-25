@@ -69,6 +69,8 @@ class Ticket(models.Model):
         "sales.SeatAssignment",
         verbose_name="asignación de butaca",
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="tickets",
     )
     ticket_code = models.CharField(
@@ -133,14 +135,14 @@ class Ticket(models.Model):
     destination_stop_name = models.CharField("parada de bajada", max_length=150)
     departure_at = models.DateTimeField("horario de subida", validators=[validate_aware_datetime])
     arrival_at = models.DateTimeField("horario de bajada", validators=[validate_aware_datetime])
-    seat_number = models.PositiveIntegerField("número de butaca", validators=[MinValueValidator(1)])
-    seat_category = models.CharField("categoría de butaca", max_length=20)
-    seat_category_display = models.CharField("descripción de categoría", max_length=50)
+    seat_number = models.PositiveIntegerField("número de butaca", null=True, blank=True, validators=[MinValueValidator(1)])
+    seat_category = models.CharField("categoría de butaca", max_length=20, blank=True, default="")
+    seat_category_display = models.CharField("descripción de categoría", max_length=50, blank=True, default="")
     price = models.DecimalField(
         "precio histórico",
         max_digits=12,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.01"))],
+        validators=[MinValueValidator(Decimal("0.00"))],
     )
     currency = models.CharField("moneda", max_length=3, default="ARS", validators=[validate_currency])
     booking_public_id = models.UUIDField("código de reserva", db_index=True)
@@ -174,12 +176,12 @@ class Ticket(models.Model):
                 violation_error_message="El estado del pasaje no es válido.",
             ),
             models.CheckConstraint(
-                condition=Q(price__gt=Decimal("0.00")),
+                condition=Q(price__gte=Decimal("0.00")),
                 name="tickets_ticket_price_positive",
                 violation_error_message="El precio del pasaje debe ser mayor que cero.",
             ),
             models.CheckConstraint(
-                condition=Q(seat_number__gte=1),
+                condition=Q(seat_number__isnull=True) | Q(seat_number__gte=1),
                 name="tickets_ticket_seat_num_positive",
                 violation_error_message="El número de butaca debe ser mayor o igual a 1.",
             ),
@@ -348,6 +350,8 @@ class BoardingRecord(models.Model):
         "sales.SeatAssignment",
         verbose_name="asignación de butaca",
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="boarding_records",
     )
     operator = models.ForeignKey(
