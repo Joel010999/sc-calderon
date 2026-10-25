@@ -1,4 +1,4 @@
-﻿from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
@@ -92,11 +92,11 @@ class ReservationPanelBaseTestCase(TestCase):
 
         # Tarifas viaje de ida
         cls.fare_out_cama = TripFare.objects.create(
-            trip=cls.trip_outbound, origin_stop=cls.ts_out_cba, destination_stop=cls.ts_out_ssj,
+            trip=cls.trip_outbound,
             seat_category=SeatCategory.CAMA, amount=Decimal("15000.00"), currency="ARS", is_active=True,
         )
         cls.fare_out_semi = TripFare.objects.create(
-            trip=cls.trip_outbound, origin_stop=cls.ts_out_cba, destination_stop=cls.ts_out_ssj,
+            trip=cls.trip_outbound,
             seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("11000.00"), currency="ARS", is_active=True,
         )
 
@@ -112,11 +112,11 @@ class ReservationPanelBaseTestCase(TestCase):
 
         # Tarifas viaje de vuelta
         cls.fare_ret_cama = TripFare.objects.create(
-            trip=cls.trip_return, origin_stop=cls.ts_ret_ssj, destination_stop=cls.ts_ret_cba,
+            trip=cls.trip_return,
             seat_category=SeatCategory.CAMA, amount=Decimal("16000.00"), currency="ARS", is_active=True,
         )
         cls.fare_ret_semi = TripFare.objects.create(
-            trip=cls.trip_return, origin_stop=cls.ts_ret_ssj, destination_stop=cls.ts_ret_cba,
+            trip=cls.trip_return,
             seat_category=SeatCategory.SEMI_CAMA, amount=Decimal("12000.00"), currency="ARS", is_active=True,
         )
 
@@ -810,3 +810,49 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         finally:
             self.fare_out_semi.is_active = True
             self.fare_out_semi.save()
+
+    def test_manual_booking_same_category_price_across_permitted_segments_and_snapshot_preserved(self):
+        # Reserva manual en tramo intermedio JMA -> SSJ conserva el mismo precio de categoría de la salida
+        b_inter = create_manual_booking(
+            seller=self.user_seller,
+            email="intermedio@correo.com",
+            legs=[{
+                "trip": self.trip_outbound,
+                "origin_stop": self.ts_out_jma,
+                "destination_stop": self.ts_out_ssj,
+                "seats": [self.seat_cama_1, self.seat_semi_3],
+            }],
+        )
+        prices_before = {
+            sa.category: sa.price for sa in b_inter.legs.first().seat_assignments.all()
+        }
+        self.assertEqual(prices_before[SeatCategory.CAMA], Decimal("15000.00"))
+        self.assertEqual(prices_before[SeatCategory.SEMI_CAMA], Decimal("11000.00"))
+
+        # Si Administrador cambia la tarifa de la salida antes de partir, b_inter (HELD) conserva su snapshot
+        self.fare_out_cama.amount = Decimal("21000.00")
+        self.fare_out_cama.save()
+        try:
+            b_inter.refresh_from_db()
+            self.assertEqual(
+                b_inter.legs.first().seat_assignments.get(category=SeatCategory.CAMA).price,
+                Decimal("15000.00"),
+            )
+            # Una reserva nueva sobre disponibilidad libre toma la nueva tarifa
+            b_new = create_manual_booking(
+                seller=self.user_seller,
+                email="nueva_tarifa@correo.com",
+                legs=[{
+                    "trip": self.trip_outbound,
+                    "origin_stop": self.ts_out_cba,
+                    "destination_stop": self.ts_out_ssj,
+                    "seats": [self.seat_cama_2],
+                }],
+            )
+            self.assertEqual(
+                b_new.legs.first().seat_assignments.first().price,
+                Decimal("21000.00"),
+            )
+        finally:
+            self.fare_out_cama.amount = Decimal("15000.00")
+            self.fare_out_cama.save()

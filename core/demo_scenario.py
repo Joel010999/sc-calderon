@@ -81,14 +81,15 @@ def _trip(route, bus, days):
     start = timezone.now() + timedelta(days=days)
     route_stops = list(route.route_stops.order_by("sequence"))
     trip = schedule_trip(route=route, bus=bus, schedules={item.stop_id: start + timedelta(hours=index * 2) for index, item in enumerate(route_stops)})
-    trip_stops = list(trip.trip_stops.order_by("sequence"))
-    for origin in trip_stops:
-        for destination in trip_stops:
-            if origin.sequence >= destination.sequence or not origin.allows_boarding or not destination.allows_alighting:
-                continue
-            distance = destination.sequence - origin.sequence
-            for category, amount in ((SeatCategory.SEMI_CAMA, Decimal("10000.00") + distance * Decimal("500.00")), (SeatCategory.CAMA, Decimal("15000.00") + distance * Decimal("750.00"))):
-                TripFare.objects.get_or_create(trip=trip, origin_stop=origin, destination_stop=destination, seat_category=category, defaults={"amount": amount})
+    for category, amount in (
+        (SeatCategory.SEMI_CAMA, Decimal("12500.00")),
+        (SeatCategory.CAMA, Decimal("18750.00")),
+    ):
+        TripFare.objects.get_or_create(
+            trip=trip,
+            seat_category=category,
+            defaults={"amount": amount},
+        )
     return trip
 
 def _passenger(number):

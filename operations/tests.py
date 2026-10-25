@@ -13,7 +13,7 @@ from django.db.models.deletion import ProtectedError
 from django.test import TestCase
 
 from .models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, Trip, TripFare, TripStop
-from .services import schedule_trip
+from .services import detect_trip_fare_conflicts, schedule_trip, validate_no_trip_fare_conflicts
 
 
 class InitialOperationsTests(TestCase):
@@ -469,8 +469,7 @@ class FareTests(OperationsDataMixin, TestCase):
         self.trip_stops = {item.stop.code: item for item in self.trip.trip_stops.select_related("stop")}
 
     def make_fare(self, **changes):
-        values = dict(trip=self.trip, origin_stop=self.trip_stops["CBA"],
-                      destination_stop=self.trip_stops["SSJ"], seat_category=SeatCategory.SEMI_CAMA,
+        values = dict(trip=self.trip, seat_category=SeatCategory.SEMI_CAMA,
                       amount=Decimal("12345.67"))
         values.update(changes)
         return TripFare(**values)
@@ -485,35 +484,15 @@ class FareTests(OperationsDataMixin, TestCase):
         self.assertEqual(fare.currency, "ARS")
         self.assertIn("ARS 12345.67", str(fare))
 
-    def test_fares_follow_valid_segments_in_both_directions(self):
+    def test_each_departure_can_have_cama_and_semicama_fares_in_both_directions(self):
         for index, route in enumerate(Route.objects.order_by("code"), 1):
             trip = self.create_trip(route, days_offset=index)
-            items = {item.stop.code: item for item in trip.trip_stops.select_related("stop")}
-            origins = ("CBA", "JMA") if route.code == "CBA-JUJ" else ("SSJ", "PAL", "PER", "GUE")
-            destinations = ("GUE", "PER", "PAL", "SSJ") if route.code == "CBA-JUJ" else ("JMA", "CBA")
-            for origin_code, origin in items.items():
-                for destination_code, destination in items.items():
-                    with self.subTest(route=route.code, origin=origin_code, destination=destination_code):
-                        fare = self.make_fare(trip=trip, origin_stop=origin, destination_stop=destination)
-                        if origin_code in origins and destination_code in destinations:
-                            fare.full_clean()
-                        else:
-                            with self.assertRaises(ValidationError):
-                                fare.full_clean()
-
-    def test_stops_from_other_trips_are_rejected(self):
-        other_trip = self.create_trip(days_offset=1)
-        for changes in (
-            {"origin_stop": other_trip.trip_stops.get(stop=self.stops["CBA"])},
-            {"destination_stop": other_trip.trip_stops.get(stop=self.stops["SSJ"])},
-            {"trip": other_trip},
-        ):
-            with self.subTest(changes=changes), self.assertRaises(ValidationError):
-                self.make_fare(**changes).full_clean()
-
-    def test_equal_origin_destination_is_rejected_by_database(self):
-        fare = self.make_fare(destination_stop=self.trip_stops["CBA"])
-        self.assert_database_rejects(fare.save)
+            for category, amount in ((SeatCategory.CAMA, Decimal("18000.00")),
+                                     (SeatCategory.SEMI_CAMA, Decimal("14000.00"))):
+                fare = self.make_fare(trip=trip, seat_category=category, amount=amount)
+                fare.full_clean()
+                fare.save()
+            self.assertEqual(trip.fares.count(), 2)
 
     def test_fare_combination_is_unique_even_when_inactive(self):
         self.make_fare(is_active=False).save()
@@ -522,12 +501,17 @@ class FareTests(OperationsDataMixin, TestCase):
             fare.full_clean()
         self.assert_database_rejects(fare.save)
 
-    def test_same_segment_can_have_different_categories(self):
+    def test_same_trip_can_have_different_categories_and_other_trip_can_have_same_category(self):
         for category in SeatCategory:
             fare = self.make_fare(seat_category=category)
             fare.full_clean()
             fare.save()
         self.assertEqual(self.trip.fares.count(), 2)
+        other_trip = self.create_trip(days_offset=1)
+        other_fare = self.make_fare(trip=other_trip, seat_category=SeatCategory.CAMA)
+        other_fare.full_clean()
+        other_fare.save()
+        self.assertEqual(other_trip.fares.count(), 1)
 
     def test_positive_amount_is_required_in_domain_and_database(self):
         for amount in (Decimal("0.00"), Decimal("-1.00")):
@@ -553,25 +537,28 @@ class FareTests(OperationsDataMixin, TestCase):
             fare.full_clean()
         self.assert_database_rejects(fare.save)
 
-    def test_fare_uses_trip_snapshot_after_route_permissions_change(self):
-        self.route.route_stops.filter(stop=self.stops["CBA"]).update(
-            allows_boarding=False, allows_alighting=True
-        )
-        self.assertFalse(self.route.allows_journey(self.stops["CBA"], self.stops["SSJ"]))
-        self.make_fare().full_clean()
-
-    def test_fare_rejects_same_province_segment(self):
-        origin = self.trip_stops["CBA"]
-        destination = self.trip_stops["JMA"]
-        destination.allows_alighting = True
-        fare = self.make_fare(origin_stop=origin, destination_stop=destination)
-        with self.assertRaises(ValidationError) as ctx:
-            fare.full_clean()
-        self.assertIn("provincias diferentes", str(ctx.exception))
-
-    def test_fare_protects_its_historical_trip_stops(self):
+    def test_fare_protects_its_historical_trip(self):
         fare = self.make_fare()
         fare.save()
-        for item in (fare.origin_stop, fare.destination_stop):
-            with self.assertRaises(ProtectedError):
-                item.delete()
+        with self.assertRaises(ProtectedError):
+            self.trip.delete()
+
+    def test_historical_fare_conflict_detection_rejects_divergent_prices_and_allows_identical(self):
+        unambiguous = [
+            {"trip_id": self.trip.pk, "seat_category": SeatCategory.CAMA, "amount": Decimal("15000.00"), "currency": "ARS", "is_active": True},
+            {"trip_id": self.trip.pk, "seat_category": SeatCategory.CAMA, "amount": Decimal("15000.00"), "currency": "ARS", "is_active": True},
+            {"trip_id": self.trip.pk, "seat_category": SeatCategory.SEMI_CAMA, "amount": Decimal("12000.00"), "currency": "ARS", "is_active": True},
+        ]
+        self.assertEqual(detect_trip_fare_conflicts(unambiguous), [])
+        self.assertEqual(validate_no_trip_fare_conflicts(unambiguous), [])
+
+        ambiguous = unambiguous + [
+            {"trip_id": self.trip.pk, "seat_category": SeatCategory.CAMA, "amount": Decimal("16500.00"), "currency": "ARS", "is_active": True},
+        ]
+        conflicts = detect_trip_fare_conflicts(ambiguous)
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["trip_id"], self.trip.pk)
+        self.assertEqual(conflicts[0]["seat_category"], SeatCategory.CAMA)
+        with self.assertRaises(ValidationError) as ctx:
+            validate_no_trip_fare_conflicts(ambiguous)
+        self.assertIn("tarifas históricas ambiguas", str(ctx.exception))

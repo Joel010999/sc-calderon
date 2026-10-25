@@ -87,3 +87,60 @@ def schedule_trip(*, route, bus, schedules):
         trip_stop.full_clean()
         trip_stop.save()
     return trip
+
+
+def _extract_fare_field(record, name, default=None):
+    if isinstance(record, Mapping):
+        return record.get(name, default)
+    return getattr(record, name, default)
+
+
+def detect_trip_fare_conflicts(fare_records):
+    """Detecta conflictos en tarifas históricas cuando una misma salida y categoría
+    presenta más de una combinación de importe, moneda o estado activo.
+
+    No inventa precios ni elige arbitrariamente entre valores divergentes.
+    """
+    grouped = {}
+    for record in fare_records:
+        trip_id = _extract_fare_field(record, "trip_id")
+        if trip_id is None:
+            trip_obj = _extract_fare_field(record, "trip")
+            trip_id = getattr(trip_obj, "pk", None)
+        category = _extract_fare_field(record, "seat_category")
+        amount = _extract_fare_field(record, "amount")
+        currency = (_extract_fare_field(record, "currency", "ARS") or "ARS").strip().upper()
+        is_active = bool(_extract_fare_field(record, "is_active", True))
+        key = (trip_id, category)
+        signature = (amount, currency, is_active)
+        grouped.setdefault(key, set()).add(signature)
+
+    conflicts = []
+    for (trip_id, category), signatures in sorted(grouped.items(), key=lambda item: (item[0][0] or 0, str(item[0][1]))):
+        if len(signatures) > 1:
+            variants = [
+                {"amount": str(amt), "currency": curr, "is_active": act}
+                for amt, curr, act in sorted(signatures, key=lambda s: (str(s[0]), s[1], s[2]))
+            ]
+            conflicts.append({
+                "trip_id": trip_id,
+                "seat_category": category,
+                "variants": variants,
+            })
+    return conflicts
+
+
+def validate_no_trip_fare_conflicts(fare_records):
+    """Lanza ValidationError si existen tarifas ambiguas para una misma salida y categoría."""
+    conflicts = detect_trip_fare_conflicts(fare_records)
+    if conflicts:
+        details = "; ".join(
+            f"viaje {c['trip_id']} ({c['seat_category']}): "
+            + ", ".join(f"{v['currency']} {v['amount']} (activa={v['is_active']})" for v in c["variants"])
+            for c in conflicts
+        )
+        raise ValidationError(
+            f"Se detectaron tarifas históricas ambiguas con precios o estados divergentes para la misma salida y categoría ({details}). "
+            "Resolvé manualmente la ambigüedad antes de consolidar tarifas por salida."
+        )
+    return []

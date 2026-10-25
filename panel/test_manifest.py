@@ -18,14 +18,6 @@ class TripPassengerManifestTests(ReservationPanelBaseTestCase):
     def setUp(self):
         self.client = Client()
         self.client.force_login(self.user_seller)
-        TripFare.objects.create(
-            trip=self.trip_outbound,
-            origin_stop=self.ts_out_jma,
-            destination_stop=self.ts_out_ssj,
-            seat_category=SeatCategory.SEMI_CAMA,
-            amount=Decimal("12000.00"),
-            currency="ARS",
-        )
         self.confirmed = self._booking(
             name="Cecilia",
             last_name="Ramos",
