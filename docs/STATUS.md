@@ -541,3 +541,26 @@ Los workflows de Quality Gate, Sales PostgreSQL, Tickets PostgreSQL, Browser
 E2E con axe y PostgreSQL restore drill se ejecutan sobre cada SHA publicado;
 sus resultados y el SHA exacto de la validacion final se entregan junto con la
 rama. Los entornos son aislados y no conectan proveedores reales.
+
+## Integración Sandro — tarifas por salida y butacas prioritarias (2026-10-25)
+
+Se integraron `feature/sandro-tarifas-salida-20261025` y
+`feature/sandro-butacas-prioritarias-20261025` desde
+`16a68086f83b1aa7be279a25d3cc885fbdd9a54f` en la rama
+`feature/sandro-tarifas-prioritarias-integradas-20261025`.
+
+Las tarifas ahora son por salida y categoría, con snapshot inmutable en la
+reserva, edición administrativa auditada y protección transaccional frente a
+actualizaciones concurrentes. La migración `operations.0003` fue aplicada en
+una base SQLite temporal vacía y sobre un esquema `operations.0002` con datos
+sintéticos históricos; no se ejecutaron migraciones persistentes.
+
+Las butacas 51 y 54 se liberan a las 00:00 de Argentina de dos días calendario
+antes de la salida. La regla se verifica en web, panel y servicios, conserva
+ocupaciones existentes y no depende de un worker. La autorización previa a la
+liberación sigue pendiente.
+
+Validación local de esta integración: Ruff, Django check, makemigrations
+check, diff check y la suite completa (586 pruebas, 7 omitidas, 591
+descubiertas) pasaron. PostgreSQL real, Browser E2E/axe y restore drill quedan
+para los workflows CI del SHA final.

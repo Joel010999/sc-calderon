@@ -84,6 +84,14 @@ La fecha usada como “compra” es provisionalmente el instante efectivo de cre
 
 ## Pasajes
 
+## Consolidación tarifas por salida y butacas prioritarias (2026-10-25)
+
+Cada salida mantiene una tarifa activa por categoría (`CAMA` y `SEMI_CAMA`), igual para todos sus tramos permitidos. El precio se obtiene server-side y se congela en la reserva; cambiar la tarifa solo afecta nuevas reservas libres. Menores gratuitos permanecen en cero y sin comisión. Solo administradores pueden modificar tarifas antes de la salida, con Decimal, CSRF, auditoría y bloqueo transaccional.
+
+Las butacas 51 y 54 se liberan para venta general a las 00:00 de Argentina de dos días calendario antes de la salida local. La disponibilidad y la creación de reservas vuelven a validar la regla dentro de la transacción; las ocupaciones existentes se conservan y los GET no escriben.
+
+Esta consolidación reemplaza el estado anterior que listaba tarifas por salida y butacas prioritarias como pendientes. Siguen pendientes PDFs/comprobante/CNRT y Payway.
+
 - El pasaje final será un PDF.
 - Se enviará por correo electrónico y también quedará descargable desde la web.
 - No se enviará automáticamente por WhatsApp.

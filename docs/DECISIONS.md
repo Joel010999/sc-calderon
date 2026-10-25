@@ -421,3 +421,11 @@ previous values. `REMOTE_ADDR` is the default source and `X-Forwarded-For` is
 accepted only for explicitly trusted proxies. Maintenance removes expired rows
 in bounded batches. This layer does not replace domain services or change
 commercial policies.
+
+## Tarifas por salida y butacas prioritarias (2026-10-25)
+
+- Cada salida tiene una tarifa `CAMA` y otra `SEMI_CAMA`, uniforme para sus tramos permitidos. Solo Administrador activo puede modificarla antes de la salida; el cambio se audita y no recalcula reservas, tickets, comisiones ni históricos.
+- La reserva congela el importe server-side, incluso si está impaga. Menores gratuitos mantienen importe cero y no generan comisión.
+- `operations.0003` conserva datos históricos equivalentes y aborta ante variantes históricas incompatibles; no se inventa una conversión de precios.
+- Las butacas 51 y 54 son prioritarias hasta las 00:00 de Argentina de dos días calendario antes de la salida. La disponibilidad y la creación validan nuevamente dentro de la transacción y no requieren worker.
+- La autorización comercial para asignar una butaca prioritaria antes de su liberación sigue pendiente; no se inventó un bypass ni una tarifa especial.
