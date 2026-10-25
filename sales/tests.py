@@ -2072,7 +2072,12 @@ class SalesPostgresConcurrencyTests(TransactionTestCase):
                     trip=self.trip,
                 )
                 if form.is_valid():
-                    save_fare(form=form, trip=self.trip, actor=admin)
+                    save_fare(
+                        actor=admin,
+                        trip_pk=self.trip.pk,
+                        data=form.data,
+                        pk=self.fare.pk,
+                    )
                 else:
                     unexpected_errors.append(form.errors)
             except Exception as e:
