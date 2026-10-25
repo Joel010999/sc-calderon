@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from operations.models import Seat, Trip, TripFare, TripStop
@@ -24,6 +25,12 @@ from .models import (
     normalize_document,
 )
 from .minors import classify_passengers
+from .priority_seats import (
+    is_priority_seat_released_for_general_sale,
+    is_seat_blocked_for_general_sale,
+    priority_seat_release_at,
+    validate_seat_eligible_for_general_sale,
+)
 from .validators import validate_aware_datetime
 
 
@@ -177,29 +184,48 @@ def release_expired_bookings(now=None, trip_ids=None):
     return len(expired_ids)
 
 
-def get_trip_availability(trip, origin_stop=None, destination_stop=None, category=None, now=None):
+def get_trip_availability(trip, origin_stop=None, destination_stop=None, category=None, now=None, *, mutate=True):
     """Consulta la disponibilidad de butacas en un viaje.
 
-    Libera oportunamente reservas vencidas del viaje antes de calcular disponibilidad.
+    Si `mutate=True` (por defecto en servicios internos), libera oportunamente reservas vencidas
+    del viaje antes de calcular disponibilidad. Si `mutate=False` (consultas GET), evalúa la
+    disponibilidad y el vencimiento por reloj sin realizar escrituras en la base de datos.
+    Las butacas prioritarias (51 y 54) no ocupadas se excluyen de la disponibilidad para venta
+    general hasta su horario de liberación (dos días calendario antes de la salida a las 00:00 AR).
     Una butaca es para un pasajero durante todo el viaje, sin reventa por tramos.
     """
     if now is None:
         now = timezone.now()
     validate_aware_datetime(now)
 
-    release_expired_bookings(now=now, trip_ids=[trip.pk])
+    if mutate:
+        release_expired_bookings(now=now, trip_ids=[trip.pk])
 
     active_seats = list(
         Seat.objects.filter(bus=trip.bus, is_active=True).order_by("number")
     )
     occupied_seat_ids = set(
-        SeatAssignment.objects.filter(
-            trip=trip,
-            status__in=[AssignmentStatus.HELD, AssignmentStatus.CONFIRMED],
-        ).values_list("seat_id", flat=True)
+        SeatAssignment.objects.filter(trip=trip)
+        .filter(
+            Q(status=AssignmentStatus.CONFIRMED)
+            | (
+                Q(status=AssignmentStatus.HELD)
+                & (Q(leg__booking__expires_at__isnull=True) | Q(leg__booking__expires_at__gt=now))
+            )
+        )
+        .values_list("seat_id", flat=True)
     )
+    priority_blocked_seat_ids = {
+        s.pk
+        for s in active_seats
+        if s.pk not in occupied_seat_ids and is_seat_blocked_for_general_sale(trip, s, now=now)
+    }
 
-    available_seats = [s for s in active_seats if s.pk not in occupied_seat_ids]
+    available_seats = [
+        s
+        for s in active_seats
+        if s.pk not in occupied_seat_ids and s.pk not in priority_blocked_seat_ids
+    ]
     if category:
         available_seats = [s for s in available_seats if s.category == category]
 
@@ -236,6 +262,10 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
         "available_seats": available_seats,
         "available_seat_count": len(available_seats),
         "occupied_seat_count": len(occupied_seat_ids),
+        "occupied_seat_ids": occupied_seat_ids,
+        "priority_blocked_seat_ids": priority_blocked_seat_ids,
+        "priority_release_at": priority_seat_release_at(trip),
+        "priority_released": is_priority_seat_released_for_general_sale(trip, now=now),
         "fares_by_category": fares_by_category,
     }
 
@@ -444,6 +474,8 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
             ).exists()
             if is_occupied:
                 raise SeatUnavailableError(f"La butaca {seat.number} no está disponible en este viaje.")
+
+            validate_seat_eligible_for_general_sale(trip, seat, now=effective_now)
 
             fare = TripFare.objects.filter(
                 trip=trip,

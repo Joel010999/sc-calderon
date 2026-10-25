@@ -545,6 +545,7 @@ body {
 .swatch-available { background: #eff6ff; border: 2px solid #3b82f6; }
 .swatch-selected { background: #2563eb; border: 2px solid #1d4ed8; }
 .swatch-occupied { background: #e2e8f0; border: 2px solid #94a3b8; }
+.swatch-priority { background: #fff7ed; border: 2px solid #f97316; }
 .swatch-cama { background: #e0e7ff; border: 1px solid #6366f1; }
 .swatch-semicama { background: #f0fdf4; border: 1px solid #22c55e; }
 
@@ -570,6 +571,17 @@ body {
     background: #f1f5f9;
     cursor: not-allowed;
     opacity: 0.7;
+}
+.seat-card-interactive.priority-blocked {
+    border-color: #f97316;
+    background: #fff7ed;
+    color: #9a3412;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+.priority-tag {
+    color: #c2410c;
+    font-weight: 700;
 }
 .seat-card-interactive:has(.seat-checkbox:checked) {
     background: #dbeafe;
