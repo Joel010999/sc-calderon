@@ -34,3 +34,10 @@
 ## Pendientes preservados
 
 Quedan pendientes la validación visual externa de las muestras, la confirmación comercial/legal de las condiciones, la configuración productiva de transportista/seguro/datos fiscales, el importe y condiciones del seguro, y la verificación documental oficial de edad. No se envían correos reales ni se ejecutan migraciones persistentes.
+
+## Corrección posterior
+
+- Se reemplaza el separador Unicode de recorrido por ` - ` al renderizar, evitando glifos cuadrados.
+- La inconsistencia de `datos-largos-sintetico-nuevo.pdf` provenía del fixture: al sobrescribir origen y destino no se recalculaban `route_name`, `origin_address` ni `destination_address`. El generador ahora deriva esos campos cuando no se proporcionan explícitamente.
+- Se agregó una regresión para ambos sentidos que contrasta recorrido, paradas, direcciones y horarios.
+- Nuevas muestras: `D:\renderbyte\scviajes-pdf-samples\menores-horarios-20261026-v2`.

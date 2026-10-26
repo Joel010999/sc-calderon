@@ -606,6 +606,51 @@ class TicketPdfAndQrParsingTests(TicketBaseMixin, TransactionTestCase):
         self.assertIn("CONDICIONES DEL PASAJE", text)
         self.assertTrue(len(reader.pages[0].images) >= 1)
 
+    def test_route_addresses_and_times_match_each_travel_direction(self):
+        common = dict(
+            ticket_code="SYN-DIRECTION",
+            booking_code="RES-DIRECTION",
+            passenger_name="Pasajero Sintético",
+            masked_document="DNI ***111",
+            travel_date="26/10/2026",
+            boarding_place="Terminal sintética",
+            seat_number="12",
+            category_display="Cama",
+            price_display="$ 55.000,00",
+            issued_at="26/10/2026 10:30",
+            qr_payload_url="https://scviajes.test/tickets/verify/?token=SYN-DIRECTION",
+            total_amount_display="$ 55.000,00",
+            fare_detail_display="$ 55.000,00",
+        )
+        directions = [
+            dict(
+                origin_stop_name="Origen Jujuy",
+                destination_stop_name="Destino Córdoba",
+                route_name="Origen Jujuy → Destino Córdoba",
+                origin_address="Av. Origen 1, Jujuy",
+                destination_address="Av. Destino 2, Córdoba",
+                departure_time="08:10",
+                arrival_time="18:40",
+            ),
+            dict(
+                origin_stop_name="Origen Córdoba",
+                destination_stop_name="Destino Jujuy",
+                route_name="Origen Córdoba → Destino Jujuy",
+                origin_address="Av. Origen 3, Córdoba",
+                destination_address="Av. Destino 4, Jujuy",
+                departure_time="21:20",
+                arrival_time="07:30",
+            ),
+        ]
+        for direction in directions:
+            reader = pypdf.PdfReader(io.BytesIO(build_ticket_pdf(TicketData(**common, **direction))))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            self.assertIn(f"Recorrido: {direction['origin_stop_name']} - {direction['destination_stop_name']}", text)
+            self.assertIn(f"Sale de / Sube en: {direction['origin_stop_name']} - {direction['origin_address']}", text)
+            self.assertIn(f"A / Baja en: {direction['destination_stop_name']} - {direction['destination_address']}", text)
+            self.assertIn(f"Salida: 26/10/2026 - {direction['departure_time']}", text)
+            self.assertIn(f"Arribo estimado: 26/10/2026 - {direction['arrival_time']}", text)
+
 
 class TicketVerificationViewTests(TicketBaseMixin, TransactionTestCase):
     """Pruebas para el endpoint público de verificación por código QR."""

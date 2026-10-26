@@ -160,7 +160,11 @@ def draw_provisional_ticket(c: canvas.Canvas, data: TicketData) -> None:
     """Dibuja dos talones legibles y las condiciones completas en páginas extra."""
     width, height = A4
     arrival_date = _value(data.arrival_date or data.travel_date)
-    route_name = _value(data.route_name or f"{data.origin_stop_name} - {data.destination_stop_name}")
+    # ReportLab's fallback glyphs do not consistently contain the arrow; use
+    # an ASCII separator so the route is never rendered as a square glyph.
+    route_name = _value(
+        (data.route_name or f"{data.origin_stop_name} - {data.destination_stop_name}").replace("→", " - ")
+    )
     origin_addr = _value(data.origin_address, f"Dirección pendiente ({PENDING_SANDRO_VALUE})")
     destination_addr = _value(data.destination_address, f"Dirección pendiente ({PENDING_SANDRO_VALUE})")
     seat_label = _resolve_seat_label(data)
