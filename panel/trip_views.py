@@ -11,8 +11,19 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from operations.models import Bus, Route, Trip, TripFare, TripStop
 from .operations_views import render_operations
 from .permissions import can_manage_reservations, operations_access, reservations_access
-from .trip_forms import TripFareForm, TripScheduleForm, TripSelectionForm
-from .trip_services import FARE_ERROR, can_modify_trip_fares, create_panel_trip, save_fare, set_fare_active, start_trip, complete_trip, trip_pending_summary
+from .trip_forms import TripFareForm, TripScheduleForm, TripSelectionForm, TripStopScheduleForm
+from .trip_services import (
+    FARE_ERROR,
+    can_modify_trip_fares,
+    can_modify_trip_schedules,
+    complete_trip,
+    create_panel_trip,
+    save_fare,
+    save_trip_schedules,
+    set_fare_active,
+    start_trip,
+    trip_pending_summary,
+)
 
 
 CONFIRMATION_SALT = "panel.trip-schedule"
@@ -50,7 +61,34 @@ def trip_detail(request, pk):
                              trip=trip, display_timezone=settings.TIME_ZONE,
                              can_access_manifest=can_manage_reservations(request.user),
                              can_modify_fares=can_modify_trip_fares(trip),
+                             can_modify_schedules=can_modify_trip_schedules(trip),
                              pending_summary=pending)
+
+
+@operations_access(write=True)
+@require_http_methods(["GET", "POST"])
+def trip_stops_schedule(request, trip_pk):
+    trip = get_object_or_404(
+        Trip.objects.select_related("route", "bus").prefetch_related(
+            Prefetch("trip_stops", queryset=TripStop.objects.select_related("stop").order_by("sequence"))
+        ),
+        pk=trip_pk,
+    )
+    if request.method == "POST":
+        form, saved = save_trip_schedules(actor=request.user, trip_pk=trip_pk, data=request.POST)
+        if saved is not None:
+            messages.success(request, "Los horarios estimados por parada se guardaron correctamente.")
+            return redirect("panel:trip_detail", pk=trip_pk)
+    else:
+        form = TripStopScheduleForm(trip=trip)
+    return render_operations(
+        request,
+        "trip_schedule_form",
+        title=f"Horarios por parada · Viaje {trip.pk}",
+        form=form,
+        trip=trip,
+        display_timezone=settings.TIME_ZONE,
+    )
 
 
 @require_POST

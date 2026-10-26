@@ -882,3 +882,280 @@ class TicketsPostgresConcurrencyTests(TicketBaseMixin, TransactionTestCase):
         # Todos los hilos que terminaron deben haber recibido 2 pasajes (idempotencia)
         for r in results:
             self.assertEqual(len(r), 2)
+
+
+
+class TicketReusableDraftAndScheduleSnapshotTests(TicketBaseMixin, TransactionTestCase):
+    """Pruebas del borrador reutilizable del pasaje PDF (dos talones), horarios por parada y snapshots."""
+
+    def _extract_pdf_text(self, ticket: Ticket) -> str:
+        storage = get_ticket_storage()
+        with storage.open(ticket.pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        self.assertEqual(len(reader.pages), 1)
+        return reader.pages[0].extract_text()
+
+    def test_pdf_two_stubs_agency_vs_carrier_and_no_reference_data_leak(self):
+        booking = self.create_confirmed_booking(passenger_count=1)
+        ticket = issue_tickets_for_booking(booking)[0]
+        text = self._extract_pdf_text(ticket)
+
+        # Ambos talones presentes en el borrador reutilizable
+        self.assertIn("TALÓN SUPERIOR", text)
+        self.assertIn("TALÓN PARA EL PASAJERO", text)
+
+        # SC Viajes como agencia y empresa transportista separada
+        self.assertIn("Agencia: SC VIAJES", text)
+        self.assertIn("Empresa transportista: Pendiente de confirmación con Sandro", text)
+
+        # Datos fiscales y de seguro fijos pendientes de Sandro (no pedidos por venta ni inventados)
+        self.assertIn("Razón social: Pendiente de confirmación", text)
+        self.assertIn("CUIT: Pendiente de confirmación", text)
+        self.assertIn("IVA: Pendiente de confirmación", text)
+        self.assertIn("Inicio de actividades: Pendiente de", text)
+        self.assertIn("IIBB: Pendiente de confirmación", text)
+        self.assertIn("Usted viaja asegurado por: Pendiente de", text)
+        self.assertIn("Póliza/Ref.: Pendiente de confirmación", text)
+
+        # Prohibición estricta: nunca usar datos fiscales, números, códigos, direcciones ni tasas del PDF de referencia
+        forbidden_reference_literals = [
+            "GRAL URQUIZA",
+            "GENERAL URQUIZA",
+            "SUV-212798751-0",
+            "SCX001",
+            "30-54622766-5",
+            "908-30716745445",
+            "Protección Mutual",
+            "44945021",
+            "Calle 4 y 41",
+            "Peron 380",
+            "Perón 380",
+            "Tasa Emb",
+            "Cortesia",
+            "Cortesía",
+        ]
+        for literal in forbidden_reference_literals:
+            self.assertNotIn(literal, text)
+
+    def test_web_sale_omits_seller_while_manual_sale_includes_seller_and_real_payment_method(self):
+        from payments.models import Payment, PaymentMethod, PaymentStatus
+
+        # 1. Venta web (ONLINE) sin vendedor y con transferencia bancaria aprobada
+        online_booking = create_booking(
+            channel=BookingChannel.ONLINE,
+            email="web@scviajes.com.ar",
+            phone="3519998888",
+            legs=[
+                {
+                    "trip": self.trip_ida,
+                    "origin_stop": self.ts_cba,
+                    "destination_stop": self.ts_jujuy,
+                    "seats": [self.seat_1],
+                }
+            ],
+            passengers_data=[
+                {
+                    "first_name": "Lucía",
+                    "last_name": "Fernández",
+                    "document_type": "DNI",
+                    "document_number": "41222333",
+                    "birth_date": "1996-08-20",
+                    "nationality": "Argentina",
+                }
+            ],
+            now=self.now,
+        )
+        online_booking.status = BookingStatus.CONFIRMED
+        online_booking.confirmed_at = self.now
+        online_booking.save(update_fields=["status", "confirmed_at"])
+        SeatAssignment.objects.filter(leg__booking=online_booking).update(
+            status=AssignmentStatus.CONFIRMED,
+            updated_at=self.now,
+        )
+        Payment.objects.create(
+            booking=online_booking,
+            method=PaymentMethod.BANK_TRANSFER,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("25000.00"),
+            currency="ARS",
+            reviewed_by=self.admin_user,
+            reviewed_at=self.now,
+        )
+
+        online_ticket = issue_tickets_for_booking(online_booking)[0]
+        online_text = self._extract_pdf_text(online_ticket)
+
+        # En venta web jamás debe aparecer un vendedor
+        self.assertNotIn("Vendedor", online_text)
+        self.assertIn("Formas de pago: Transferencia bancaria", online_text)
+        self.assertIn("Detalle: Tarifa ARS 25.000,00", online_text)
+        self.assertIn("Importe total: ARS 25.000,00", online_text)
+
+        # 2. Venta manual (MANUAL) con vendedor y pago en efectivo aprobado
+        manual_booking = self.create_confirmed_booking(
+            passenger_count=1,
+            seats_list=[self.seat_2],
+        )
+        Payment.objects.create(
+            booking=manual_booking,
+            method=PaymentMethod.CASH,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("25000.00"),
+            currency="ARS",
+            registered_by=self.seller_user,
+            reviewed_by=self.seller_user,
+            reviewed_at=self.now,
+        )
+        manual_ticket = issue_tickets_for_booking(manual_booking)[0]
+        manual_text = self._extract_pdf_text(manual_ticket)
+
+        self.assertIn("Vendedor: seller_user", manual_text)
+        self.assertIn("Formas de pago: Efectivo", manual_text)
+        self.assertIn("Importe total: ARS 25.000,00", manual_text)
+
+    def test_boarding_departure_destination_arrival_midnight_crossing_and_emitted_pdf_preservation(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from operations.services import update_trip_schedules
+
+        tz_ar = ZoneInfo("America/Argentina/Buenos_Aires")
+        night_cba = datetime(2030, 5, 10, 22, 45, tzinfo=tz_ar)
+        night_jm = datetime(2030, 5, 10, 23, 35, tzinfo=tz_ar)
+        morning_jujuy = datetime(2030, 5, 11, 8, 20, tzinfo=tz_ar)
+
+        update_trip_schedules(
+            trip=self.trip_ida,
+            schedules=[
+                (self.stop_cba.pk, night_cba),
+                (self.stop_jm.pk, night_jm),
+                (self.stop_jujuy.pk, morning_jujuy),
+            ],
+        )
+
+        ts_jm = self.trip_ida.trip_stops.get(stop=self.stop_jm)
+        ts_jujuy = self.trip_ida.trip_stops.get(stop=self.stop_jujuy)
+
+        booking = create_manual_booking(
+            seller=self.seller_user,
+            email="intermedia@scviajes.com.ar",
+            phone="3525112233",
+            legs=[
+                {
+                    "trip": self.trip_ida,
+                    "origin_stop": ts_jm,
+                    "destination_stop": ts_jujuy,
+                    "seats": [self.seat_1],
+                }
+            ],
+            passengers_data=[
+                {
+                    "first_name": "Carlos",
+                    "last_name": "Sánchez",
+                    "document_type": "DNI",
+                    "document_number": "35999111",
+                    "birth_date": "1990-03-10",
+                    "nationality": "Argentina",
+                }
+            ],
+            now=self.now,
+        )
+        booking.status = BookingStatus.CONFIRMED
+        booking.confirmed_at = self.now
+        booking.save(update_fields=["status", "confirmed_at"])
+        SeatAssignment.objects.filter(leg__booking=booking).update(
+            status=AssignmentStatus.CONFIRMED,
+            updated_at=self.now,
+        )
+
+        ticket = issue_tickets_for_booking(booking)[0]
+        storage = get_ticket_storage()
+        with storage.open(ticket.pdf_path, "rb") as f:
+            original_pdf_bytes = f.read()
+
+        text = self._extract_pdf_text(ticket)
+        # Muestra la salida correspondiente al embarque (Jesús María 10/05/2030 23:35, no 22:45 de Córdoba)
+        self.assertIn("Sale de / Sube en: Jesús María", text)
+        self.assertIn("Salida: 10/05/2030 - 23:35", text)
+        self.assertNotIn("22:45", text)
+        # Muestra la llegada estimada correspondiente al destino en el día siguiente (11/05/2030 08:20)
+        self.assertIn("A / Baja en: San Salvador de Jujuy", text)
+        self.assertIn("Arribo estimado: 11/05/2030 - 08:20", text)
+
+        # Modificar posteriormente los horarios estimados de la salida NO debe recalcular ni sobrescribir el PDF emitido
+        update_trip_schedules(
+            trip=self.trip_ida,
+            schedules=[
+                (self.stop_cba.pk, night_cba + timedelta(hours=1)),
+                (self.stop_jm.pk, night_jm + timedelta(hours=1)),
+                (self.stop_jujuy.pk, morning_jujuy + timedelta(hours=2)),
+            ],
+        )
+
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.departure_at, night_jm)
+        self.assertEqual(ticket.arrival_at, morning_jujuy)
+
+        reissued = issue_tickets_for_booking(booking)[0]
+        self.assertEqual(reissued.pk, ticket.pk)
+        with storage.open(ticket.pdf_path, "rb") as f:
+            after_pdf_bytes = f.read()
+        self.assertEqual(after_pdf_bytes, original_pdf_bytes)
+
+    def test_lap_infant_without_seat_is_preserved_in_pdf_without_fake_seat(self):
+        booking = create_manual_booking(
+            seller=self.seller_user,
+            email="familia@scviajes.com.ar",
+            phone="3514445566",
+            legs=[
+                {
+                    "trip": self.trip_ida,
+                    "origin_stop": self.ts_cba,
+                    "destination_stop": self.ts_jujuy,
+                    "seats": [self.seat_3],
+                }
+            ],
+            passengers_data=[
+                {
+                    "first_name": "Laura",
+                    "last_name": "Gómez",
+                    "document_type": "DNI",
+                    "document_number": "32111222",
+                    "birth_date": "1992-04-12",
+                    "nationality": "Argentina",
+                    "gender": "F",
+                },
+                {
+                    "first_name": "Mateo",
+                    "last_name": "Gómez",
+                    "document_type": "DNI",
+                    "document_number": "58111222",
+                    "birth_date": (self.departure_ida.date() - timedelta(days=365)).isoformat(),
+                    "nationality": "Argentina",
+                    "accompanied_by_position": 1,
+                },
+            ],
+            now=self.now,
+        )
+        booking.status = BookingStatus.CONFIRMED
+        booking.confirmed_at = self.now
+        booking.save(update_fields=["status", "confirmed_at"])
+        SeatAssignment.objects.filter(leg__booking=booking).update(
+            status=AssignmentStatus.CONFIRMED,
+            updated_at=self.now,
+        )
+
+        tickets = issue_tickets_for_booking(booking)
+        self.assertEqual(len(tickets), 2)
+
+        infant_ticket = next(t for t in tickets if t.passenger.is_lap_infant)
+        self.assertIsNone(infant_ticket.seat_number)
+        self.assertEqual(infant_ticket.seat_category, "LAP_INFANT")
+        self.assertEqual(infant_ticket.seat_category_display, "Sin butaca")
+        self.assertEqual(infant_ticket.price, Decimal("0.00"))
+
+        infant_text = self._extract_pdf_text(infant_ticket)
+        self.assertIn("Categoría / Butaca: Sin butaca - Butaca: Sin butaca", infant_text)
+        self.assertIn("Adulto acompañante: Laura Gómez", infant_text)
+        self.assertIn("Detalle: Tarifa ARS 0,00 (Menor sin butaca)", infant_text)
+        self.assertIn("Importe total: ARS 0,00", infant_text)

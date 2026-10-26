@@ -3,8 +3,8 @@
 import hashlib
 import secrets
 import uuid
-from decimal import Decimal
 from datetime import timedelta
+from decimal import Decimal
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -13,7 +13,8 @@ from django.core.mail import EmailMessage
 from django.db import models, transaction
 from django.utils import timezone
 
-from sales.models import AssignmentStatus, Booking, BookingStatus, SeatAssignment
+from core.site_config import public_url
+from sales.models import AssignmentStatus, Booking, BookingChannel, BookingStatus, SeatAssignment
 from .exceptions import (
     InvalidTicketError,
     TicketEmailError,
@@ -33,8 +34,73 @@ from .models import (
     mask_document,
 )
 from .rendering import TicketData, build_ticket_pdf
+from .rendering.data import PENDING_SANDRO_VALUE
 from .storage import get_ticket_storage
-from core.site_config import public_url
+
+
+def _format_money(currency: str, amount: Decimal) -> str:
+    val = Decimal(amount if amount is not None else Decimal("0.00"))
+    return (
+        f"{currency or 'ARS'} {val:,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+def _resolve_seller_display(booking: Booking) -> str:
+    """Retorna el vendedor solo para ventas manuales; vacío para ventas web."""
+    if booking.channel != BookingChannel.MANUAL or not booking.seller_id or not booking.seller:
+        return ""
+    full_name = booking.seller.get_full_name().strip()
+    return full_name or booking.seller.get_username()
+
+
+def _resolve_payment_method_display(booking: Booking) -> str:
+    """Obtiene el medio de pago real registrado para la reserva."""
+    payment = (
+        booking.payments.filter(status="APPROVED")
+        .order_by("-reviewed_at", "-created_at", "-pk")
+        .first()
+    )
+    if payment is None:
+        payment = booking.payments.order_by("-created_at", "-pk").first()
+    if payment is not None and hasattr(payment, "get_method_display"):
+        return payment.get_method_display()
+    return "Sin pago registrado"
+
+
+def _resolve_stop_address(trip_stop) -> str:
+    """Construye la ubicación/dirección conocida de la parada sin inventar datos."""
+    stop = getattr(trip_stop, "stop", None)
+    if stop is None:
+        return f"Dirección pendiente ({PENDING_SANDRO_VALUE})"
+    configured_addresses = getattr(settings, "TICKETS_STOP_ADDRESSES", {}) or {}
+    exact = str(configured_addresses.get(stop.code, "")).strip()
+    location = ", ".join(part for part in [stop.city, stop.province] if part)
+    if exact:
+        return f"{location} - {exact}" if location else exact
+    if location:
+        return f"{location} (dirección exacta pendiente)"
+    return f"Dirección pendiente ({PENDING_SANDRO_VALUE})"
+
+
+def _fixed_carrier_config() -> dict[str, str]:
+    """Configuración fija de agencia, transportista, datos fiscales y seguro pendiente de Sandro."""
+    return {
+        "agency_name": str(getattr(settings, "TICKETS_AGENCY_NAME", "SC VIAJES")).strip() or "SC VIAJES",
+        "carrier_name": str(getattr(settings, "TICKETS_CARRIER_NAME", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "carrier_legal_name": str(getattr(settings, "TICKETS_CARRIER_LEGAL_NAME", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "carrier_cuit": str(getattr(settings, "TICKETS_CARRIER_CUIT", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "carrier_vat_condition": str(getattr(settings, "TICKETS_CARRIER_VAT_CONDITION", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "carrier_activity_start": str(getattr(settings, "TICKETS_CARRIER_ACTIVITY_START", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "carrier_iibb": str(getattr(settings, "TICKETS_CARRIER_IIBB", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "insurer_name": str(getattr(settings, "TICKETS_INSURER_NAME", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "insurance_policy_ref": str(getattr(settings, "TICKETS_INSURANCE_POLICY_REF", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "service_quality_display": str(getattr(settings, "TICKETS_SERVICE_QUALITY_DISPLAY", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "platform_announcement": str(getattr(settings, "TICKETS_PLATFORM_ANNOUNCEMENT", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "contact_whatsapp": str(getattr(settings, "TICKETS_CONTACT_WHATSAPP", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+    }
 
 
 def generate_ticket_code(booking: Booking, leg, passenger) -> str:
@@ -85,7 +151,11 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
 
     try:
         with transaction.atomic():
-            booking = Booking.objects.select_for_update().get(pk=booking_id)
+            booking = (
+                Booking.objects.select_for_update()
+                .select_related("seller")
+                .get(pk=booking_id)
+            )
 
             if booking.status != BookingStatus.CONFIRMED:
                 raise InvalidTicketError(
@@ -109,8 +179,16 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
 
                 raise InvalidTicketError("Estado inconsistente de pasajes existentes para la reserva.")
 
-            legs = list(booking.legs.order_by("sequence"))
-            passengers = list(booking.passengers.order_by("position"))
+            legs = list(
+                booking.legs.select_related(
+                    "trip__route",
+                    "origin_stop__stop",
+                    "destination_stop__stop",
+                ).order_by("sequence")
+            )
+            passengers = list(
+                booking.passengers.select_related("accompanied_by").order_by("position")
+            )
             expected_count = len(legs) * len(passengers)
             expected_assignment_count = len(legs) * sum(not passenger.is_lap_infant for passenger in passengers)
 
@@ -136,7 +214,22 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                 if a.passenger.booking_id != booking.id:
                     raise InvalidTicketError("Asignación de butaca vinculada a un pasajero de otra reserva.")
 
+            seller_display = _resolve_seller_display(booking)
+            payment_method_display = _resolve_payment_method_display(booking)
+            fixed_config = _fixed_carrier_config()
+            local_issued_at = timezone.localtime(effective_now)
+
             for leg in legs:
+                local_departure = timezone.localtime(leg.departure_at)
+                local_arrival = timezone.localtime(leg.arrival_at)
+                route_name = (
+                    leg.trip.route.name
+                    if getattr(leg, "trip_id", None) and getattr(leg.trip, "route_id", None)
+                    else f"{leg.origin_stop_name} - {leg.destination_stop_name}"
+                )
+                origin_address = _resolve_stop_address(leg.origin_stop)
+                destination_address = _resolve_stop_address(leg.destination_stop)
+
                 for passenger in passengers:
                     assignment = next(
                         (a for a in assignments if a.leg_id == leg.id and a.passenger_id == passenger.id),
@@ -165,6 +258,20 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                     if not p_name:
                         p_name = f"Pasajero {passenger.position}"
 
+                    ticket_currency = assignment.currency if assignment else "ARS"
+                    ticket_price = assignment.price if assignment else Decimal("0.00")
+                    price_display = _format_money(ticket_currency, ticket_price)
+                    fare_detail_display = (
+                        f"Tarifa {price_display} (Menor sin butaca)"
+                        if passenger.is_lap_infant
+                        else f"Tarifa {price_display}"
+                    )
+                    companion_name = ""
+                    if passenger.accompanied_by_id and passenger.accompanied_by:
+                        companion_name = (
+                            f"{passenger.accompanied_by.first_name} {passenger.accompanied_by.last_name}".strip()
+                        )
+
                     # Preparar estructura desacoplada de datos para el PDF
                     ticket_data = TicketData(
                         ticket_code=ticket_code,
@@ -173,20 +280,26 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         masked_document=masked_doc,
                         origin_stop_name=leg.origin_stop_name,
                         destination_stop_name=leg.destination_stop_name,
-                        travel_date=leg.departure_at.strftime("%d/%m/%Y"),
-                        departure_time=leg.departure_at.strftime("%H:%M"),
+                        travel_date=local_departure.strftime("%d/%m/%Y"),
+                        departure_time=local_departure.strftime("%H:%M"),
                         boarding_place=leg.origin_stop_name,
-                        arrival_time=leg.arrival_at.strftime("%H:%M"),
+                        arrival_time=local_arrival.strftime("%H:%M"),
                         seat_number=str(assignment.seat_number) if assignment else "Sin butaca",
                         category_display=cat_display,
-                        price_display=(
-                            f"{assignment.currency if assignment else 'ARS'} {(assignment.price if assignment else 0):,.2f}"
-                            .replace(",", "X")
-                            .replace(".", ",")
-                            .replace("X", ".")
-                        ),
-                        issued_at=effective_now.strftime("%d/%m/%Y %H:%M"),
+                        price_display=price_display,
+                        issued_at=local_issued_at.strftime("%d/%m/%Y %H:%M"),
                         qr_payload_url=qr_url,
+                        arrival_date=local_arrival.strftime("%d/%m/%Y"),
+                        route_name=route_name,
+                        origin_address=origin_address,
+                        destination_address=destination_address,
+                        seller_display=seller_display,
+                        payment_method_display=payment_method_display,
+                        fare_detail_display=fare_detail_display,
+                        total_amount_display=price_display,
+                        is_lap_infant=passenger.is_lap_infant,
+                        companion_name=companion_name,
+                        **fixed_config,
                     )
 
                     # Renderizar PDF y guardar en almacenamiento privado
@@ -215,8 +328,8 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         seat_number=assignment.seat_number if assignment else None,
                         seat_category=assignment.category if assignment else "LAP_INFANT",
                         seat_category_display=cat_display,
-                        price=assignment.price if assignment else Decimal("0.00"),
-                        currency=assignment.currency if assignment else "ARS",
+                        price=ticket_price,
+                        currency=ticket_currency,
                         booking_public_id=booking.public_id,
                     )
                     ticket.full_clean()

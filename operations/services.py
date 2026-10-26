@@ -89,6 +89,90 @@ def schedule_trip(*, route, bus, schedules):
     return trip
 
 
+@transaction.atomic
+def update_trip_schedules(*, trip, schedules):
+    """Actualiza los horarios estimados por parada (TripStop.scheduled_at) de una salida.
+
+    Reutiliza TripStop.scheduled_at sin crear un segundo circuito de horarios.
+    Valida pertenencia de cada parada al recorrido de la salida, secuencia y orden
+    cronológico estricto con fechas conscientes de zona horaria (incluyendo cruces
+    de medianoche). No recalcula reservas ni pasajes históricos ya emitidos.
+    """
+    if trip is None or trip.pk is None:
+        raise ValidationError("El viaje debe estar guardado para actualizar sus horarios.")
+    try:
+        trip = Trip.objects.select_for_update().select_related("route", "bus").get(pk=trip.pk)
+        bus = Bus.objects.select_for_update().get(pk=trip.bus_id)
+    except (Trip.DoesNotExist, Bus.DoesNotExist) as exc:
+        raise ValidationError("El viaje o el colectivo ya no existe.") from exc
+
+    if (
+        trip.status in (Trip.Status.STARTED, Trip.Status.COMPLETED, Trip.Status.CANCELLED)
+        or trip.started_at is not None
+        or trip.completed_at is not None
+    ):
+        raise ValidationError("No se pueden modificar los horarios de un viaje iniciado, finalizado o cancelado.")
+
+    trip_stops = list(trip.trip_stops.select_for_update().select_related("stop").order_by("sequence"))
+    if not trip_stops:
+        raise ValidationError("El viaje no tiene paradas configuradas.")
+
+    if schedules is None or isinstance(schedules, (str, bytes)):
+        raise ValidationError("Los horarios deben ser pares de identificador de parada y fecha con zona horaria.")
+
+    times = {}
+    try:
+        entries = schedules.items() if isinstance(schedules, Mapping) else schedules
+        for stop_id, scheduled_at in entries:
+            if stop_id in times:
+                raise ValidationError("No se puede repetir el horario de una misma parada.")
+            validate_aware_datetime(scheduled_at)
+            times[stop_id] = scheduled_at
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Los horarios deben ser pares de identificador de parada y fecha con zona horaria.") from exc
+
+    expected_stop_ids = {item.stop_id for item in trip_stops}
+    if set(times) - expected_stop_ids:
+        raise ValidationError("Se indicaron paradas que no pertenecen al recorrido de esta salida.")
+    if set(times) != expected_stop_ids:
+        raise ValidationError("Indicá exactamente un horario por parada, sin faltantes ni adicionales.")
+
+    previous = None
+    for index, item in enumerate(trip_stops, start=1):
+        if item.sequence != index:
+            raise ValidationError("La secuencia de paradas del viaje no es consecutiva.")
+        instant = times[item.stop_id].astimezone(datetime_timezone.utc)
+        if previous is not None and instant <= previous:
+            raise ValidationError("Los horarios deben ser estrictamente crecientes según el orden del recorrido.")
+        previous = instant
+
+    stops = TripStop.objects.filter(trip_id=OuterRef("pk"))
+    conflicts = (
+        Trip.objects.filter(bus=bus)
+        .exclude(pk=trip.pk)
+        .exclude(status=Trip.Status.CANCELLED)
+        .annotate(
+            interval_start=Subquery(stops.order_by("sequence").values("scheduled_at")[:1]),
+            interval_end=Subquery(stops.order_by("-sequence").values("scheduled_at")[:1]),
+        )
+        .filter(
+            interval_start__lt=times[trip_stops[-1].stop_id],
+            interval_end__gt=times[trip_stops[0].stop_id],
+        )
+    )
+    if conflicts.exists():
+        raise ValidationError("El colectivo ya tiene un viaje con horarios superpuestos.")
+
+    trip.departure_at = times[trip_stops[0].stop_id]
+    trip.full_clean()
+    trip.save(update_fields=["departure_at", "updated_at"])
+    for item in trip_stops:
+        item.scheduled_at = times[item.stop_id]
+        item.full_clean()
+        item.save(update_fields=["scheduled_at"])
+    return trip
+
+
 def _extract_fare_field(record, name, default=None):
     if isinstance(record, Mapping):
         return record.get(name, default)
