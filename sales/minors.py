@@ -1,9 +1,14 @@
 """Política provisional para menores gratuitos sin butaca.
 
+Umbral vigente: menores de 5 años (0 a 4 años cumplidos; con 5 años cumplidos
+en la fecha de referencia de la compra ya requiere tarifa y butaca para una
+compra nueva).
+
 Hoy no existe un instante de compra separado de ``Booking.created_at`` antes
-de confirmar una reserva. Mientras Sandro no confirme otra definición, el
-servicio recibe ``purchase_at`` al crearla y guarda el resultado en el pasajero.
-No se recalcula al confirmar ni al consultar.
+de confirmar una reserva. Mientras Sandro no confirme otra definición entre
+creación de reserva y confirmación de pago, el servicio recibe ``purchase_at``
+al crear la reserva y guarda el resultado como snapshot en el pasajero.
+No se recalcula al confirmar, emitir ni consultar.
 """
 
 from datetime import date, datetime
@@ -12,7 +17,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 
-MINOR_FREE_AGE_YEARS = 2
+MINOR_FREE_AGE_YEARS = 5
 MINOR_POLICY_ID = "provisional-created-at-until-sandro"
 
 
@@ -27,7 +32,15 @@ def is_free_lap_infant(birth_date: date, purchase_at: datetime) -> bool:
     if not birth_date:
         return False
     if isinstance(birth_date, str):
-        birth_date = date.fromisoformat(birth_date.strip())
+        birth_date = birth_date.strip()
+        if not birth_date:
+            return False
+        try:
+            birth_date = date.fromisoformat(birth_date)
+        except ValueError as exc:
+            raise ValidationError({"birth_date": "La fecha de nacimiento no es válida."}) from exc
+    elif isinstance(birth_date, datetime):
+        birth_date = birth_date.date()
     local_date = timezone.localtime(purchase_at).date() if timezone.is_aware(purchase_at) else purchase_at.date()
     return age_on(birth_date, local_date) < MINOR_FREE_AGE_YEARS
 

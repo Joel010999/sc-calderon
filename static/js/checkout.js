@@ -53,12 +53,14 @@ document.addEventListener('DOMContentLoaded', () => {
     return age;
   }
 
+  const MINOR_FREE_AGE_YEARS = 5;
+
   function requiredSeatCount() {
     let freeInfants = 0;
     for (let position = 1; position <= passengersLimit; position++) {
       const birth = document.querySelector(`[name="passenger_${position}_birth_date"]`);
       const mother = document.querySelector(`[name="passenger_${position}_accompanied_by_position"]`);
-      if (birth && ageOnToday(birth.value) < 2 && mother && mother.value) freeInfants++;
+      if (birth && ageOnToday(birth.value) < MINOR_FREE_AGE_YEARS && mother && mother.value) freeInfants++;
     }
     return passengersLimit - freeInfants;
   }
