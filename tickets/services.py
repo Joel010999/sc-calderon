@@ -152,7 +152,10 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
     try:
         with transaction.atomic():
             booking = (
-                Booking.objects.select_for_update()
+                # `seller` es nullable para reservas online. En PostgreSQL un
+                # FOR UPDATE sin `of=("self",)` falla sobre el lado nullable del
+                # LEFT OUTER JOIN; la raíz transaccional a bloquear es `Booking`.
+                Booking.objects.select_for_update(of=("self",))
                 .select_related("seller")
                 .get(pk=booking_id)
             )

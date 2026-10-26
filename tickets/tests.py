@@ -426,6 +426,40 @@ class TicketAtomicityAndCleanupTests(TicketBaseMixin, TransactionTestCase):
         files_2 = sorted(os.listdir(os.path.join(self.temp_storage_dir, "tickets")))
         self.assertEqual(files_1, files_2)
 
+    def test_booking_lock_query_uses_for_update_of_self_with_nullable_seller_join(self):
+        from django.db.backends.postgresql.base import DatabaseWrapper
+
+        booking = self.create_confirmed_booking(passenger_count=1)
+        captured_ofs = []
+        original_select_for_update = Booking.objects.select_for_update
+
+        def spy_select_for_update(*args, **kwargs):
+            captured_ofs.append(kwargs.get("of"))
+            return original_select_for_update(*args, **kwargs)
+
+        with patch.object(Booking.objects, "select_for_update", side_effect=spy_select_for_update):
+            tickets = issue_tickets_for_booking(booking)
+
+        self.assertEqual(len(tickets), 1)
+        self.assertEqual(captured_ofs, [("self",)])
+
+        pg_wrapper = DatabaseWrapper(
+            {"ENGINE": "django.db.backends.postgresql", "NAME": "scviajes_ci", "TIME_ZONE": None},
+            alias="pg_contract",
+        )
+        pg_wrapper.in_atomic_block = True
+        pg_wrapper.get_autocommit = lambda: False
+        lock_qs = (
+            Booking.objects.select_for_update(of=("self",))
+            .select_related("seller")
+            .filter(pk=booking.pk)
+        )
+        lock_qs.query.clear_ordering(force=True)
+        compiled_sql, _ = lock_qs.query.get_compiler(connection=pg_wrapper).as_sql()
+        self.assertIn("LEFT OUTER JOIN", compiled_sql)
+        self.assertIn('FOR UPDATE OF "sales_booking"', compiled_sql)
+        self.assertFalse(compiled_sql.rstrip().endswith("FOR UPDATE"))
+
     def test_reissuance_rejected_if_any_ticket_is_void(self):
         booking = self.create_confirmed_booking(passenger_count=2)
         tickets = issue_tickets_for_booking(booking)
@@ -854,7 +888,7 @@ class TicketsPostgresConcurrencyTests(TicketBaseMixin, TransactionTestCase):
         if connection.vendor != "postgresql":
             self.skipTest("Prueba específica para PostgreSQL.")
 
-        from django.db import connections
+        from django.db import close_old_connections, connections
 
         booking = self.create_confirmed_booking(passenger_count=2)
         errors = []
@@ -862,6 +896,7 @@ class TicketsPostgresConcurrencyTests(TicketBaseMixin, TransactionTestCase):
 
         def worker():
             try:
+                close_old_connections()
                 # Cada hilo utiliza su propia conexión
                 t = issue_tickets_for_booking(booking)
                 results.append(t)
@@ -875,6 +910,13 @@ class TicketsPostgresConcurrencyTests(TicketBaseMixin, TransactionTestCase):
             th.start()
         for th in threads:
             th.join()
+
+        self.assertEqual(
+            errors,
+            [],
+            f"La emisión concurrente en PostgreSQL no debe lanzar excepciones: {errors!r}",
+        )
+        self.assertEqual(len(results), 3)
 
         # Debe haber exactamente 2 pasajes en la DB sin duplicados
         self.assertEqual(Ticket.objects.filter(booking=booking).count(), 2)
