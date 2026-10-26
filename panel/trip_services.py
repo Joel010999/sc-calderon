@@ -1,4 +1,4 @@
-"""Coordinación transaccional del panel de viajes y tarifas."""
+"""Coordinación transaccional del panel de viajes, horarios por parada y tarifas."""
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -6,17 +6,27 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from operations.models import Trip, TripFare
-from operations.services import schedule_trip
+from operations.services import schedule_trip, update_trip_schedules
 from .models import AuditEvent
 from .permissions import require_operations_manager
 from .services import record_event, snapshot
-from .trip_forms import TripFareForm
+from .trip_forms import TripFareForm, TripStopScheduleForm
 
 
 FARE_ERROR = "No se pudo guardar la tarifa. Revisá si ya existe una tarifa para ese viaje y categoría."
+SCHEDULE_ERROR = "No se pudieron guardar los horarios de la salida. Revisá los datos e intentá nuevamente."
 
 
 def can_modify_trip_fares(trip, now=None):
+    effective_now = now or timezone.now()
+    if trip.status not in (Trip.Status.SCHEDULED, Trip.Status.BOARDING):
+        return False
+    if trip.started_at is not None or trip.completed_at is not None:
+        return False
+    return effective_now < trip.departure_at
+
+
+def can_modify_trip_schedules(trip, now=None):
     effective_now = now or timezone.now()
     if trip.status not in (Trip.Status.SCHEDULED, Trip.Status.BOARDING):
         return False
@@ -103,6 +113,56 @@ def create_panel_trip(*, actor, route, bus, schedules):
         raise ValidationError("La salida debe estar en el futuro.")
     record_event(actor, trip, AuditEvent.Action.CREATE, {})
     return trip
+
+
+def save_trip_schedules(*, actor, trip_pk, data, now=None):
+    """Actualiza los horarios estimados por parada de una salida desde el panel.
+
+    Exige rol Administrador/superusuario, bloquea el viaje y su colectivo en
+    transacción, valida cronología/pertenencia/formato sin usar 00:00 implícito
+    y registra auditoría sanitizada en panel.AuditEvent cuando hay cambios reales.
+    """
+    require_operations_manager(actor)
+    effective_now = now or timezone.now()
+    form = None
+    try:
+        with transaction.atomic():
+            trip = get_object_or_404(
+                Trip.objects.select_for_update().select_related("route", "bus"),
+                pk=trip_pk,
+            )
+            before = snapshot(trip)
+            form = TripStopScheduleForm(data, trip=trip)
+            if not can_modify_trip_schedules(trip, now=effective_now):
+                form.add_error(
+                    None,
+                    "Solo se pueden cargar o modificar horarios antes de la salida del viaje.",
+                )
+                return form, None
+            if not form.is_valid():
+                return form, None
+            schedules = form.schedules()
+            first_stop = form.trip_stops[0]
+            if schedules[first_stop.stop_id] <= effective_now:
+                form.add_error(
+                    f"stop_{first_stop.stop_id}",
+                    "La salida debe estar en el futuro.",
+                )
+                return form, None
+            trip = update_trip_schedules(trip=trip, schedules=schedules)
+            if before != snapshot(trip):
+                record_event(actor, trip, AuditEvent.Action.UPDATE, before)
+            return form, trip
+    except ValidationError as error:
+        if form is None:
+            raise
+        form.add_error(None, error.messages if getattr(error, "messages", None) else str(error))
+        return form, None
+    except IntegrityError:
+        if form is None:
+            raise
+        form.add_error(None, SCHEDULE_ERROR)
+        return form, None
 
 
 def save_fare(*, actor, trip_pk, data, pk=None, now=None):
