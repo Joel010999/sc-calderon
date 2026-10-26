@@ -40,12 +40,15 @@ from .storage import get_ticket_storage
 
 def _format_money(currency: str, amount: Decimal) -> str:
     val = Decimal(amount if amount is not None else Decimal("0.00"))
-    return (
-        f"{currency or 'ARS'} {val:,.2f}"
+    formatted = (
+        f"{val:,.2f}"
         .replace(",", "X")
         .replace(".", ",")
         .replace("X", ".")
     )
+    if (currency or "ARS").upper() == "ARS":
+        return f"$ {formatted}"
+    return f"{currency} {formatted}"
 
 
 def _resolve_seller_display(booking: Booking) -> str:
@@ -264,6 +267,11 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                     ticket_currency = assignment.currency if assignment else "ARS"
                     ticket_price = assignment.price if assignment else Decimal("0.00")
                     price_display = _format_money(ticket_currency, ticket_price)
+                    payment_method_display_for_ticket = (
+                        "Pasaje gratuito — sin butaca"
+                        if passenger.is_lap_infant
+                        else payment_method_display
+                    )
                     fare_detail_display = (
                         f"Tarifa {price_display} (Menor sin butaca)"
                         if passenger.is_lap_infant
@@ -297,7 +305,7 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         origin_address=origin_address,
                         destination_address=destination_address,
                         seller_display=seller_display,
-                        payment_method_display=payment_method_display,
+                        payment_method_display=payment_method_display_for_ticket,
                         fare_detail_display=fare_detail_display,
                         total_amount_display=price_display,
                         is_lap_infant=passenger.is_lap_infant,

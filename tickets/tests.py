@@ -491,8 +491,8 @@ class TicketPdfAndQrParsingTests(TicketBaseMixin, TransactionTestCase):
             pdf_bytes = f.read()
 
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-        self.assertEqual(len(reader.pages), 1)
-        text = reader.pages[0].extract_text()
+        self.assertGreaterEqual(len(reader.pages), 2)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
         # Comprobaciones de contenido obligatorio
         self.assertIn("SC VIAJES", text)
@@ -502,7 +502,8 @@ class TicketPdfAndQrParsingTests(TicketBaseMixin, TransactionTestCase):
         self.assertIn("DNI ***3456", text)
         self.assertIn("Córdoba Capital", text)
         self.assertIn("San Salvador de Jujuy", text)
-        self.assertIn("Plantilla provisional reemplazable sin cambiar dominio", text)
+        self.assertNotIn("Plantilla provisional reemplazable sin cambiar dominio", text)
+        self.assertIn("CONDICIONES DEL PASAJE", text)
         self.assertIn("Presentarse con documento de identidad para abordar", text)
 
         # Privacidad: el documento completo NO debe figurar en el texto del PDF
@@ -574,6 +575,36 @@ class TicketPdfAndQrParsingTests(TicketBaseMixin, TransactionTestCase):
             diff_tampered.getbbox(),
             "Una variación en el token debería alterar la estructura de la imagen QR.",
         )
+
+
+    def test_long_passenger_fields_wrap_and_keep_branded_logo(self):
+        data = TicketData(
+            ticket_code="SYN-LONG-001",
+            booking_code="RES-LONG-001",
+            passenger_name="Nombre sintético deliberadamente extenso para verificar el ajuste de líneas",
+            masked_document="DNI ***999",
+            origin_stop_name="Córdoba - Terminal nueva de denominación extensa",
+            destination_stop_name="San Salvador de Jujuy - Terminal de ómnibus",
+            travel_date="26/10/2026",
+            departure_time="22:30",
+            boarding_place="Plataforma sintética número 17 con una referencia larga",
+            arrival_time="07:15",
+            arrival_date="27/10/2026",
+            seat_number="12",
+            category_display="Cama",
+            price_display="$ 55.000,00",
+            issued_at="26/10/2026 10:30",
+            qr_payload_url="https://scviajes.test/tickets/verify/?token=SYN-LONG-001",
+            total_amount_display="$ 55.000,00",
+            fare_detail_display="$ 55.000,00",
+            carrier_legal_name="Transportista sintético con una razón social extensa S.A.",
+        )
+        reader = pypdf.PdfReader(io.BytesIO(build_ticket_pdf(data)))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        self.assertGreaterEqual(len(reader.pages), 2)
+        self.assertNotIn("…", text)
+        self.assertIn("CONDICIONES DEL PASAJE", text)
+        self.assertTrue(len(reader.pages[0].images) >= 1)
 
 
 class TicketVerificationViewTests(TicketBaseMixin, TransactionTestCase):
@@ -935,8 +966,8 @@ class TicketReusableDraftAndScheduleSnapshotTests(TicketBaseMixin, TransactionTe
         with storage.open(ticket.pdf_path, "rb") as f:
             pdf_bytes = f.read()
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-        self.assertEqual(len(reader.pages), 1)
-        return reader.pages[0].extract_text()
+        self.assertGreaterEqual(len(reader.pages), 2)
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
 
     def test_pdf_two_stubs_agency_vs_carrier_and_no_reference_data_leak(self):
         booking = self.create_confirmed_booking(passenger_count=1)
@@ -1031,8 +1062,8 @@ class TicketReusableDraftAndScheduleSnapshotTests(TicketBaseMixin, TransactionTe
         # En venta web jamás debe aparecer un vendedor
         self.assertNotIn("Vendedor", online_text)
         self.assertIn("Formas de pago: Transferencia bancaria", online_text)
-        self.assertIn("Detalle: Tarifa ARS 25.000,00", online_text)
-        self.assertIn("Importe total: ARS 25.000,00", online_text)
+        self.assertIn("Detalle: Tarifa $ 25.000,00", online_text)
+        self.assertIn("Importe total: $ 25.000,00", online_text)
 
         # 2. Venta manual (MANUAL) con vendedor y pago en efectivo aprobado
         manual_booking = self.create_confirmed_booking(
@@ -1054,7 +1085,7 @@ class TicketReusableDraftAndScheduleSnapshotTests(TicketBaseMixin, TransactionTe
 
         self.assertIn("Vendedor: seller_user", manual_text)
         self.assertIn("Formas de pago: Efectivo", manual_text)
-        self.assertIn("Importe total: ARS 25.000,00", manual_text)
+        self.assertIn("Importe total: $ 25.000,00", manual_text)
 
     def test_boarding_departure_destination_arrival_midnight_crossing_and_emitted_pdf_preservation(self):
         from datetime import datetime
@@ -1199,5 +1230,6 @@ class TicketReusableDraftAndScheduleSnapshotTests(TicketBaseMixin, TransactionTe
         infant_text = self._extract_pdf_text(infant_ticket)
         self.assertIn("Categoría / Butaca: Sin butaca - Butaca: Sin butaca", infant_text)
         self.assertIn("Adulto acompañante: Laura Gómez", infant_text)
-        self.assertIn("Detalle: Tarifa ARS 0,00 (Menor sin butaca)", infant_text)
-        self.assertIn("Importe total: ARS 0,00", infant_text)
+        self.assertIn("Detalle: Tarifa $ 0,00 (Menor sin butaca)", infant_text)
+        self.assertIn("Importe total: $ 0,00", infant_text)
+        self.assertIn("Pasaje gratuito — sin butaca", infant_text)

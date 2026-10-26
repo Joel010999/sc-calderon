@@ -22,7 +22,9 @@ class TicketData:
     price_display: str
     issued_at: str
     qr_payload_url: str
-    provisional_notice: str = "Plantilla provisional reemplazable sin cambiar dominio"
+    # Compatibilidad con llamadores antiguos; las notas técnicas no se
+    # imprimen en el documento del pasajero.
+    provisional_notice: str = ""
     id_requirement_notice: str = "Presentarse con documento de identidad para abordar"
     arrival_date: str = ""
     route_name: str = ""
@@ -46,4 +48,4 @@ class TicketData:
     service_quality_display: str = PENDING_SANDRO_VALUE
     platform_announcement: str = PENDING_SANDRO_VALUE
     contact_whatsapp: str = PENDING_SANDRO_VALUE
-    conditions_notice: str = "Condiciones generales de transporte sujetas a validación legal de Sandro."
+    conditions_notice: str = ""

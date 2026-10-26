@@ -1,25 +1,73 @@
-"""Plantilla visual provisional reutilizable (dos talones) para pasajes de SC Viajes."""
+"""Renderizado legible y estable del pasaje electrónico de SC Viajes."""
 
 import io
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import qrcode
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Paragraph
 
 from .data import PENDING_SANDRO_VALUE, TicketData
 
-# Ruta canónica del logo institucional incorporado al proyecto desde las referencias de Sandro.
 LOGO_ASSET_REL_PATH = Path("static/assets/scviajes-logo.png")
 
 
-def _truncate(text: str, max_len: int) -> str:
-    clean = (text or "").strip()
-    if len(clean) <= max_len:
-        return clean
-    return clean[: max_len - 1].rstrip() + "…"
+def _register_fonts() -> tuple[str, str]:
+    """Usa Vera, distribuida con ReportLab, para embebido Unicode estable."""
+    try:
+        import reportlab
+
+        font_dir = Path(reportlab.__file__).resolve().parent / "fonts"
+        pdfmetrics.registerFont(TTFont("SCVera", str(font_dir / "Vera.ttf")))
+        pdfmetrics.registerFont(TTFont("SCVera-Bold", str(font_dir / "VeraBd.ttf")))
+        pdfmetrics.registerFontFamily("SCVera", normal="SCVera", bold="SCVera-Bold")
+        return "SCVera", "SCVera-Bold"
+    except Exception:
+        return "Helvetica", "Helvetica-Bold"
+
+
+FONT_REGULAR, FONT_BOLD = _register_fonts()
+
+BODY = ParagraphStyle("TicketBody", fontName=FONT_REGULAR, fontSize=8.2, leading=10.4, textColor=colors.HexColor("#0f172a"))
+SMALL = ParagraphStyle("TicketSmall", parent=BODY, fontSize=7.2, leading=9.0, textColor=colors.HexColor("#334155"))
+CONDITION = ParagraphStyle("TicketCondition", parent=BODY, fontSize=8.4, leading=11.3, spaceAfter=7)
+
+# Texto de condiciones del Word editado. Las preguntas, notas y datos a
+# completar no se imprimen. La leyenda de validación evita presentar normas
+# como verificadas por el sistema.
+PASSENGER_CONDITIONS = (
+    ("VALIDEZ", "El pasaje es válido solo para el día, hora y servicios seleccionados. Se aceptarán devoluciones conforme a las deducciones y retenciones que se indican según la empresa transportista."),
+    ("DEVOLUCIONES EN SERVICIOS NACIONALES", "Retenciones del texto de referencia: a) desde las 24 horas anteriores y hasta una hora antes de la salida del servicio: 30%; b) desde las 48 horas y hasta las 24 horas anteriores a la salida del servicio: 20%; c) más de 48 horas antes de la salida del servicio: 10%."),
+    ("DEVOLUCIONES EN SERVICIOS PROVINCIALES", "a) antes de las 24 horas: 20%; b) dentro de las 24 horas de iniciación del servicio, no hay reintegros."),
+    ("REAJUSTE Y CONSERVACIÓN", "Texto de referencia: pasaje sujeto a reajuste al momento del viaje. El presente pasaje deberá conservarlo el pasajero y será intransferible."),
+    ("EQUIPAJE", "Este pasaje da derecho a transportar hasta 15 kilos de equipaje sin cargo. La empresa no se responsabiliza por los equipajes transportados y no despachados."),
+    ("MENORES Y ACOMPAÑAMIENTO", "Los menores de DOCE (12) años, inclusive, no podrán viajar solos; podrán viajar acompañados por al menos UN (1) representante legal o por un tercero autorizado por al menos UN (1) representante legal. Los menores de entre TRECE (13) y DIECISIETE (17) años podrán viajar solos si contaren con autorización legal. Todos los pasajeros menores de DIECIOCHO (18) años deberán cumplir la documentación aplicable para viajar."),
+    ("NIÑOS SIN ASIENTO", "Los pasajeros que no hayan cumplido los 5 años de edad no pagarán pasaje, pero no tendrán derecho a asiento. Únicamente podrá viajar un menor sin asiento por cada mayor que lo acompañe."),
+    ("SEGURO", "La cobertura, el importe y las condiciones del seguro de responsabilidad obligatorio quedan pendientes de confirmación comercial. Esta versión no calcula ni cobra un seguro adicional."),
+    ("CANJE", "No se admitirá el canje de pasajes por cambio de fecha u hora de viaje; solo se aceptará la devolución en las condiciones establecidas."),
+    ("EXTRAVÍO", "La pérdida o extravío del pasaje no genera derecho a reclamación, devolución o reintegro alguno."),
+    ("DOCUMENTACIÓN", "En los servicios internacionales, el pasajero deberá satisfacer las exigencias gubernamentales en materia de documentos personales exigidos para viajar, tanto en la salida como en la entrada de ambos países."),
+    ("NORMAS VIGENTES", "La compra del pasaje y su utilización implican la aceptación de las condiciones aplicables y de las normas vigentes en materia de transporte de pasajeros."),
+    ("RESPONSABILIDAD", "La responsabilidad frente al pasajero corresponde a la transportista que efectúa el traslado, conforme a las condiciones que se confirmen."),
+    ("AVISOS", "Prohibido fumar. La explotación sexual de niños, niñas y adolescentes y la trata de personas en la Argentina es un delito severamente penado."),
+)
+
+
+def _logo_path() -> Path:
+    try:
+        from django.conf import settings
+
+        base_dir = Path(settings.BASE_DIR)
+    except Exception:
+        base_dir = Path(__file__).resolve().parents[2]
+    return base_dir / LOGO_ASSET_REL_PATH
 
 
 def _resolve_seat_label(data: TicketData) -> str:
@@ -29,143 +77,126 @@ def _resolve_seat_label(data: TicketData) -> str:
     return raw
 
 
-def draw_provisional_ticket(c: canvas.Canvas, data: TicketData) -> None:
-    """Dibuja el borrador reutilizable del pasaje PDF con dos talones en una hoja A4.
+def _value(value: str, fallback: str = PENDING_SANDRO_VALUE) -> str:
+    clean = str(value or "").strip()
+    return clean or fallback
 
-    Incluye:
-    - Talón superior (control / agencia).
-    - Talón para el pasajero (con código QR propio de verificación).
-    - Separación explícita entre Agencia (SC VIAJES) y Empresa transportista.
-    - Vendedor únicamente cuando fue venta manual (omitido en ventas web).
-    """
-    width, height = A4
 
-    arrival_date = (data.arrival_date or data.travel_date).strip()
-    route_name = (data.route_name or f"{data.origin_stop_name} - {data.destination_stop_name}").strip()
-    origin_addr = (data.origin_address or f"Dirección pendiente ({PENDING_SANDRO_VALUE})").strip()
-    dest_addr = (data.destination_address or f"Dirección pendiente ({PENDING_SANDRO_VALUE})").strip()
-    seat_label = _resolve_seat_label(data)
-    fare_detail = (data.fare_detail_display or f"Tarifa {data.price_display}").strip()
-    total_amount = (data.total_amount_display or data.price_display).strip()
-    seller_clean = (data.seller_display or "").strip()
-    short_booking = str(data.booking_code)[:8].upper()
+def _draw_paragraph(c: canvas.Canvas, text: str, x: float, y: float, width: float, style=BODY) -> float:
+    paragraph = Paragraph(text, style)
+    _, height = paragraph.wrap(width, 1000)
+    paragraph.drawOn(c, x, y - height)
+    return height
 
-    # =========================================================================
-    # 1. CABECERA INSTITUCIONAL
-    # =========================================================================
+
+def _draw_field(c: canvas.Canvas, y: float, label: str, value: str, width: float, style=BODY) -> float:
+    content = f"<b>{escape(label)}</b> {escape(_value(value))}"
+    return y - _draw_paragraph(c, content, 48, y, width, style) - 3
+
+
+def _draw_logo(c: canvas.Canvas, x: float, y: float, size: float) -> None:
+    path = _logo_path()
+    if path.is_file():
+        c.drawImage(ImageReader(str(path)), x, y, width=size, height=size, preserveAspectRatio=True, anchor="c", mask="auto")
+
+
+def _draw_header(c: canvas.Canvas, width: float, height: float, title: str) -> None:
     c.setFillColor(colors.HexColor("#0f172a"))
     c.rect(36, height - 74, width - 72, 42, fill=1, stroke=0)
-
-    # Emblema vectorial institucional SC
-    c.setFillColor(colors.HexColor("#38bdf8"))
-    c.circle(54, height - 53, 11, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#0f172a"))
-    c.setFont("Helvetica-Bold", 9)
-    c.drawCentredString(54, height - 56, "SC")
-
+    _draw_logo(c, 45, height - 68, 30)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(72, height - 58, data.agency_name)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawRightString(width - 48, height - 58, "PASAJE ELECTRÓNICO")
+    c.setFont(FONT_BOLD, 16)
+    c.drawString(82, height - 58, "SC VIAJES")
+    c.setFont(FONT_BOLD, 10)
+    c.drawRightString(width - 48, height - 58, title)
 
-    # =========================================================================
-    # 2. TALÓN SUPERIOR (CONTROL / AGENCIA)
-    # =========================================================================
-    top_stub_top = height - 82
-    top_stub_bottom = height - 372
-    top_stub_height = top_stub_top - top_stub_bottom
 
-    c.setStrokeColor(colors.HexColor("#cbd5e1"))
-    c.setLineWidth(1)
-    c.rect(36, top_stub_bottom, width - 72, top_stub_height, fill=0, stroke=1)
-
+def _draw_box_title(c: canvas.Canvas, top: float, width: float, title: str, right: str = "") -> None:
     c.setFillColor(colors.HexColor("#f1f5f9"))
-    c.rect(37, top_stub_top - 24, width - 74, 23, fill=1, stroke=0)
+    c.rect(37, top - 24, width - 74, 23, fill=1, stroke=0)
     c.setFillColor(colors.HexColor("#0f172a"))
-    c.setFont("Helvetica-Bold", 9.5)
-    c.drawString(48, top_stub_top - 16, "TALÓN SUPERIOR")
-    c.setFont("Helvetica", 8.5)
-    c.drawRightString(
-        width - 48,
-        top_stub_top - 16,
-        f"Reserva: {short_booking}  |  Emisión: {data.issued_at}",
-    )
+    c.setFont(FONT_BOLD, 9.5)
+    c.drawString(48, top - 16, title)
+    if right:
+        c.setFont(FONT_REGULAR, 8)
+        c.drawRightString(width - 48, top - 16, right)
 
-    y = top_stub_top - 40
-    line_step = 16
 
-    # Agencia y Empresa transportista separadas
-    c.setFillColor(colors.HexColor("#0f172a"))
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, y, f"Agencia: {data.agency_name}")
-    c.drawString(245, y, f"Empresa transportista: {_truncate(data.carrier_name, 46)}")
-    y -= line_step
+def _draw_qr(c: canvas.Canvas, data: TicketData, x: float, y: float, size: float) -> None:
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=1)
+    qr.add_data(data.qr_payload_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    pil_img = qr_img._img if hasattr(qr_img, "_img") else qr_img
+    pil_img.save(buffer, format="PNG")
+    buffer.seek(0)
+    c.drawImage(ImageReader(buffer), x, y, width=size, height=size)
+    c.setFillColor(colors.HexColor("#64748b"))
+    c.setFont(FONT_REGULAR, 7.3)
+    c.drawCentredString(x + size / 2, y - 11, "Escanear para verificar validez")
 
-    # Pasajero y Documento enmascarado
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(48, y, f"Pasajero/a: {_truncate(data.passenger_name, 36)}")
-    c.drawString(320, y, f"Documento: {data.masked_document}")
-    y -= line_step
 
-    # Boleto / Identificador y Vendedor (solo si fue venta manual)
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, y, f"Boleto / Identificador: {data.ticket_code}")
-    if seller_clean:
-        c.drawString(320, y, f"Vendedor: {_truncate(seller_clean, 30)}")
-    y -= line_step
+def _draw_conditions_page(c: canvas.Canvas, data: TicketData, width: float, height: float) -> None:
+    c.showPage()
+    _draw_header(c, width, height, "CONDICIONES DEL PASAJE")
+    y = height - 96
+    c.setFillColor(colors.HexColor("#7f1d1d"))
+    y -= _draw_paragraph(c, "<b>Texto pendiente de validación comercial y legal.</b> Las referencias normativas del material de trabajo no fueron verificadas por el sistema.", 48, y, width - 96, SMALL) + 10
+    for heading, body in PASSENGER_CONDITIONS:
+        if y < 74:
+            c.showPage()
+            _draw_header(c, width, height, "CONDICIONES DEL PASAJE")
+            y = height - 96
+        c.setFillColor(colors.HexColor("#0f172a"))
+        y -= _draw_paragraph(c, f"<b>{escape(heading)}</b>", 48, y, width - 96, BODY) + 2
+        y -= _draw_paragraph(c, escape(body), 48, y, width - 96, CONDITION)
+    c.setFillColor(colors.HexColor("#64748b"))
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(48, 42, f"Pasaje {data.ticket_code} - conservar junto con el talón del pasajero")
 
-    # Calidad / Servicio y Categoría / Butaca
-    c.setFont("Helvetica", 8.5)
-    c.drawString(48, y, f"Calidad / Servicio: {_truncate(data.service_quality_display, 34)}")
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(
-        300,
-        y,
-        f"Categoría / Butaca: {data.category_display} - Butaca: {seat_label}",
-    )
-    y -= line_step
 
-    if data.companion_name:
-        c.setFont("Helvetica", 8)
-        c.drawString(48, y, f"Adulto acompañante: {_truncate(data.companion_name, 50)}")
-        y -= line_step
+def draw_provisional_ticket(c: canvas.Canvas, data: TicketData) -> None:
+    """Dibuja dos talones legibles y las condiciones completas en páginas extra."""
+    width, height = A4
+    arrival_date = _value(data.arrival_date or data.travel_date)
+    route_name = _value(data.route_name or f"{data.origin_stop_name} - {data.destination_stop_name}")
+    origin_addr = _value(data.origin_address, f"Dirección pendiente ({PENDING_SANDRO_VALUE})")
+    destination_addr = _value(data.destination_address, f"Dirección pendiente ({PENDING_SANDRO_VALUE})")
+    seat_label = _resolve_seat_label(data)
+    seller = data.seller_display.strip()
+    companion = data.companion_name.strip()
+    booking_short = str(data.booking_code)[:8].upper()
+    payment = "Pasaje gratuito — sin butaca" if data.is_lap_infant else _value(data.payment_method_display)
+    price = _value(data.price_display, "$ 0,00")
+    total = _value(data.total_amount_display, price)
+    fare = _value(data.fare_detail_display, f"Tarifa {price}")
 
-    # Recorrido, origen y destino con direcciones conocidas/pendientes
-    c.setFont("Helvetica", 8.5)
-    c.drawString(
-        48,
-        y,
-        f"Sale de / Sube en: {_truncate(data.origin_stop_name, 28)} - {_truncate(origin_addr, 48)}",
-    )
-    y -= line_step
-    c.drawString(
-        48,
-        y,
-        f"A / Baja en: {_truncate(data.destination_stop_name, 28)} - {_truncate(dest_addr, 52)}",
-    )
-    y -= line_step
+    _draw_header(c, width, height, "PASAJE ELECTRÓNICO")
 
-    # Fechas y horarios de salida (embarque) y arribo estimado (destino)
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, y, f"Salida: {data.travel_date} - {data.departure_time}")
-    c.drawString(280, y, f"Arribo estimado: {arrival_date} - {data.arrival_time}")
-    y -= line_step
+    top = height - 82
+    bottom = height - 372
+    c.setStrokeColor(colors.HexColor("#cbd5e1"))
+    c.rect(36, bottom, width - 72, top - bottom, fill=0, stroke=1)
+    _draw_box_title(c, top, width, "TALÓN SUPERIOR", f"Reserva: {booking_short} | Emisión: {data.issued_at}")
+    y = top - 40
+    y = _draw_field(c, y, "Agencia:", data.agency_name, width - 96)
+    y = _draw_field(c, y, "Empresa transportista:", data.carrier_name, width - 96)
+    y = _draw_field(c, y, "Pasajero/a:", data.passenger_name, width - 96)
+    y = _draw_field(c, y, "Documento:", data.masked_document, width - 96)
+    y = _draw_field(c, y, "Boleto / Identificador:", data.ticket_code, width - 96)
+    if seller:
+        y = _draw_field(c, y, "Vendedor:", seller, width - 96)
+    y = _draw_field(c, y, "Categoría / Butaca:", f"{data.category_display} - Butaca: {seat_label}", width - 96)
+    if companion:
+        y = _draw_field(c, y, "Adulto acompañante:", companion, width - 96)
+    y = _draw_field(c, y, "Sale de / Sube en:", f"{data.origin_stop_name} - {origin_addr}", width - 96, SMALL)
+    y = _draw_field(c, y, "A / Baja en:", f"{data.destination_stop_name} - {destination_addr}", width - 96, SMALL)
+    y = _draw_field(c, y, "Salida:", f"{data.travel_date} - {data.departure_time}", width - 96)
+    y = _draw_field(c, y, "Arribo estimado:", f"{arrival_date} - {data.arrival_time}", width - 96)
+    y = _draw_field(c, y, "Plataforma / Aviso:", data.platform_announcement, width - 96, SMALL)
+    _draw_field(c, y, "Importe total:", total, width - 96)
 
-    # Plataforma / Aviso y Formas de pago
-    c.setFont("Helvetica", 8.5)
-    c.drawString(48, y, f"Plataforma / Aviso: {_truncate(data.platform_announcement, 34)}")
-    c.drawString(300, y, f"Formas de pago: {_truncate(data.payment_method_display, 30)}")
-    y -= line_step
-
-    # Detalle de tarifa e importe total real en ARS
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, y, f"Detalle: {_truncate(fare_detail, 42)}")
-    c.drawString(300, y, f"Importe total: {total_amount}")
-
-    # =========================================================================
-    # 3. LÍNEA DE CORTE ENTRE TALONES
-    # =========================================================================
     cut_y = height - 386
     c.saveState()
     c.setDash(4, 4)
@@ -173,156 +204,51 @@ def draw_provisional_ticket(c: canvas.Canvas, data: TicketData) -> None:
     c.line(36, cut_y, width - 36, cut_y)
     c.restoreState()
 
-    # =========================================================================
-    # 4. TALÓN PARA EL PASAJERO
-    # =========================================================================
-    pax_stub_top = height - 398
-    pax_stub_bottom = 36
-    pax_stub_height = pax_stub_top - pax_stub_bottom
-
+    pax_top = height - 398
+    pax_bottom = 36
     c.setStrokeColor(colors.HexColor("#cbd5e1"))
-    c.setLineWidth(1)
-    c.rect(36, pax_stub_bottom, width - 72, pax_stub_height, fill=0, stroke=1)
+    c.rect(36, pax_bottom, width - 72, pax_top - pax_bottom, fill=0, stroke=1)
+    _draw_box_title(c, pax_top, width, "TALÓN PARA EL PASAJERO", f"Boleto: {data.ticket_code}")
+    left_width = 326
+    py = pax_top - 40
+    py = _draw_field(c, py, "Agencia:", data.agency_name, left_width)
+    py = _draw_field(c, py, "Empresa transportista:", data.carrier_name, left_width, SMALL)
+    py = _draw_field(c, py, "Razón social:", data.carrier_legal_name, left_width, SMALL)
+    py = _draw_field(c, py, "CUIT:", data.carrier_cuit, left_width, SMALL)
+    py = _draw_field(c, py, "IVA:", data.carrier_vat_condition, left_width, SMALL)
+    py = _draw_field(c, py, "Inicio de actividades:", data.carrier_activity_start, left_width, SMALL)
+    py = _draw_field(c, py, "IIBB:", data.carrier_iibb, left_width, SMALL)
+    py = _draw_field(c, py, "Usted viaja asegurado por:", data.insurer_name, left_width, SMALL)
+    py = _draw_field(c, py, "Póliza/Ref.:", data.insurance_policy_ref, left_width, SMALL)
+    py = _draw_field(c, py, "Pasajero/a:", data.passenger_name, left_width)
+    py = _draw_field(c, py, "Documento:", data.masked_document, left_width)
+    if seller:
+        py = _draw_field(c, py, "Vendedor:", seller, left_width, SMALL)
+    if companion:
+        py = _draw_field(c, py, "Adulto acompañante:", companion, left_width, SMALL)
+    py = _draw_field(c, py, "Recorrido:", route_name, left_width, SMALL)
+    py = _draw_field(c, py, "Categoría / Butaca:", f"{data.category_display} - Butaca: {seat_label}", left_width, SMALL)
+    py = _draw_field(c, py, "Sale de / Sube en:", f"{data.origin_stop_name} - {origin_addr}", left_width, SMALL)
+    py = _draw_field(c, py, "A / Baja en:", f"{data.destination_stop_name} - {destination_addr}", left_width, SMALL)
+    py = _draw_field(c, py, "Salida:", f"{data.travel_date} - {data.departure_time}", left_width, SMALL)
+    py = _draw_field(c, py, "Arribo estimado:", f"{arrival_date} - {data.arrival_time}", left_width, SMALL)
+    py = _draw_field(c, py, "Formas de pago:", payment, left_width, SMALL)
+    py = _draw_field(c, py, "Detalle:", fare, left_width, SMALL)
+    _draw_field(c, py, "Importe total:", total, left_width)
 
-    c.setFillColor(colors.HexColor("#f1f5f9"))
-    c.rect(37, pax_stub_top - 24, width - 74, 23, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#0f172a"))
-    c.setFont("Helvetica-Bold", 9.5)
-    c.drawString(48, pax_stub_top - 16, "TALÓN PARA EL PASAJERO")
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawRightString(width - 48, pax_stub_top - 16, f"Boleto / Identificador: {data.ticket_code}")
-
-    py = pax_stub_top - 40
-    p_step = 15
-
-    # Agencia, WhatsApp y Empresa transportista
-    c.setFillColor(colors.HexColor("#0f172a"))
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, py, f"Agencia: {data.agency_name}")
-    c.drawString(230, py, f"Contacto WhatsApp: {_truncate(data.contact_whatsapp, 40)}")
-    py -= p_step
-
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, py, f"Empresa transportista: {_truncate(data.carrier_name, 62)}")
-    py -= p_step
-
-    # Datos fiscales de la transportista (configuración fija pendiente de Sandro)
-    c.setFillColor(colors.HexColor("#334155"))
-    c.setFont("Helvetica", 7.8)
-    c.drawString(
-        48,
-        py,
-        f"Datos fiscales de la transportista: Razón social: {_truncate(data.carrier_legal_name, 28)} | CUIT: {_truncate(data.carrier_cuit, 28)}",
-    )
-    py -= p_step
-    c.drawString(
-        48,
-        py,
-        f"IVA: {_truncate(data.carrier_vat_condition, 28)} | Inicio de actividades: {_truncate(data.carrier_activity_start, 28)} | IIBB: {_truncate(data.carrier_iibb, 28)}",
-    )
-    py -= p_step
-    c.drawString(
-        48,
-        py,
-        f"Usted viaja asegurado por: {_truncate(data.insurer_name, 30)} | Póliza/Ref.: {_truncate(data.insurance_policy_ref, 28)}",
-    )
-    py -= 10
-
-    c.setStrokeColor(colors.HexColor("#e2e8f0"))
-    c.line(48, py, width - 48, py)
-    py -= 14
-
-    # Columna izquierda de datos del viaje y pasajero (dejando espacio a la derecha para el QR)
-    c.setFillColor(colors.HexColor("#0f172a"))
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(48, py, f"Pasajero/a: {_truncate(data.passenger_name, 34)}")
-    py -= p_step
-
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, py, f"Documento: {data.masked_document}")
-    if seller_clean:
-        c.drawString(210, py, f"Vendedor: {_truncate(seller_clean, 24)}")
-    py -= p_step
-
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, py, f"Recorrido: {_truncate(route_name, 42)}")
-    py -= p_step
-
-    c.drawString(
-        48,
-        py,
-        f"Categoría / Butaca: {data.category_display} - Butaca: {seat_label}",
-    )
-    py -= p_step
-
-    c.setFont("Helvetica", 8.2)
-    c.drawString(
-        48,
-        py,
-        f"Sale de / Sube en: {_truncate(data.origin_stop_name, 22)} - {_truncate(origin_addr, 34)}",
-    )
-    py -= p_step
-    c.drawString(
-        48,
-        py,
-        f"A / Baja en: {_truncate(data.destination_stop_name, 22)} - {_truncate(dest_addr, 36)}",
-    )
-    py -= p_step
-
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(48, py, f"Salida: {data.travel_date} - {data.departure_time}")
-    py -= p_step
-    c.drawString(48, py, f"Arribo estimado: {arrival_date} - {data.arrival_time}")
-    py -= p_step
-
-    c.setFont("Helvetica", 8.5)
-    c.drawString(48, py, f"Formas de pago: {_truncate(data.payment_method_display, 32)}")
-    py -= p_step
-
-    c.setFont("Helvetica-Bold", 9.5)
-    c.drawString(48, py, f"Importe total: {total_amount}")
-
-    # Código QR propio de verificación del sistema SC Viajes (única imagen embebida)
-    qr = qrcode.QRCode(
-        version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=6,
-        border=1,
-    )
-    qr.add_data(data.qr_payload_url)
-    qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-
-    img_buffer = io.BytesIO()
-    pil_img = qr_img._img if hasattr(qr_img, "_img") else qr_img
-    pil_img.save(img_buffer, format="PNG")
-    img_buffer.seek(0)
-
-    qr_x = width - 185
-    qr_y = pax_stub_bottom + 82
-    qr_size = 128
-    c.drawImage(ImageReader(img_buffer), qr_x, qr_y, width=qr_size, height=qr_size)
-
-    c.setFillColor(colors.HexColor("#64748b"))
-    c.setFont("Helvetica", 7.8)
-    c.drawCentredString(qr_x + (qr_size / 2), qr_y - 11, "Escanear para verificar validez")
-
-    # Pie de avisos y condiciones provisionales
+    _draw_qr(c, data, width - 174, pax_bottom + 94, 116)
     c.setFillColor(colors.HexColor("#f8fafc"))
-    c.rect(37, pax_stub_bottom + 1, width - 74, 52, fill=1, stroke=0)
+    c.rect(37, pax_bottom + 1, width - 74, 52, fill=1, stroke=0)
     c.setStrokeColor(colors.HexColor("#e2e8f0"))
-    c.line(37, pax_stub_bottom + 53, width - 37, pax_stub_bottom + 53)
-
+    c.line(37, pax_bottom + 53, width - 37, pax_bottom + 53)
     c.setFillColor(colors.HexColor("#b91c1c"))
-    c.setFont("Helvetica-Bold", 8.2)
-    c.drawString(48, pax_stub_bottom + 38, f"IMPORTANTE: {data.id_requirement_notice}")
-
+    c.setFont(FONT_BOLD, 8)
+    c.drawString(48, pax_bottom + 38, _value(data.id_requirement_notice))
     c.setFillColor(colors.HexColor("#475569"))
-    c.setFont("Helvetica", 7.5)
-    c.drawString(48, pax_stub_bottom + 24, f"CONDICIONES: {data.conditions_notice}")
-
+    c.setFont(FONT_REGULAR, 7.4)
+    c.drawString(48, pax_bottom + 24, "Las condiciones generales y devoluciones se encuentran en la página siguiente.")
     c.setFillColor(colors.HexColor("#64748b"))
-    c.setFont("Helvetica-Oblique", 7.5)
-    c.drawString(48, pax_stub_bottom + 10, f"AVISO: {data.provisional_notice}")
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(48, pax_bottom + 10, "Transportista, datos fiscales, seguro y contacto: pendientes de confirmación.")
 
-    c.showPage()
+    _draw_conditions_page(c, data, width, height)
