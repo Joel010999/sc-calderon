@@ -461,7 +461,7 @@ def send_booking_tickets(booking_or_id, retry=False, now=None) -> TicketEmailAtt
         "Información importante para tu viaje:",
         "- Cada pasajero debe presentarse en el punto de subida con su documento de identidad físico.",
         "- Te recomendamos llegar con al menos 15 minutos de anticipación al horario programado.",
-        "- Podés verificar la validez de tu pasaje en cualquier momento escaneando el código QR impreso.",
+        "- Presentar el pasaje y la documentación correspondiente al embarcar.",
         "",
         "SC Viajes · Córdoba ⇄ Jujuy",
     ]

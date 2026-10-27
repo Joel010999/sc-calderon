@@ -384,7 +384,7 @@ Se debe recorrer el ciclo de vida completo de una operación para garantizar la 
    - Verificar la creación de la reserva en estado `HELD` y comprobar el temporizador de 15 minutos en el resumen.
 2. **Pago por Transferencia y Aprobación**:
    - Cargar un comprobante sintético (PDF o imagen de prueba) en la vista de transferencia antes de los 5 minutos.
-   - Confirmar que la reserva pase a estado `UNDER_REVIEW` y que el vencimiento se extienda a 24 horas.
+   - Confirmar que la reserva pase a estado `UNDER_REVIEW` y que conserve las políticas de vencimiento vigentes del canal; las reservas manuales no tienen expiración automática.
    - Ingresar al panel con rol `Administrador`, revisar el comprobante en `/panel/pagos/transferencias/` y aprobar la transferencia.
 3. **Cobro Manual en Efectivo y Caja del Vendedor**:
    - Iniciar sesión en el panel como `Vendedor`.
