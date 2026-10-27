@@ -78,6 +78,14 @@ def _display_text(value: object) -> str:
     return str(value or "").replace("→", " - ").replace("â†’", " - ").strip()
 
 
+def _document_value(masked_document: object) -> str:
+    """Evita repetir el tipo de documento junto a la etiqueta DNI del casillero."""
+    value = _display_text(masked_document)
+    if value.upper().startswith("DNI "):
+        return value[4:].strip()
+    return value
+
+
 def _draw_text_box(
     c: canvas.Canvas,
     text: object,
@@ -232,7 +240,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
 
     if not is_blank:
         _draw_text_box(c, data.passenger_name, 106.0, 762.0, 184, 10, font_size=7.2, bold=True)
-        doc_text = data.masked_document
+        doc_text = _document_value(data.masked_document)
         if data.is_lap_infant and data.companion_name:
             doc_text = f"{doc_text} (Acomp: {data.companion_name})"
         _draw_text_auto(c, doc_text, 58.0, 741.0, max_width=230, font_size=7.0)
@@ -277,7 +285,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         p_method = "Pasaje gratuito — sin butaca" if data.is_lap_infant else data.payment_method_display
         _draw_text_auto(c, p_method, 35.7, 673.0, max_width=255, font_size=7.2)
         _draw_text_auto(c, data.price_display, 348.0, 676.0, max_width=110, font_size=7.2)
-        _draw_text_auto(c, "$ 0,00", 360.0, 666.0, max_width=100, font_size=7.2)
+        _draw_text_auto(c, "$ 0,00", 390.0, 666.0, max_width=70, font_size=7.2)
         _draw_text_auto(c, data.total_amount_display, 518.5, 673.0, max_width=85, font_size=10.0, align="center", bold=True)
 
     # ========================================================
@@ -337,15 +345,15 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
     # Box 6: Pasajero | Categoría
     c.roundRect(28.5, 499.61, 268.88, 39.39, 5, stroke=1, fill=0)
     c.roundRect(303.98, 499.61, 262.27, 39.39, 5, stroke=1, fill=0)
-    c.drawString(35.7, 534.0, "Pasajero")
+    c.drawString(35.7, 530.0, "Pasajero")
     c.setFont(FONT_REGULAR, 7.0)
     c.drawString(35.7, 519.0, "DNI:")
     c.setFont(FONT_REGULAR, 7.2)
-    c.drawString(311.2, 534.0, "Categoría - Calidad y tipo de servicio")
+    c.drawString(311.2, 530.0, "Categoría - Calidad y tipo de servicio")
 
     if not is_blank:
-        _draw_text_box(c, data.passenger_name, 106.0, 543.0, 184, 11, font_size=7.2, bold=True)
-        doc_text = data.masked_document
+        _draw_text_box(c, data.passenger_name, 106.0, 539.0, 184, 11, font_size=7.2, bold=True)
+        doc_text = _document_value(data.masked_document)
         if data.is_lap_infant and data.companion_name:
             doc_text = f"{doc_text} (Acomp: {data.companion_name})"
         _draw_text_auto(c, doc_text, 58.0, 519.0, max_width=230, font_size=7.0)
@@ -365,7 +373,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         _draw_text_auto(c, data.origin_stop_name, 68.0, 485.0, max_width=220, font_size=7.2, bold=True)
         _draw_text_box(c, data.origin_address, 35.7, 480.0, 255, 11, font_size=6.5, leading=5.6)
 
-        _draw_text_auto(c, data.destination_stop_name, 345.0, 485.0, max_width=215, font_size=7.2, bold=True)
+        _draw_text_box(c, data.destination_stop_name, 345.0, 489.0, 215, 10, font_size=7.2, bold=True)
         _draw_text_box(c, data.destination_address, 311.2, 480.0, 250, 11, font_size=6.5, leading=5.6)
 
     # Box 8: Asiento | Salida | Se anuncia a | Arribo estimado | Plataforma
@@ -415,7 +423,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         p_method = "Pasaje gratuito — sin butaca" if data.is_lap_infant else data.payment_method_display
         _draw_text_auto(c, p_method, 35.7, 388.0, max_width=255, font_size=7.2)
         _draw_text_auto(c, data.price_display, 348.0, 391.0, max_width=110, font_size=7.2)
-        fee_label = "(Menor sin butaca)" if data.is_lap_infant else "$ 0,00"
+        fee_label = "$ 0,00"
         _draw_text_auto(c, fee_label, 380.0, 381.0, max_width=80, font_size=7.2)
         _draw_text_auto(c, data.total_amount_display, 518.5, 388.0, max_width=85, font_size=10.0, align="center", bold=True)
 

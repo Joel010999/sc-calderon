@@ -542,6 +542,36 @@ class TicketPdfAndQrParsingTests(TicketBaseMixin, TransactionTestCase):
         self.assertTrue(Ticket.objects.filter(verification_token_hash=v_hash).exists())
         self.assertTrue(Ticket.objects.filter(ticket_code=ticket.ticket_code).exists())
 
+    def test_persisted_booking_values_are_rendered_in_issued_pdf(self):
+        """El PDF se arma desde snapshots persistidos, no desde datos del fixture."""
+        booking = self.create_confirmed_booking(passenger_count=1)
+        passenger = booking.passengers.get()
+        passenger.first_name = "Reserva Persistida"
+        passenger.last_name = "Integracion PDF"
+        passenger.document_number = "40987654"
+        passenger.save(update_fields=["first_name", "last_name", "document_number"])
+
+        ticket = issue_tickets_for_booking(booking)[0]
+        pdf = get_ticket_storage().open(ticket.pdf_path, "rb").read()
+        text = "\n".join(page.extract_text() or "" for page in pypdf.PdfReader(io.BytesIO(pdf)).pages)
+        departure = timezone.localtime(ticket.departure_at)
+        arrival = timezone.localtime(ticket.arrival_at)
+        amount = f"$ {ticket.price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        masked_value = ticket.passenger_document_masked.removeprefix("DNI ")
+
+        for expected in (
+            ticket.passenger_name,
+            masked_value,
+            ticket.origin_stop_name,
+            ticket.destination_stop_name,
+            departure.strftime("%H:%M"),
+            arrival.strftime("%H:%M"),
+            amount,
+        ):
+            self.assertIn(expected, text)
+        self.assertEqual(text.count("DNI:"), 2)
+        self.assertNotIn("DNI: DNI", text)
+
     def test_long_passenger_fields_wrap_and_keep_branded_logo(self):
         data = TicketData(
             ticket_code="SYN-LONG-001",
