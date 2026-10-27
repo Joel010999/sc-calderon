@@ -1,576 +1,112 @@
-# Estado de SC Viajes
-
-## Pasaje PDF aprobado y numeración secuencial persistente (2026-10-26)
-
-Implementado en rama de trabajo sobre `feature/sandro-menores-horarios-pasaje-integrados`:
-- **Plantilla PDF oficial**: Adaptación fiel y estricta a la referencia aprobada (`Plantilla_pasaje_SC_Viajes_limpia.pdf`), respetando 1 sola página (596 x 842 pt), dos talones ("Talón empresa/agencia" superior y "Talón para el pasajero" inferior), línea de corte punteada, logo SC Viajes incrustado en ambos talones (`static/assets/scviajes-logo.png`), márgenes, distribución y bordes redondeados.
-- **Códigos visibles**: Eliminación total de QR y códigos de barras visuales en ambos talones y en la página, preservando internamente los tokens seguros de verificación, hashes criptográficos y validación de embarque atómica (compatible con prefijos `AAA-` y `TK-`).
-- **Contacto**: Contacto WhatsApp centralizado en `+5493513954420`.
-- **Numeración persistente**: Modelo `TicketSequence` con bloqueo exclusivo de concurrencia (`select_for_update`) seguro para PostgreSQL y con reintento ante locks transaccionales. Formato `AAA-000000000` para plantilla en blanco (sin asignación a emisiones) y `AAA-000000001` en adelante para emisiones reales. El mismo número se replica exactamente en ambos talones del documento. Múltiples tramos/pasajeros generan números correlativos independientes. Idempotente ante reintentos, reenvíos y descargas. Los pasajes históricos conservan su código sin renumeración; las anulaciones y saltos no reutilizan números.
-- **Datos productivos**: Pasajero, DNI, vendedor, viaje, categoría, butaca, horarios, paradas, direcciones, pagos e importes se extraen del sistema productivo. Datos fiscales/transportista configurables con marcadores pendientes de Sandro. Menores de 5 años sin butaca conservados como gratuitos con mención de acompañante. Condiciones generales reproducidas textualmente en 2 columnas sin invención ni rediseño.
-- **Validaciones**: Ruff limpio, `python manage.py check` limpio, `makemigrations --check --dry-run` sin cambios pendientes, `git diff --check` limpio y 71 pruebas de `tickets` aprobadas al 100%. Muestras sintéticas generadas y renderizadas fuera de Git en `D:\renderbyte\scviajes-pdf-samples\pasaje-aprobado-20261026`.
-
-## Configuración productiva y contenido (2026-10-09)
-
-Implementado en `feature/production-config-content-hardening-20261009`: URL
-pública HTTPS canónica para invitaciones y pasajes, configuración bancaria por
-entorno sin datos ficticios, branding SC Viajes configurable, higiene de
-fulfillment ante reservas confirmadas sin trabajo y actualización de Playwright.
-No se modificaron identidad OAuth, permisos ni modelos; no se ejecutaron
-migraciones contra bases persistentes.
-
-## Worker persistente de mantenimiento (2026-10-06)
-
-Implementado `run_maintenance_worker`, proceso separado de `web` en `Procfile`.
-Ejecuta ciclos reutilizando `run_operational_maintenance`; admite `--once`,
-`--max-cycles` y `--max-seconds`, maneja SIGTERM/SIGINT con apagado ordenado y
-emite métricas JSON sin datos sensibles. PostgreSQL usa un advisory lock de
-sesión para impedir dos workers simultáneos y lo libera al salir; SQLite no
-ofrece lock advisory entre procesos y se considera sólo modo local/tests.
-Los límites e intervalo se validan al iniciar. No agrega modelos, migraciones,
-Celery, Redis ni arranque automático desde web, collectstatic, migrate o tests.
-
-## Escenario demo y aceptacion E2E (2026-10-05)
-
-Implementado en `feature/demo-acceptance-e2e-20261005`: `seed_demo_scenario` con
-`--dry-run` y `--reset`, cuentas `.invalid`, operaciones, reservas, pagos, tickets,
-fulfillment, notificaciones, manifiesto, embarque, reportes, bandeja y clientes.
-Las pruebas usan bases temporales, no imprimen secretos, no envian correos reales,
-no escriben S3 y no agregan bypasses de permisos.
-## Hardening de pureza GET y transferencia (2026-10-05)
-
-Implementado: expiración virtual en lecturas públicas, persistencia sólo por POST
-o mantenimiento, QR y descargas sin auditoría GET, y prefetch de asignaciones de
-transferencia para evitar N+1 conservando el orden de tramo/pasajero/butaca.
-Pendiente: validación integral PostgreSQL/CI por el coordinador.
-
-## Fundación de validación de embarque (2026-10-01)
-
-Estado: implementada, integrada con el ciclo de vida de viajes, validada y publicada en `feature/boarding-validation-20261001`.
-
-- `tickets.BoardingRecord` registra pasaje, pasajero, viaje, butaca, operador, fecha/hora, estado y motivo de reversión; la unicidad condicional evita duplicar embarques activos y conserva el historial revertido.
-- El panel personalizado incorpora `/panel/embarques/`, con lector de teclado para QR/código, validaciones server-side, respuestas diferenciadas, permisos de Administrador/Vendedor y reversión POST+CSRF exclusiva de Administrador.
-- El manifiesto muestra estado de embarque y totales embarcados/pendientes mediante consulta de solo lectura. La verificación pública QR no registra embarques.
-- Se excluyen cámara web, funcionamiento offline, geolocalización, no-show automático, cierre automático de manifiesto, cambios, cancelaciones y notificaciones al pasajero.
-
-- Proyecto: SC Viajes.
-- Estado: fundación técnica aprobada.
-- `main` contiene el PR `#1`, commit `b6e63d1` (`b6e63d15b1e20f56f7d83c3a5909813b37f8250a`).
-- Panel personalizado, seguridad, health check, roles y estáticos locales: completados.
-- Base de esta etapa: `main` sincronizada por fast-forward y verificada con el commit `5cc0a78`.
-- Rama activa de desarrollo: `feature/public-transfer-payment-20260919`.
-- Etapa actual: flujo público de transferencia con comprobante implementado y verificado.
-- Documentación creada/actualizada: `AGENTS.md`, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` y `docs/STATUS.md`.
-- Próxima etapa: pasarelas de pago automáticas (Mercado Pago QR, Payway), emisión de pasajes (PDF, QR) y migración desde Sheets (previa a la activación de pasarelas).
-- Ventas comerciales finales, pasarelas automáticas (Mercado Pago QR, Payway), caja, PDF, QR, correo transaccional y migración desde Sheets: todavía no implementados.
-- Decisiones pendientes: consultar [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
-
-## Fundación de operaciones
-
-- Aplicación independiente `operations` registrada en Django, sin Django Admin, vistas, formularios, templates ni APIs.
-- Modelos: `Stop`, `Route`, `RouteStop`, `Bus`, `Seat`, `Trip`, `TripStop` y `TripFare`.
-- Recorridos con orden y permisos; butacas con posiciones configurables y capacidad calculada contando las activas; viajes con estados y tarifas por tramo y categoría mediante `Decimal`.
-- Relaciones protegidas con `PROTECT` y restricciones de base de datos para unicidad, valores positivos y opciones válidas. No se agregaron índices adicionales a los de relaciones y restricciones de unicidad.
-- Servicio `operations.services.schedule_trip(route=..., bus=..., schedules=...)`: recibe un mapa de identificadores de `Stop` a fechas con zona horaria, o una secuencia de pares para detectar duplicados. Exige exactamente un horario por parada, valida cronología estricta y crea el viaje y su fotografía de paradas en una única transacción. `departure_at` corresponde a la primera parada. No utiliza signals.
-- Las validaciones de dominio se ejecutan explícitamente mediante `full_clean()`; no se sobrescribe `save()`. Los futuros puntos de escritura deben invocarlas, ya que `save()`, `update()` y las operaciones masivas no ejecutan automáticamente las validaciones de Django. Las reglas entre tablas de `TripFare` se validan en el dominio.
-- Comando idempotente `setup_initial_operations`: crea únicamente las cinco paradas y los dos recorridos confirmados con sus paradas ordenadas. Conserva los datos existentes y rechaza configuraciones de recorrido incompatibles sin sobrescribirlas. Solo se ejecutó dentro de tests.
-- Migración inicial: `operations/migrations/0001_initial.py`. Generada y probada únicamente en la base temporal de tests; no aplicada a la base local ni a bases reales.
-- Se agregaron 50 tests de dominio; se mantienen los 14 tests existentes del panel.
-- No se crearon colectivos de 60 butacas, horarios ni tarifas productivas. Tampoco reservas, ventas, disponibilidad, pagos, PDF, QR, embarque, autenticación pública, importadores ni workers.
-
-## Panel de configuración operativa
-
-- Resumen operativo con conteos reales de recorridos, colectivos y butacas activos. Los conteos de cama y semicama incluyen solo butacas activas, según su propio estado.
-- Recorridos y paradas visibles en modo lectura, con orden y permisos de subida y bajada. Las vistas no cargan datos iniciales automáticamente.
-- Colectivos y butacas administrables por superusuarios y miembros de `Administrador`. Vendedores acceden sólo a las pantallas y acciones explícitamente permitidas; usuarios `is_staff` sin rol no ingresan al panel. Ver [política inicial](DECISIONS.md#permisos-iniciales-del-panel-de-configuración-operativa).
-- Formularios con campos explícitos; el colectivo de una butaca se obtiene de la URL y no puede cambiarse desde el formulario. Activación y desactivación mediante POST con CSRF, sin eliminación física.
-- Mapa de butacas por planta construido con CSS Grid a partir de posiciones almacenadas. Interfaz responsive con CSS local, navegación, estados vacíos y errores accesibles.
-- Auditoría `panel.AuditEvent` implementada con actor, acción, entidad, descripción, datos anteriores y posteriores y fecha. Los cambios y su auditoría se guardan en una única transacción explícita, sin signals. Si falla la auditoría, se revierte el cambio. No hay interfaz para editar ni eliminar eventos.
-- Migración nueva `panel/migrations/0001_initial.py`: crea únicamente `AuditEvent`. Solo se aplica en las bases temporales del runner de tests; no se ejecuta sobre bases persistentes.
-- Se agregaron 38 pruebas de permisos, formularios, estados, auditoría y regresión; se conservan las 66 pruebas anteriores.
-- En la etapa de configuración base no se agregaron pantallas de viajes ni tarifas; se incorporan en la etapa siguiente, registrada a continuación.
-
-## Panel de viajes y tarifas
-
-- Listado de viajes con recorrido, colectivo, estado, salida y llegada locales: próximos primero y pasados del más reciente al más antiguo, con desempate por identificador. Las consultas cargan relaciones de forma conjunta para evitar N+1.
-- Creación en dos pasos: selección de recorrido y colectivo válidos; luego horarios de todas las paradas y confirmación visual. La confirmación está firmada y vinculada a los datos revisados. No se precargan horarios productivos.
-- `schedule_trip` rechaza recorridos y colectivos inactivos, colectivos sin butacas activas y superposición del mismo colectivo. Usa los extremos de la fotografía de paradas, ignora viajes cancelados y permite intervalos contiguos, sin inventar tiempos de preparación.
-- La validación y escritura usan una transacción con bloqueo del colectivo. El panel exige salida futura; el dominio conserva la posibilidad de programar fechas históricas para una futura importación controlada.
-- Detalle con cronograma completo, permisos de subida y bajada y tarifas por tramo y categoría. Recorrido, colectivo, horarios y estado del viaje no son editables.
-- Tarifas creables y editables por administradores, con origen y destino limitados al viaje de la URL. Importes `Decimal`, validación de segmentos y duplicados, activación/desactivación POST con CSRF e idempotente, sin eliminación física.
-- Auditoría extendida a viajes y tarifas, con cronograma completo en un evento de creación de viaje, importes como texto decimal y fechas ISO 8601. Un fallo de auditoría revierte la modificación completa; no se auditan formularios inválidos ni acciones sin efecto.
-- Resumen operativo ampliado con viajes programados futuros, viajes en estado de embarque y acceso a Viajes. No se implementa gestión de embarque ni edición de estados.
-- Se agregaron 45 pruebas específicas. Las 104 anteriores se conservan; se adaptaron únicamente sus datos de prueba a la exigencia de butacas activas, intervalos no superpuestos y los nuevos conteos del resumen.
-- Continúan fuera de alcance pagos, vistas públicas, checkout, panel de ventas, caja, comprobantes, PDF, QR, correo transaccional, cambios comerciales, autenticación pública, AppSheet y workers.
-
-## Fundación de reservas y disponibilidad de butacas
-
-- Aplicación independiente `sales` registrada en Django (`sales.apps.SalesConfig`). `operations` permanece intacta como fuente de verdad y no depende de `sales`.
-- Modelos agregados como núcleo del dominio de reservas: `Booking`, `BookingLeg`, `BookingPassenger` y `SeatAssignment`. No se crearon entidades separadas para `Compra`, `Reserva` ni `Venta`.
-- `Booking`: agregado principal con identificador público `public_id` (UUID4 indexado y único), canal (`ONLINE` o `MANUAL`), estado (`HELD`, `CONFIRMED`, `EXPIRED`, `RELEASED`), correo obligatorio, teléfono opcional, vendedor asignado únicamente en canal `MANUAL`, fecha de expiración consciente y fecha opcional de confirmación. Índices compuestos en `[status, expires_at]` y `[created_at]`.
-- `BookingLeg`: secuencia 1 o 2 (solo ida o ida/vuelta) con unicidad por reserva, relación con `operations.Trip`, paradas de subida y bajada (`TripStop`), y snapshots congelados de los nombres de paradas y horarios programados de subida y bajada. En reservas de dos tramos, se exige obligatoriamente que ambos correspondan a viajes distintos, que la vuelta invierta los `Stop` de origen y destino de la ida (`TripStop.stop_id`) y que la salida de la vuelta sea estrictamente posterior a la llegada de la ida.
-- `BookingPassenger`: posición relativa de 1 a N con unicidad por reserva, sin campos de datos personales definitivos, a la espera de la validación con Sandro.
-- `SeatAssignment`: asignación de butaca por tramo y pasajero; valida coincidencia entre el viaje y el tramo, y entre el colectivo y la butaca; registra snapshots históricos de número de butaca, categoría, precio en `Decimal` y moneda. Mantiene los registros en estado `RELEASED` para auditoría histórica.
-- Restricción única condicional en base de datos: `UniqueConstraint(fields=['trip', 'seat'], condition=Q(status__in=['HELD', 'CONFIRMED']))`, lo cual impide sobreventa o colisiones mientras las butacas estén retenidas o confirmadas, permitiendo la reutilización inmediata cuando pasan a `RELEASED`.
-- Servicios de dominio en `sales.services`:
-  - `create_booking`, `create_online_booking`, `create_manual_booking`: creación transaccional atómica (`transaction.atomic`) con orden determinístico de bloqueos por PK: primero sobre los viajes (`Trip.objects.select_for_update()`), luego expiración oportunista inicial acotada a los viajes involucrados, y luego sobre las butacas solicitadas (`Seat.objects.select_for_update()`), coordinando con los bloqueos de edición de butacas del panel operativo. Relectura de `timezone.now` tras adquirir bloqueos (salvo inyección explícita en tests) para evaluar el corte online y la fecha de expiración con el tiempo efectivo real.
-  - Recarga estricta desde la base de datos de los datos vigentes de `Trip`, `Seat`, `TripStop` y `TripFare`, sin confiar en instancias provistas por el llamador.
-  - Autoridad de paradas y orden delegada exclusivamente en el snapshot `TripStop` del viaje programado; cambios posteriores en `RouteStop` no invalidan reservas ni disponibilidad.
-  - El cierre de venta online opera a la hora exacta de corte (`now >= cutoff_time`). Tanto el canal `ONLINE` como el `MANUAL` excluyen viajes en estados iniciados (`STARTED`) y finales (`COMPLETED`, `CANCELLED`); `ONLINE` admite viajes en estado `BOARDING` antes del horario límite de la parada.
-  - Traducción selectiva de errores de integridad: restringida estrictamente al `constraint_name` en PostgreSQL (`sales_active_trip_seat_unique`) y al mensaje exacto por igualdad en SQLite (`unique constraint failed: sales_seatassignment.trip_id, sales_seatassignment.seat_id`), sin comparaciones por subcadena ni comodines genéricos de texto; errores ajenos se preservan y mantienen el rollback atómico completo.
-  - `get_trip_availability`: consulta disponibilidad de butacas con expiración oportunista previa acotada al viaje consultado, garantizando que una butaca reservada ocupa todo el viaje sin reventa por tramos intermedios en el MVP. Exige paradas completas (origen y destino) o ninguna, rechazando consultas parciales con `ValidationError`.
-  - `confirm_booking`: confirmación transaccional e idempotente que bloquea `Booking` directamente sin lecturas `b_pre` fuera de transacción y verifica la expiración bajo bloqueo con el reloj efectivo. Si está vencida, transiciona atómicamente la reserva a `EXPIRED` y las asignaciones a `RELEASED`, confirma el cambio (commit) y sólo después lanza `BookingExpiredError` para no revertir la liberación. Sincroniza la instancia en memoria provista incluso si la reserva ya estaba confirmada en base.
-  - `release_booking`: liberación que pasa reservas `HELD` y sus asignaciones a `RELEASED`, sincronizando la instancia en memoria. Rechaza con `InvalidBookingError` reservas `CONFIRMED` para impedir la reventa no autorizada de pasajes confirmados sin una política de cancelación aprobada.
-  - `expire_booking` y `release_expired_bookings`: transición atómica de reservas vencidas a `EXPIRED` y butacas a `RELEASED`. `expire_booking` mantiene semántica segura individual rechazando con `InvalidBookingError` reservas `CONFIRMED` o `RELEASED`, rechazando reservas `HELD` vigentes con `ValidationError` y sincronizando la instancia en memoria. La selección en `release_expired_bookings` no usa `DISTINCT` para ser plenamente compatible con PostgreSQL `select_for_update`, filtrando por PK mediante subconsulta en `BookingLeg`.
-- Reglas configurables en settings:
-  - `SALES_MAX_PASSENGERS_PER_BOOKING = 4` (validado en servidor).
-  - `SALES_ONLINE_HOLD_MINUTES = 15`.
-  - `SALES_ONLINE_CUTOFF_MINUTES = 60` (cierre de venta online a la hora exacta previa a la subida).
-  - `SALES_MANUAL_HOLD_HOURS = 24` (permitido en viajes `SCHEDULED` y `BOARDING`).
-  - Validación de vendedor manual: requiere usuario activo perteneciente al grupo `Vendedor`, `Administrador` o superusuario, sin ampliar permisos operativos.
-- Migración inicial `sales/migrations/0001_initial.py` creada y probada únicamente en bases temporales de tests; no aplicada a base local ni a bases reales.
-- Se incorporaron 79 pruebas en `sales/tests.py`: sales descubrió 79, ejecutó 76 en SQLite, OK con skipped=1 (la clase PostgreSQL contiene tres métodos no ejecutados en SQLite); suite completa descubrió 228, ejecutó 225 en SQLite, OK con skipped=1. Las pruebas PostgreSQL verifican terminación de hilos tras `join()`, diferenciación de errores de sincronización en barrera frente a colisiones de butaca, serialización real bajo `Trip` lock, y provocación directa de la restricción condicional única (`sales_active_trip_seat_unique`) con verificación de `diag.constraint_name` y traducción selectiva de `IntegrityError` a `SeatUnavailableError`.
-- Quedan explícitamente fuera de alcance en esta entrega: ventas finales, pasarelas de pago (Mercado Pago, Payway), vistas públicas, checkout, panel de ventas, caja, comprobantes, PDF, QR, correo transaccional, migración desde Google Sheets/AppSheet, Celery y Redis.
-
-## Panel personalizado de reservas manuales
-
-- Acceso y permisos:
-  - Exclusivo para usuarios autenticados pertenecientes a los grupos `Administrador`, `Vendedor` o superusuarios (`can_manage_reservations`).
-  - Usuarios comunes o `is_staff` sin grupo reciben HTTP 403 Forbidden. Usuarios anónimos son redirigidos a la pantalla de inicio de sesión (`panel:login`).
-  - Navegación lateral integrada en el panel con enlaces a "Reservas" y "Nueva reserva", además de indicador de reservas pendientes en el panel principal (`dashboard`).
-- Modelo de datos y migración:
-  - Extensión de `BookingPassenger` con campos de datos personales aprobados de identidad: `first_name`, `last_name`, `document_type`, `document_number`, `normalized_document`, `birth_date`, `nationality` y `gender` (opcional). Los datos de contacto (`email` y `phone`) residen exclusivamente en `Booking`.
-  - Normalización de documentos mediante `normalize_document()` con índice de base de datos (`db_index=True`) sin unicidad global, permitiendo reservas reiteradas del mismo pasajero.
-  - Generación de una única migración: `sales/migrations/0002_bookingpassenger_birth_date_and_more.py`. Verificada con `makemigrations --check --dry-run` y probada únicamente en bases temporales de tests.
-- Listado de reservas:
-  - Tabla completa con identificador público (`public_id`), fecha y hora local, canal, estado con distintivos visuales (`HELD`, `CONFIRMED`, `EXPIRED`, `RELEASED`), correo de contacto, resumen de tramos/viajes, cantidad de pasajeros, vencimiento y vendedor.
-  - Filtros por estado, fecha de reserva, viaje y vendedor.
-  - Búsqueda unificada por identificador público, correo de contacto o documento normalizado de cualquier pasajero de la reserva.
-  - Paginación de 20 registros por página manteniendo los parámetros de filtrado.
-- Detalle y liberación segura:
-  - Ficha de reserva con datos de contacto, vendedor, tramos, paradas, pasajeros, butacas por planta y categoría, precios unitarios históricos y total en `Decimal`.
-  - Historial de eventos de auditoría integrado reutilizando `panel.AuditEvent`.
-  - Acción de liberación (`release`) exclusiva para reservas en estado `HELD`, protegida por POST con CSRF mediante `panel.reservation_services.release_panel_booking`.
-  - No se ofrece confirmación económica ni cancelación comercial de reservas `CONFIRMED`.
-- Creación de reserva manual:
-  - Flujo guiado para solo ida o ida y vuelta; búsqueda de viajes activos excluyendo viajes iniciados (`STARTED`) o finalizados (`COMPLETED`, `CANCELLED`).
-  - Mapa interactivo de butacas generado dinámicamente por plantas (`Seat.Deck`) y coordenadas relativas sin planos rígidos hardcodeados, reflejando disponibilidad en tiempo real (`AVAILABLE`, `HELD`, `CONFIRMED`, `INACTIVE`) y categorías (cama/semicama).
-  - Formularios de pasajeros (hasta `SALES_MAX_PASSENGERS_PER_BOOKING`) y contacto.
-  - Validación estricta en servidor de paradas, horarios cronológicos, inversión de recorrido y salida posterior en viajes de vuelta, colisiones y tarifas vigentes.
-  - Invocación estricta de `sales.services.create_manual_booking` (nunca insertando `SeatAssignment` directamente).
-  - Las reservas se crean en estado `HELD` con vencimiento a 24 horas (`SALES_MANUAL_HOLD_HOURS`), a la espera de pagos y confirmación en etapas posteriores.
-- Auditoría transaccional:
-  - Registro de eventos en `panel.AuditEvent` para la creación y la liberación dentro de la misma transacción atómica (`transaction.atomic`). Si la auditoría falla, la operación se revierte.
-- Pruebas y cobertura:
-  - Se incorporaron 31 pruebas en `panel/test_reservations.py` cubriendo control de acceso (admin, vendedor, anónimo, usuario común, staff sin rol), listado, filtros, búsqueda por documento normalizado, detalle, creación solo ida e ida y vuelta, colisiones concurrentes, butacas ajenas, cálculo de tarifas en servidor, exclusión de viajes iniciados, liberación HELD, CSRF, IDOR y ausencia de recursos externos o CDNs.
-  - La suite completa de Django ejecuta 256 pruebas en SQLite: `OK (skipped=1)` (259 descubiertas).
-  - El módulo `sales` ejecuta 76 pruebas: `OK (skipped=1)` (79 descubiertas).
-  - El módulo `panel` ejecuta 128 pruebas: `OK`.
-  - El workflow CI de PostgreSQL (`.github/workflows/sales-postgres.yml`) fue actualizado para incluir la rama `feature/manual-reservations-panel-20260918`.
-- Quedan explícitamente fuera de alcance en esta entrega: pagos, confirmación económica, checkout público, emisión de pasajes (PDF, QR), cancelaciones comerciales, migración desde Google Sheets/AppSheet, Celery y Redis.
-
-## Retiro del prototipo y pendientes
-
-- El dominio antiguo de `core` (`Ruta`, `Parada`, `Bus`, `Salida`, `Reserva` y `ReservaItem`) fue retirado del código mediante una nueva migración de eliminación posterior a `0001_initial`, que permanece intacta. La migración de retiro solo se aplicó en la base temporal del runner de tests; no en la base local ni en Railway.
-- El propietario confirmó que no hay información real que conservar en esas tablas. `operations` es la única fuente de verdad del dominio operativo; se conserva `core` para el sitio y la infraestructura. Ver la [decisión confirmada](DECISIONS.md#retiro-del-dominio-del-prototipo).
-- Se conservan las dos pruebas del registro de aplicaciones en `core/tests.py`: ausencia de los seis modelos antiguos y presencia de los ocho modelos de `operations`.
-- Continúan pendientes las definiciones con Sandro de [DECISIONS.md](DECISIONS.md#pendiente-de-consultar-con-sandro).
-
-## Pagos manuales y confirmación económica
-
-Estado: implementado en `feature/manual-payments-20260918`, pendiente de revisión final.
-
-- Se agregó la aplicación `payments` con migración inicial y modelo `Payment`.
-- El panel permite registrar efectivo, presentar y revisar transferencias, descargar comprobantes protegidos y consultar métricas de pagos aprobados.
-- Efectivo y aprobación de transferencia confirman atómicamente pago, reserva y asignaciones; el rechazo mantiene HELD mientras la reserva siga vigente.
-- La restricción condicional de pagos activos, los bloqueos ordenados y las transacciones tienen cobertura SQLite y PostgreSQL.
-- No están terminados caja, pagos parciales, Mercado Pago, Payway, tarjetas, checkout público, reembolsos, PDF, QR, correo ni pasarelas externas.
-- Antes de producción se debe configurar almacenamiento persistente para comprobantes. La política de vencimiento de transferencias del checkout público sigue pendiente con Sandro.
-
-## Fundación de checkout público
-
-Estado: implementado en `feature/public-checkout-foundation-20260919`.
-
-- **Frontend público y arquitectura**:
-  - `core` gestiona las rutas y vistas públicas (`home`, `buscar_viajes`, `checkout`, `crear_reserva`, `resumen_reserva`, `expirar_reserva`) sin romper la home institucional ni sus secciones visuales.
-  - `operations` permanece como única fuente de verdad para recorridos, viajes, paradas, colectivos, butacas y tarifas.
-  - `sales` gestiona el agregado transaccional `Booking`, `BookingLeg`, `BookingPassenger` y `SeatAssignment`.
-  - `payments` no se expone al público; el resumen muestra un aviso claro de que los pagos públicos online se encuentran en proceso de integración.
-  - No se importa `panel` en `core`.
-  - No se agregaron modelos nuevos ni migraciones (0 migraciones pendientes).
-
-- **Búsqueda y disponibilidad**:
-  - Búsqueda por origen, destino, fechas de ida y vuelta y cantidad de pasajeros (1 a `SALES_MAX_PASSENGERS_PER_BOOKING`).
-  - Consulta de viajes vigentes (`SCHEDULED`, `BOARDING`) con fechas locales en `America/Argentina/Buenos_Aires`.
-  - Aplicación del corte de venta online concreto (`SALES_ONLINE_CUTOFF_MINUTES` = 60 minutos antes de la subida).
-  - Cálculo de disponibilidad real y tarifas activas por categoría (`TripFare`).
-
-- **Selección de butacas dinámica y formulario**:
-  - Distribución por planta (`Seat.Deck`) y coordenadas de grilla (`position_x`, `position_y`) construida dinámicamente con CSS Grid local.
-  - Soporte para ambos tramos (ida y regreso) en compras de ida y vuelta.
-  - Formulario de pasajeros con campos de identidad completos (`first_name`, `last_name`, `document_type`, `document_number`, `birth_date`, `nationality`, `gender`) y datos de contacto en la reserva (`email`, `phone`).
-  - `create_online_booking` ampliado para recibir `passengers_data` opcional preservando compatibilidad.
-
-- **Seguridad, atomicidad y protección de sesión**:
-  - POST de creación protegido con CSRF, honeypot (`website`) y limitación razonable de holds en sesión (máximo 3 en 15 minutos) sin Redis ni Celery.
-  - Revalidación estricta de todos los parámetros en servidor sin confiar en datos enviados por el navegador.
-  - Privacidad: no se almacenan datos personales en cookies ni logs.
-  - Resumen protegido mediante token seguro de sesión asociado al `public_id`, previniendo vulnerabilidades IDOR.
-  - Temporizador regresivo en cliente basado en `expires_at` (15 minutos para retención `HELD`). Al expirar el tiempo, se transiciona automáticamente la reserva a `EXPIRED` y se liberan las butacas mediante `expire_booking`.
-  - Acción para cancelar y liberar el hold voluntariamente antes del vencimiento.
-
-- **Pruebas y verificación**:
-  - Se añadieron pruebas exhaustivas en `core/test_checkout.py` y `core/tests.py` cubriendo: renderizado institucional, validaciones de búsqueda, corte online, selección dinámica de butacas, honeypot, limitación de tasa, atomicidad y rollback ante colisiones, protección IDOR de sesión, temporizador, expiración automática y límites arquitectónicos.
-  - El workflow `.github/workflows/sales-postgres.yml` fue actualizado para incluir la rama `feature/public-checkout-foundation-20260919`.
-  - Pruebas ejecutadas con SQLite y verificaciones de Django (`check`, `makemigrations --check --dry-run`).
-
-## Fundación de pasajes y PDF (tickets)
-
-Estado: implementado en `feature/ticket-pdf-foundation-20260919`.
-
-- **Arquitectura y desacoplamiento**:
-  - Aplicación independiente `tickets` registrada en Django (`tickets.apps.TicketsConfig`).
-  - Depende únicamente de `sales` en modo lectura transaccional para consultar `Booking` confirmado y sus asignaciones históricas. `sales`, `operations`, `payments`, `panel` y `core` no dependen de `tickets`.
-  - Motor de generación de PDF y QR 100 % desacoplado y portable: `tickets.rendering.data.TicketData` (dataclass de entrada), `tickets.rendering.template.draw_provisional_ticket` (canvas ReportLab provisional reemplazable) y `tickets.rendering.generator.build_ticket_pdf` (orquestador que genera `bytes`). No utiliza dependencias pesadas de navegador headless ni bindings C frágiles.
-- **Modelos y migración inicial**:
-  - `Ticket`: pasaje emitido con clave primaria interna `id`, identificador público `public_id` (UUID4 indexado y único), código legible `ticket_code` (`TK-<reserva>-L<tramo>-P<pasajero>`), relación `PROTECT` a `sales.Booking`, `sales.BookingLeg`, `sales.BookingPassenger` y `sales.SeatAssignment`, y estado (`PENDING`, `ISSUED`, `VOID`).
-  - Snapshots históricos inmutables en `Ticket`: `passenger_name`, `passenger_document_masked`, `origin_stop_name`, `destination_stop_name`, `departure_at`, `arrival_at`, `seat_number`, `seat_category`, `price` (en `Decimal`, snapshot directo de `SeatAssignment.price`, nunca recalculado desde `TripFare`), `currency` y `booking_public_id`.
-  - Tokens criptográficos de alta entropía (>= 256 bits, SHA-256): `verification_token_hash` y `download_token_hash`. Separación estricta de alcances; los tokens en plano nunca se persisten en base de datos.
-  - `TicketEmailAttempt`: registro de intentos de entrega agrupada por reserva (`Booking`), estado (`PENDING`, `SENT`, `FAILED`), marca temporal, correo destinatario y mensaje de error sanitizado (sin volcados internos de red o contraseñas).
-  - `TicketAuditEvent`: bitácora transaccional para auditoría de acciones sensibles (`ISSUE`, `DOWNLOAD`, `VOID`, `EMAIL`, `VERIFY`).
-  - Migración inicial generada: `tickets/migrations/0001_initial.py`. Probada únicamente en bases temporales de test runner; no ejecutada en bases locales ni reales.
-- **Almacenamiento seguro**:
-  - `PrivateTicketFileSystemStorage` independiente de comprobantes de pago, con `base_url=None`, directorio aislado `TICKETS_STORAGE_ROOT` y rutas UUIDv4 no predecibles (`tickets/<uuid4>.pdf`).
-- **Servicios de dominio**:
-  - `issue_tickets_for_booking(booking_id)`: servicio top-level con bloqueo `select_for_update()` sobre `Booking`. Exige que no exista una transacción externa activa (`in_atomic_block`) para garantizar limpieza física simétrica y evitar PDFs huérfanos. En caso de fallo transaccional o de E/S, revierte la base de datos y borra físicamente del disco todos los PDFs creados durante la ejecución. Valida estado `CONFIRMED`, genera tokens, renderiza PDFs, crea registros de pasaje y auditoría atómicamente.
-  - `send_booking_tickets(booking_id, retry=False)`: agrupa todos los pasajes emitidos de una reserva en exactamente un correo con múltiples adjuntos PDF. Registra el intento en `TicketEmailAttempt` en estado `PENDING` antes de la comunicación I/O de red, impidiendo envíos simultáneos o duplicados. Si ya existe un envío exitoso no reenvía; si hay un intento fallido exige `retry=True` explícito.
-  - `void_ticket(ticket_id, reason, user=None)`: anulación transaccional de pasaje con auditoría.
-- **Vistas y endpoints seguros**:
-  - `/tickets/verify/?token=...`: verificación pública de solo lectura para escaneo de QR. Busca por hash SHA-256 del token sobre `verification_token_hash`. Devuelve exclusivamente estado (`VÁLIDO`, `ANULADO`), código de pasaje, nombre del pasajero, documento oculto, origen, destino, fecha, butaca y categoría. No expone motivo de anulación ni ningún otro dato fuera de los permitidos. Protege estrictamente la privacidad: omite documento completo, precio, contacto, datos de pago y otros pasajeros. Respuestas con headers de seguridad (`Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex, nofollow`). Rate limiting defensivo por IP en caché (`TICKETS_RATE_LIMIT_PER_MINUTE = 30`). Template accesible local y responsive (`templates/tickets/verify.html`), sin CDNs.
-  - `/tickets/download/<uuid:public_id>/?token=...`: descarga protegida del archivo PDF con validación de existencia en storage (404 si fue eliminado físicamente). Acceso permitido mediante token de descarga válido (`download_token_hash`) o por rol interno autorizado (`Administrador`, `Vendedor`, superusuario). Usuarios staff sin rol o usuarios comunes sin token reciben HTTP 403 Forbidden.
-- **Flujo de Integración Continua**:
-  - `.github/workflows/tickets-postgres.yml`: workflow dedicado para la rama `feature/ticket-pdf-foundation-20260919` que levanta servicio PostgreSQL 16 y ejecuta la suite completa de pruebas unitarias y de concurrencia sin dependencias de paquetes de sistema C/nativos.
-- **Pruebas y verificación**:
-  - 30 pruebas unitarias y de integración exhaustivas en `tickets/tests.py`.
-  - Cobertura: matriz de reservas de 1, 3 y 6 pasajes (ida y vuelta), inmutabilidad de snapshots frente a cambios en `operations`, rechazo de reservas no confirmadas o expiradas, detección y limpieza física dual ante fallos de base de datos o almacenamiento, extracción de texto de PDF con `pypdf`, validación estructural de imagen QR puro Python (`Pillow` + `qrcode`) verificando payload URL y token SHA-256 sin dependencias nativas/C (`pyzbar` / `libzbar`), privacidad estricta de verificación QR sin motivo de anulación ni datos fuera de los autorizados, control de acceso y prevención IDOR en descargas, rate limiting de verificación, entrega agrupada en un solo correo, auditoría sin PII y concurrencia serializada con PostgreSQL.
-  - Resultados en SQLite: 357 pruebas ejecutadas con éxito (`OK, skipped=4`, correspondientes a tests específicos de PostgreSQL en `sales` y `tickets`).
-  - Resultados en PostgreSQL: 360 pruebas ejecutadas con éxito sin ninguna prueba omitida (`OK`, 0 skipped).
-  - Verificaciones de Django: `manage.py check` (0 errores), `manage.py makemigrations --check --dry-run` (sin cambios pendientes).
-
-Actualizar este documento cuando finalice cada módulo.
-
-## Integración de fulfillment de tickets (2026-09-20)
-
-Estado: implementada en `feature/ticket-fulfillment-integration-20260920`, pendiente de validación final. Se agregó trabajo durable de emisión/correo, reintentos protegidos en panel, descarga del invitado desde resumen de sesión y reconciliación de reservas confirmadas.
-## Entrega de cuentas de clientes (2026-09-20)
-
-Implementado en la rama de trabajo: registro y login local, recuperación por enlace, perfil `customers`, asociación de nuevas reservas autenticadas, reclamo explícito de compras invitadas con token de un solo uso y vencimiento, sección Mis viajes con descarga autorizada de tickets y consentimiento comercial revocable. Google OAuth quedó preparado y simulable sin credenciales reales.
-
-Pendiente: entrega de enlaces de reclamo y recuperación mediante proveedor de correo productivo, configuración/validación de credenciales Google de producción, Apple, campañas comerciales y cualquier cambio de datos personales pendiente.
-
-### Login Apple OIDC (2026-10-08)
-
-Implementado en `feature/apple-customer-login-20261008`: login Apple configurable por entorno, con state/nonce/PKCE, callback form-post protegido por validaciones OIDC, verificación RS256 contra JWKS cacheado en memoria y simulación exclusivamente para desarrollo/tests. La identidad se guarda separada mediante `apple_sub`; no se persisten tokens, no se registran credenciales y los conflictos con cuentas existentes no enumeran ni vinculan por email. Se conserva login local, Google, compra invitada, reclamo explícito y asociación de reservas; la migración se generó pero no se ejecutó contra bases persistentes.
-
-## Endurecimiento operativo de fulfillment (2026-09-21)
-
-## Almacenamiento privado y correo SMTP (2026-10-02)
-
-Estado: implementado en `feature/production-storage-email-20261002`, sin conexión a proveedores reales.
-
-- Pasajes y comprobantes mantienen filesystem local en desarrollo/tests y agregan backend S3-compatible privado configurable por entorno.
-- Las descargas no exponen URLs públicas permanentes y conservan autorización por vistas/tokens.
-- Se completó configuración SMTP genérica, console para desarrollo, locmem en tests, reply-to y checks de seguridad sin secretos.
-- WhiteNoise permanece separado para staticfiles. No se migraron ni borraron archivos locales; la migración posterior deberá verificarse con inventario y checksums.
-
-## Mantenimiento operativo programado (2026-10-02)
-
-Estado: implementado en `feature/scheduled-operational-maintenance-20261002`, pendiente de validación final del coordinador.
-
-- Se agregó `run_operational_maintenance` con selección de tareas (`expire`, `payments`, `fulfillment`), `--dry-run`, `--limit`, `--booking` y tiempo máximo seguro.
-- Expiración y fulfillment reutilizan servicios existentes, con procesamiento independiente, leases, tolerancia a fallos y salida JSON de métricas sin PII.
-- Se agregaron límites configurables en `.env.example` y checks de configuración.
-- No se agregaron modelos ni migraciones; no se ejecutaron migraciones contra bases persistentes ni se configuró todavía el Cron de Railway.
-- Los pagos `AWAITING_VOUCHER` y `UNDER_REVIEW` se vencen mediante el servicio existente, conservando la política comercial vigente.
-
-## Reportes básicos de ventas (2026-10-01)
-
-Estado: implementado en `feature/basic-sales-reports-20261001`, pendiente de validación final del coordinador.
-
-- Reporte HTML paginado y CSV UTF-8 BOM de pagos aprobados y reservas confirmadas, con filtros de fecha, medio, canal y vendedor.
-- El detalle muestra referencia pública, fecha/hora `confirmed_at`, estado, canal, medio, importe, pasajeros y tramos calculados mediante agregaciones sobre `BookingPassenger`/`BookingLeg`; los totales no dependen de la página visible.
-- Incluye indicadores de ventas/pagos únicos, ingreso total, efectivo, transferencia, pasajeros y tramos, más desgloses visibles por medio, canal y vendedor (incluido "Sin vendedor"). La fecha de confirmación y los filtros se interpretan en `America/Argentina/Buenos_Aires`.
-- Acceso exclusivo para Administrador/Vendedor; consultas de solo lectura, sin PII ni comprobantes, con total sobre el queryset completo y protección contra fórmulas CSV.
-- No se agregaron modelos ni migraciones. La validación local requiere variables efímeras `SECRET_KEY`, `DEBUG` y `ALLOWED_HOSTS`; no se accedió a datos reales ni se ejecutaron migraciones.
-
-Estado: implementado en `feature/fulfillment-operations-hardening-20260921`, pendiente de validación final.
-
-- Se agregaron concesiones temporales para recuperar trabajos `PROCESSING` abandonados y campos de próximo intento.
-- Se agregó el comando `reconcile_fulfillments` con dry-run, límite, filtros por estado/reserva y resumen de resultados.
-- Se agregó la bandeja global personalizada `/panel/fulfillment/` con filtros y acciones POST protegidas para Administrador y Vendedor.
-- Los workflows PostgreSQL ejecutan validaciones en pushes a `main` y Pull Requests dirigidos a `main`.
-- La dependencia real es `payments -> tickets` (unidireccional y perezosa); la documentación anterior que decía que payments no dependía de tickets quedó corregida.
-## Manifiesto operativo de pasajeros (2026-10-01)
-
-Estado: implementado en `feature/trip-passenger-manifest-20261001`, pendiente de validación final en PostgreSQL y del workflow CI.
-
-- Se agregó un manifiesto personalizado por viaje con filas exclusivamente de `SeatAssignment.CONFIRMED` y `Booking.CONFIRMED`, limitado al viaje solicitado.
-- Incluye pasajero, documento, butaca, categoría, paradas reales del tramo y referencia pública de reserva; ordena por subida, categoría y butaca.
-- Incluye resumen de subidas, bajadas y pasajeros que continúan por `TripStop`, acceso desde el detalle, vista de impresión y exportación CSV UTF-8 con BOM y protección contra fórmulas.
-- Acceso restringido a Administrador/Vendedor; no expone contacto, pagos, comprobantes, tickets ni auditoría y no ofrece acciones mutables por GET.
-- El formato legal definitivo del manifiesto sigue pendiente de confirmación con Sandro.
-
-## Ciclo de vida de viajes y corte posterior al inicio (2026-10-01)
-
-## Notificaciones transaccionales (2026-10-02)
-
-Estado: implementadas en `feature/transactional-notifications-20261002`, pendientes de PostgreSQL y workflows.
-
-- Nueva app `notifications` con migración `0001_initial.py`, outbox idempotente y estados explícitos.
-- Hooks para reservas online, transferencias, comprobantes, aprobación/rechazo, vencimientos y confirmación manual con correo válido.
-- Mantenimiento y bandeja operativa procesan/reintentan sin PII; el reintento es POST+CSRF y auditado.
-- No se duplicó `TicketEmailAttempt` ni se reemplazó el correo agrupado de pasajes. No se enviaron correos reales ni se ejecutaron migraciones persistentes.
-
-## Bandeja operativa (2026-10-02)
-
-En implementación en `feature/operations-inbox-20261002`: vista de solo lectura para Administrador/Vendedor con categorías, prioridades server-side, filtros, búsqueda segura, paginación y contadores globales. No crea migraciones. Cámara, offline, polling agresivo, caja, contabilidad y mantenimiento programado quedan fuera de alcance.
-
-Estado: implementado en `feature/trip-lifecycle-sales-cutoff-20261001`, pendiente de validación PostgreSQL y workflow CI.
-
-- Se agregaron servicios idempotentes y transaccionales para iniciar y finalizar viajes, con `select_for_update`, timestamps `started_at`/`completed_at`, permisos Administrador/Vendedor y auditoría.
-- El detalle operativo ofrece una pantalla de confirmación y acciones mutables exclusivamente POST+CSRF; muestra estado, fechas en `America/Argentina/Buenos_Aires` y advierte reservas HELD y pagos pendientes sin liberarlos.
-- La creación de reservas, asignaciones y confirmaciones de pagos manuales continúa bloqueada server-side desde `STARTED`; el corte online configurable de una hora permanece vigente.
-- Se agregó `operations/migrations/0002_trip_completed_at_trip_started_at.py`; solo debe aplicarse en bases temporales de pruebas, nunca en bases persistentes durante esta entrega.
-- Se verificaron `check`, `makemigrations --check --dry-run`, `diff --check` y las pruebas afectadas en SQLite.
-
-## Worker productivo de mantenimiento (2026-10-06)
-
-Implementado `run_maintenance_worker` en un proceso separado de Gunicorn.
-Admite `--once`, `--max-cycles` y `--max-seconds`, ejecuta ciclos mediante
-`run_operational_maintenance`, maneja SIGTERM/SIGINT con apagado ordenado y
-emite métricas JSON sin PII. PostgreSQL usa advisory lock de sesión; SQLite
-mantiene sólo comportamiento de desarrollo sin garantía de exclusión.
-
-Configuración: `MAINTENANCE_WORKER_INTERVAL_SECONDS`,
-`MAINTENANCE_WORKER_JITTER_SECONDS`, `MAINTENANCE_WORKER_MAX_CYCLE_SECONDS`,
-`MAINTENANCE_WORKER_LOCK_WAIT_SECONDS`, `MAINTENANCE_WORKER_ENABLED` y
-`MAINTENANCE_WORKER_MODE`. Se documentan dos alternativas: proceso residente
-`python manage.py run_maintenance_worker` o cron externo con `--once`; sólo una
-debe activarse por entorno. El rollback consiste en detener el proceso worker
-y volver a la versión anterior, sin borrar datos ni ejecutar migraciones.
-- La cancelación de viajes y sus consecuencias económicas siguen pendientes.
-### Módulo de gestión de clientes (2026-10-02)
-
-Implementado en `feature/customer-management-panel-20261002`: listado paginado, búsqueda por nombre/email normalizado, filtros de cuenta/consentimiento/reservas/alta, métricas, detalle de asociaciones explícitas, consentimientos auditables y estado de reclamos. Las vistas son GET-only y no hay migraciones. Pendiente validar workflows PostgreSQL sobre el hash final.
-## Preparación verificable para producción (2026-10-05)
-
-En implementación en `feature/production-readiness-preflight-20261005`. Incluye `/health/live/`, `/health/ready/`, el comando `production_preflight`, request IDs, logging configurable y páginas de error 400/403/404/500. La entrega no despliega, no accede a Railway, no ejecuta migraciones persistentes y no conecta proveedores reales.
-
-Checklist: configurar variables sin secretos en el repositorio; aplicar `migrate` únicamente en la base objetivo autorizada; ejecutar `collectstatic --noinput`; ejecutar `production_preflight --json`; comprobar readiness; y recién después arrancar el proceso. Ante fallo se conserva la versión anterior como rollback básico y se revierte el release sin borrar datos ni ejecutar migraciones destructivas.
-## Preparación de backup y restore (2026-10-06)
-
-Implementado en esta rama: `backup_preflight`, `create_database_backup` y
-`verify_database_backup`. Las copias son PostgreSQL-only, formato custom, con
-`shell=False`, salida absoluta externa, permisos privados, temporal atómico,
-no-sobrescritura, checksum SHA-256 y errores sanitizados. Se incorporó inventario
-agregado de storage privado, configuración de retención, advertencias al
-`production_preflight`, `.gitignore` y [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
-
-No se ejecutan backups/restores reales, no se accede a proveedores y el restore
-queda documentado como drill manual en una base temporal aislada.
-
-## Explorador central de auditoría (2026-10-07)
-
-Implementado `/panel/auditoria/`, detalle firmado y CSV UTF-8 BOM. Inventario: `panel.AuditEvent` (operaciones, ventas, pagos y reintentos de notificaciones), `tickets.TicketAuditEvent` (pasajes/embarques) y `customers.CustomerConsent`; no hay bitácora propia en notificaciones. No se agregaron migraciones ni se ejecutaron cambios persistentes; `check`, `makemigrations --check --dry-run` y `git diff --check` están correctos.
-La vista es exclusiva de Administrador/superusuario, con filtros server-side, orden cronológico, paginación y contadores globales. Muestra categorías de actor y UUID públicos validados; excluye usernames/emails, descripciones, IDs internos, documentos, tokens, hashes, comprobantes, credenciales, rutas privadas, IP y user-agent. HTML, detalle firmado y CSV son GET-only y no generan auditorías nuevas. La fundación `cash_register` reutiliza `panel.AuditEvent`; sus eventos aparecen sin duplicación y se proyectan sin importes, motivos ni snapshots de caja.
-
-## Fundacion de caja (2026-10-07)
-
-## Aceptación E2E de navegador (2026-10-07)
-
-Implementada suite Playwright reproducible con seed demo, SQLite temporal, SMTP
-locmem y storage privado efímero. El workflow separado
-`.github/workflows/browser-e2e.yml` instala Chromium y publica artefactos sólo en
-fallos; QR, descarga por token, aprobación de transferencia y reversión de
-embarque quedan documentados como limitaciones de navegador y siguen cubiertos
-por tests Django.
-
-Implementado en esta rama el modulo `cash_register`: sesiones con apertura y cierre
-atomicos, restriccion PostgreSQL de una sola caja abierta, movimientos inmutables
-con clave idempotente, auditoria y enlace de cobros en efectivo APPROVED cuando
-existe una caja abierta. El panel personalizado ofrece apertura y cierre mediante
-POST+CSRF para Administradores y Vendedores; no se ejecutaron migraciones en bases
-persistentes ni se conectaron proveedores reales.
-
-La apertura, consulta y cierre de la caja propia están disponibles para
-Administradores y Vendedores mediante POST+CSRF. Los Administradores pueden
-consultar cajas y registrar ajustes excepcionales con motivo; las cajas cerradas
-no reciben movimientos. Los pagos manuales en efectivo APPROVED exigen una caja
-abierta del vendedor y se enlazan una sola vez; las transferencias no generan
-movimientos de efectivo. El módulo no implementa devoluciones, saldos a favor,
-comisiones, impuestos, Mercado Pago, Payway ni conciliación bancaria.
-## Reporte y conciliación interna de caja (2026-10-08)
-
-Implementado `/panel/reportes/caja/` con fecha operativa `America/Argentina/Buenos_Aires`,
-filtros seguros, detalle paginado y CSV UTF-8 BOM con protección contra fórmulas.
-La revisión idempotente de cierres usa POST+CSRF, lock transaccional y auditoría
-central sanitizada; no modifica movimientos ni pagos. Se generó la migración
-`cash_register.0004` para persistir actor, fecha y observación, sin ejecutarla en
-bases persistentes.
-
-## Endurecimiento de redirecciones (2026-10-07)
-
-Se corrigió la validación de `next` en login y registro de clientes: ahora usa
-`url_has_allowed_host_and_scheme` de Django y rechaza variantes con backslash o
-hosts externos que pueden convertirse en open redirects. Se agregaron pruebas de
-regresión para login y registro; no se modificaron modelos ni migraciones.
-
-## Accesibilidad y responsive móvil (2026-10-08)
-
-En implementación en `feature/accessibility-mobile-hardening-20261008`: se agregó
-salto al contenido, foco visible consistente, soporte de `prefers-reduced-motion`,
-semántica ARIA para navegación y pasos del checkout, y cierre del menú móvil con
-Escape y retorno de foco. Se ajustó el panel para viewport estrecho (incluido
-360px) sin cambiar rutas, permisos, CSRF ni reglas de negocio; no se agregaron
-modelos, migraciones, dependencias remotas ni se ejecutaron migraciones persistentes.
-## Protección distribuida contra abuso (2026-10-10)
-
-Implementada en este worktree: contadores hash-only por ventana para verificación
-de pasajes, creación de holds y comienzo de transferencias; límites configurables,
-atomicidad con locks de PostgreSQL, limpieza acotada en `run_operational_maintenance`
-y validación en `production_preflight`. Se agregó migración temporal `core.0003`;
-no se aplicó a bases persistentes.
-
-## Gestion de usuarios internos (2026-10-08)
-
-## Estado consolidado de produccion y contenido (2026-10-09)
-
-Implementado en esta rama: configuracion bancaria por entorno con validacion de
-placeholders y formatos; bloqueo seguro del inicio de transferencias; `PUBLIC_BASE_URL`
-HTTPS para invitaciones; branding SC Viajes; ocultamiento de contacto no configurado;
-limpieza de textos corruptos; frontend local sin dependencias remotas; Playwright
-actualizado; y reporte sanitizado de fallos de fulfillment.
-
-Pendiente de despliegue: configurar valores reales fuera del repositorio, verificar
-preflight con secretos administrados y completar los workflows PostgreSQL y Browser E2E.
-Bloqueado por decision comercial: datos bancarios reales, telefono/WhatsApp real,
-servicios a bordo no confirmados, AppSheet/Google Sheets, Flecha Bus, Mercado Pago QR,
-Payway y politicas comerciales aun no aprobadas. No se ejecutaron migraciones
-persistentes ni se accedio a proveedores reales.
-
-Implementada la base del panel personalizado para Administradores y Vendedores:
-invitaciones con token hash-only de un solo uso, contrasena validada, grupos exactos,
-listado paginado y filtros, acciones POST+CSRF, proteccion de superusuarios y del ultimo
-Administrador activo, revocacion de sesiones y auditoria sanitizada. Se agrego la
-migracion `panel.0002_staffinvitation`; no se ejecutaron migraciones persistentes ni
-se enviaron correos reales.
-
-## Endurecimiento de identidad y acceso (2026-10-09)
-
-Google OAuth resuelve primero por `google_sub` nullable/unique, migra valores vacios a
-NULL y exige issuer, audience, subject, email y `email_verified` del ID token; no vincula
-por email existente ni persiste tokens. Apple devuelve un error recuperable cuando una
-identidad nueva no comparte email, sin crear cuenta. El panel excluye a `is_staff` sin
-grupo autorizado, `TicketEmailAttempt` conserva una representacion sanitizada y se
-actualizaron dependencias de PyJWT/Pillow y pruebas; la migracion solo se aplico en una
-base SQLite temporal.
-
-## Endurecimiento de calidad y CI (2026-10-10)
-
-## Ampliacion critica E2E (2026-10-10)
-
-La suite de navegador cubre carga de comprobante sintético en transferencia,
-aprobación y rechazo en la bandeja interna, aislamiento entre contextos de
-navegador para roles, pantalla de embarque y caja del vendedor. El workflow fija
-el entorno de demo, ejecuta Playwright y una corrida explícita de axe; los
-artefactos siguen publicándose únicamente ante fallos. No se conectan proveedores
-reales ni se alteran reglas comerciales.
-
-Implementado Ruff fijado a `0.13.0`, correcciones de imports/variables muertos y
-un workflow reproducible para Ruff, checks de Django, `collectstatic`, `pip check`,
-`pip-audit` y `npm audit` en PRs y pushes a `main` y `feature/**`. Las exclusiones y su justificación
-están documentadas en [CODE_QUALITY.md](CODE_QUALITY.md); no se modificaron
-migraciones ni dependencias de producción.
-## 2026-10-10 — restore drill PostgreSQL
-
-## Integración Sandro — reservas, permisos y balance (2026-10-24)
-
-Integradas localmente las ramas `feature/sandro-reservas-pagos-20261024` y
-`feature/sandro-permisos-balance-20261024` desde la base común
-`3398bb5ff9d9e5d1b87aead90e71f39297d94cc5` en la rama
-`integration/sandro-20261024`. Las reservas manuales no vencen automáticamente,
-el alcance de vendedores se aplica antes de filtros y exportaciones, las
-transferencias solo las revisan Administradores activos y el balance separa
-compras, pasajes, tramos y comisiones sin rendiciones automáticas.
-
-Se verificaron las migraciones `sales.0003_booking_internal_note_alter_booking_email_and_more`
-y `panel.0003_staffprofile` en SQLite efímero, tanto desde esquema vacío como
-actualizando desde las migraciones comunes previas. No se ejecutaron migraciones
-contra bases persistentes. Pendientes conservados: Güemes, tarifas por salida,
-menores sin butaca, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
-
-La suite combinada de Django terminó con 560 pruebas OK y 7 omitidas. El fixture
-de `panel/test_reports.py` fue completado con datos sintéticos de venta exigidos
-por la validación de pagos. Ruff y los checks de Django pasaron. PostgreSQL no se
-validó porque Docker Desktop no tenía el daemon activo; Playwright/axe no se
-validó porque no estaban instaladas las dependencias de `node_modules`.
-
-Se agregó un restore drill temporal y reproducible con PostgreSQL, conteos y
-comparación de esquema sanitizados, inventario/checksum de archivos privados
-sintéticos, limpieza ante fallos y workflow CI aislado. No se ejecuta contra
-bases reales ni se almacenan credenciales.
-
-## Integración Sandro — rutas y menores (2026-10-24)
-
-Se integraron localmente `feature/sandro-rutas-guemes-20261024` y
-`feature/sandro-menores-sin-butaca-20261024` desde
-`2b47af4faf7e33eff5385c7bdd1b2f9739c3eaff` en la rama
-`feature/sandro-rutas-menores-integradas-20261024`.
-
-La entrega agrega Güemes con provincias explícitas, valida orden/permisos y
-prohíbe tramos dentro de una provincia. El comando de operaciones conserva
-históricos, es idempotente y soporta `--dry-run`. Los menores gratuitos sin
-butaca usan snapshots de gratuidad y madre, aparecen en tickets y manifiesto,
-pero no consumen asiento, ingreso ni comisión. Los tickets pagables mantienen
-precio y butaca obligatorios.
-
-Se generaron y verificaron en SQLite temporal `sales.0004_bookingpassenger_accompanied_by_and_more`
-y `tickets.0006_remove_ticket_tickets_ticket_price_positive_and_more`, tanto
-desde base vacía como actualizando desde los esquemas previos con un registro
-sintético preservado. No se ejecutaron migraciones persistentes.
-
-La fecha de compra sigue siendo provisionalmente la creación de la reserva,
-no `confirmed_at`; la diferencia queda pendiente de consulta. También queda
-pendiente cualquier política adicional de embarque de menores. Continúan fuera
-de alcance tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y
-Payway. La validación PostgreSQL, Browser E2E/axe y restore drill debe ejecutarse
-en los workflows sobre el SHA final; no se conectan proveedores reales.
-## CI de rutas y menores
-
-Los workflows de Quality Gate, Sales PostgreSQL, Tickets PostgreSQL, Browser
-E2E con axe y PostgreSQL restore drill se ejecutan sobre cada SHA publicado;
-sus resultados y el SHA exacto de la validacion final se entregan junto con la
-rama. Los entornos son aislados y no conectan proveedores reales.
-
-## Integración Sandro — tarifas por salida y butacas prioritarias (2026-10-25)
-
-Se integraron `feature/sandro-tarifas-salida-20261025` y
-`feature/sandro-butacas-prioritarias-20261025` desde
-`16a68086f83b1aa7be279a25d3cc885fbdd9a54f` en la rama
-`feature/sandro-tarifas-prioritarias-integradas-20261025`.
-
-Las tarifas ahora son por salida y categoría, con snapshot inmutable en la
-reserva, edición administrativa auditada y protección transaccional frente a
-actualizaciones concurrentes. La migración `operations.0003` fue aplicada en
-una base SQLite temporal vacía y sobre un esquema `operations.0002` con datos
-sintéticos históricos; no se ejecutaron migraciones persistentes.
-
-Las butacas 51 y 54 se liberan a las 00:00 de Argentina de dos días calendario
-antes de la salida. La regla se verifica en web, panel y servicios, conserva
-ocupaciones existentes y no depende de un worker. La autorización previa a la
-liberación sigue pendiente.
-
-Validación local de esta integración: Ruff, Django check, makemigrations
-check, diff check y la suite completa (586 pruebas, 7 omitidas, 591
-descubiertas) pasaron. PostgreSQL real, Browser E2E/axe y restore drill quedan
-para los workflows CI del SHA final.
+# Estado del proyecto SC Viajes
+
+Fecha de consolidación: 27 de octubre de 2026
+Commit base integrado: `69297a5` (PR #48: *Actualizar gratuidad de menores, horarios por parada y pasaje PDF*)
+Estado global: **Desarrollo e integraciones comerciales de Sandro completados en el repositorio; validaciones de staging real y decisiones comerciales pendientes de confirmación.**
+> [!IMPORTANT]
+> **No se declara producción aprobada.** El sistema cuenta con cobertura completa en pruebas sintéticas y CI automatizado, pero requiere validación en staging real con base PostgreSQL dedicada, configuración de proveedores externos (Railway, S3, SMTP, OAuth) y la resolución de definiciones comerciales abiertas con Sandro.
+
+---
+
+## 1. Resumen ejecutivo de funcionalidades vigentes comprobadas
+
+Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base auditada, el sistema refleja el siguiente estado vigente:
+
+1. **Reservas manuales sin expiración automática**:
+   - Las reservas manuales creadas en el panel por vendedores tienen `expires_at = None`. No vencen por tiempo y mantienen la butaca retenida hasta su cobro o su liberación manual.
+   - Las reservas online conservan su hold temporal de 15 minutos (`SALES_ONLINE_HOLD_MINUTES = 15`).
+   - El proceso de mantenimiento operativo no expira reservas manuales indefinidas ni reservas con pagos rechazados.
+2. **Alcance por vendedor**:
+   - El filtro por vendedor autenticado se aplica en el QuerySet base (`sales.Booking.objects.filter(...)` o restricción por actor) antes de cualquier consulta, detalle, filtrado, paginación, dashboard o exportación CSV.
+   - Los vendedores sólo visualizan y gestionan sus propias ventas y reservas.
+   - La acción de liberación de una reserva manual está permitida exclusivamente al usuario vendedor que la creó.
+3. **Revisión administrativa de transferencias**:
+   - Exclusiva para usuarios pertenecientes al grupo `Administrador` activos (o superusuarios). Los vendedores no tienen permisos para revisar o aprobar transferencias.
+   - Los rechazos de comprobantes preservan el intento de pago (`Payment`), registran el motivo obligatorio y mantienen la reserva y la butaca retenidas, habilitando al cliente o vendedor a cargar un nuevo comprobante.
+   - La aprobación es terminal e idempotente: confirma atómicamente la reserva, el pago y las butacas, disparando el fulfillment durable de pasajes sin enviar notificaciones redundantes.
+4. **Balance y comisiones de vendedores**:
+   - Perfil de staff registrado en `panel.StaffProfile` (nombre, apellido, DNI, WhatsApp).
+   - Capacidad propietaria `is_owner` (no expuesta en la interfaz) para autorizar invitaciones o promociones de administradores.
+   - Comisión fijada en `Decimal("5000.00")` por cada asignación confirmada con precio positivo (por pasajero y tramo).
+   - Los menores gratuitos sin butaca ($0,00) y las ventas web sin vendedor no generan comisión.
+   - La liquidación distingue ventas brutas, unidades comisionables, comisión retenida y neto operativo. No se ejecutan transferencias bancarias ni rendiciones automáticas.
+5. **Recorridos con Güemes y validación interprovincial**:
+   - Se incorporó la parada Güemes (`GUE`, provincia de Salta) en ambos recorridos operativos (Córdoba → Jujuy y Jujuy → Córdoba).
+   - Validación estricta en servidor: origen y destino deben pertenecer a provincias diferentes (`origin.province != destination.province`), rechazando la venta de tramos intraprovinciales.
+   - Comando `setup_initial_operations` idempotente con soporte `--dry-run`, que preserva viajes e históricos existentes.
+6. **Tarifas por salida**:
+   - Modelo `operations.TripFare` configurado por salida (`trip`) y categoría de butaca (`seat_category`), con restricción de unicidad `ops_fare_trip_category_unique`.
+   - Precio uniforme para todos los tramos permitidos dentro de la misma salida.
+   - Edición administrativa exclusiva para usuarios del grupo `Administrador` antes de la hora de partida (`now < trip.departure_at`), con bloqueo transaccional y registro en `panel.AuditEvent`.
+   - Congelamiento inmutable del precio en la reserva (`SeatAssignment.price`), de modo que cambios tarifarios posteriores no alteran reservas existentes (ni siquiera impagas).
+7. **Butacas prioritarias 51 y 54**:
+   - Las butacas 51 y 54 se evalúan dinámicamente como prioritarias por salida y número.
+   - Quedan bloqueadas para venta general hasta las 00:00 (hora de Argentina, `America/Argentina/Buenos_Aires`) de dos días calendario antes de la fecha local de salida.
+   - La restricción se valida server-side en disponibilidad y en el servicio transaccional de creación de reserva. Ocupaciones previas se preservan.
+8. **Menores de cinco años (gratuidad sin butaca)**:
+   - Todo pasajero estrictamente menor de 5 años (`0` a `4` años cumplidos) a la fecha de compra viaja gratis en brazos/falda (`is_lap_infant = True`).
+   - Al cumplir exactamente 5 años o más, abona tarifa completa con butaca individual.
+   - Debe viajar obligatoriamente asociado a una madre o persona acompañante con butaca en la misma compra.
+   - No genera `SeatAssignment`, no consume disponibilidad del bus, mantiene importe `$ 0,00`, no suma unidad comisionable y recibe pasaje "Pasaje gratuito — sin butaca".
+   - En compras ida/vuelta realizadas antes de los 5 años, conserva la gratuidad en ambos tramos por snapshot inmutable. Si el regreso se compra por separado tras cumplir 5 años, abona tarifa regular.
+9. **Horarios estimados por parada**:
+   - `operations.TripStop.scheduled_at` almacena el horario programado/estimado para cada parada del viaje.
+   - Servicio transaccional `update_trip_schedules` con bloqueo `select_for_update()` sobre `Trip`, `Bus` y `TripStop`, accesible exclusivamente a `Administrador` antes de la salida.
+   - Validación de secuencia estrictamente creciente (incluyendo cruces de medianoche) y prevención de solapamientos del mismo colectivo con otros viajes.
+   - Formulario e interfaz en `/panel/operaciones/viajes/<int:trip_pk>/horarios/` con formatos estrictos `HH:MM`.
+10. **Pasaje PDF oficial de dos talones y numeración serie AAA**:
+    - Adaptación fiel a la plantilla oficial aprobada: 1 sola página (596 x 842 pt), dos talones ("Talón superior" para empresa/agencia y "Talón para el pasajero" inferior) con línea de corte punteada y logo oficial (`static/assets/scviajes-logo.png`).
+    - **Supresión total de códigos visuales**: no se imprimen códigos QR ni códigos de barras visuales en ninguno de los dos talones.
+    - Preservación interna de tokens de verificación (`verification_token_hash`) y descarga (`download_token_hash`), manteniendo operativa la validación de embarque interna en `/panel/embarques/` (`tickets.BoardingRecord`).
+    - Numeración persistente correlativa mediante el modelo `TicketSequence` con bloqueo `select_for_update()`, formato `AAA-000000001` en adelante para emisiones reales (`AAA-000000000` en plantilla vacía), replicada exactamente en ambos talones.
+    - Snapshot inmutable de datos productivos, vendedor (omitido en web), medio de pago, horarios por parada y condiciones generales reproducidas en dos columnas.
+
+---
+
+## 2. Antecedentes históricos corregidos y superados
+
+Se corrigen de forma expresa las siguientes afirmaciones obsoletas presentes en documentación o notas de trabajo anteriores:
+
+| Concepto histórico obsoleto | Estado corregido y vigente | PR de integración |
+|---|---|---|
+| **Vencimiento de 24 horas en reservas manuales** (`SALES_MANUAL_HOLD_HOURS = 24`) | Las reservas manuales **no vencen automáticamente** (`expires_at = None`). Permanecen en retención hasta su cobro o liberación por el creador. | PR #45 (`2b47af4`) |
+| **Umbral de menores de 2 años** | El umbral de gratuidad sin butaca aplica a **menores de cinco años** (0 a 4 años cumplidos; `MINOR_FREE_AGE_YEARS = 5`). | PR #48 (`69297a5`) |
+| **Tarifas por tramo / par de paradas** | Las tarifas se definen **por salida y categoría** (`TripFare` único por `trip` y `seat_category`), con precio uniforme en todos los tramos permitidos. | PR #47 (`1c3e6f1`) |
+| **Pasaje provisional con QR visual impreso** | La plantilla oficial aprobada **suprime QR y códigos de barras visuales**, reemplazando la numeración por la serie correlativa `AAA-000000001` y manteniendo los tokens criptográficos de forma interna. | PR #48 (`69297a5`) |
+| **Revisión de transferencias por vendedores** | La revisión, aprobación y rechazo de transferencias está **restringida con exclusividad a Administradores activos**. | PR #45 (`2b47af4`) |
+
+---
+
+## 3. Decisiones comerciales pendientes de Sandro
+
+Las siguientes definiciones comerciales no han sido autorizadas y permanecen abiertas, manteniéndose desacopladas en el código mediante configuración o comportamientos provisionales:
+
+1. **Fecha comercial de compra del menor**: definir si la edad al comprar se evalúa al instante de creación de la reserva (`Booking.created_at`) o al momento de confirmación del pago (`Booking.confirmed_at`).
+2. **Seguro sobre menores gratuitos sin butaca**: confirmar si debe liquidarse prima de seguro obligatoria, monto a cobrar y leyenda fiscal/legal a imprimir en el pasaje.
+3. **Validación de vínculo e identidad (RENAPER)**: confirmar si se integrará validación oficial por servicio externo o si se continuará con acreditación documental física en boletería/embarque.
+4. **Autorización previa de butacas prioritarias**: reglamentar el procedimiento, rol autorizante y tarifa aplicable para asignar butacas 51 y 54 antes de las 00:00 de dos días previos a la salida.
+5. **Políticas de cambio y cancelación**: definir porcentajes de penalización, ventanas horarias de tolerancia y régimen de reembolsos/créditos.
+6. **Datos fijos de transporte y legales**: confirmación de CUIT, razón social, Ingresos Brutos, inicio de actividades, aseguradora, póliza, direcciones físicas exactas de paradas y WhatsApp oficial de atención.
+7. **Pasarelas de pago online**: integración real de Mercado Pago QR y tarjetas por Payway (diferidas hasta después de la migración de datos).
+8. **Migración de datos AppSheet / Google Sheets**: estructuración de hojas y ejecución controlada en staging previa a la salida a producción.
+
+---
+
+## 4. Matriz de evidencia de CI por SHA
+
+A continuación se detalla la evidencia técnica verificable de las entregas integradas, contrastando el entorno de validación (pruebas sintéticas locales, workflows CI en GitHub Actions y validaciones pendientes de staging real):
+
+| PR / Entrega | SHA integrado | Cobertura en pruebas sintéticas locales (SQLite efímero) | Workflows CI automatizados (GitHub Actions) | Validación en Staging Real (PostgreSQL / Proveedores) |
+|---|---|---|---|---|
+| **PR #43** (Auditoría Release Candidate) | `00b9660` (base `34389a7`) | 550 tests OK, 7 skipped (PostgreSQL). Migraciones y checks limpios. | Quality Gate, Browser E2E, Restore Drill en verde para base RC. | Marcada como histórica. Requiere revalidación integral en staging. |
+| **PR #44** (Inventario datos heredados) | `3398bb5` | Toolkit read-only verificado con fixtures sintéticos (CSV, TSV, XLSX). Sin conexión a Google. | Quality Gate verificado. | Pendiente de ejecución con exports reales de AppSheet/Sheets. |
+| **PR #45** (Reglas Sandro: reservas, pagos, comisiones) | `2b47af4` | 560 tests OK, 7 skipped. Migraciones `sales.0003` y `panel.0003` aplicadas en base efímera. | `sales-postgres.yml` ejecutó concurrencia de pagos y bloqueos en PostgreSQL 16. | Pendiente: provisioning real de cuenta propietaria de Sandro. |
+| **PR #46** (Rutas Güemes y menores sin butaca) | `16a6808` | 567 tests OK, 7 skipped. Migraciones `sales.0004` y `tickets.0006` en base efímera. | Quality Gate, Sales Postgres y Tickets Postgres en verde. | Pendiente: ejecución de comando `setup_initial_operations` en base de staging. |
+| **PR #47** (Tarifas salida y prioritarias 51/54) | `1c3e6f1` | 586 tests OK, 7 skipped. Migración `operations.0003` con validación de conflictos históricos. | Concurrencia transaccional verificada en CI de base de datos. | Pendiente: validación de datos tarifarios reales de producción. |
+| **PR #48** (Menores a 5 años, horarios, pasaje AAA) | `69297a5` | 172 tests afectados (169 OK, 3 PostgreSQL skipped). 71 tests de `tickets` al 100% OK. Migración `tickets.0007`. | Workflows de repositorio completados sobre rama integrada. | Pendiente: generación de pasajes con storage S3 real y envío SMTP productivo. |
+
+### Validaciones pendientes antes de producción
+1. **Ejecución de suite PostgreSQL completa**: correr los 7 tests de concurrencia y restricciones avanzadas omitidos en SQLite sobre una instancia real de PostgreSQL 16.
+2. **Validación en Staging**: desplegar la aplicación en Railway Staging con `PRIVATE_STORAGE_BACKEND=s3` y backend SMTP configurado para validar la descarga autenticada de pasajes y el envío transaccional de correos.
+3. **Inspección visual independiente de pasajes**: realizar la validación visual de los PDFs renderizados con un visor PDF independiente y verificar la lectura manual de los datos impresos.
+4. **Drill de backup y restauración**: ejecutar el comando `verify_database_backup` sobre un dump PostgreSQL real en el entorno de staging.

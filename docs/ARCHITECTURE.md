@@ -1,307 +1,114 @@
 # Arquitectura de SC Viajes
 
-## Escenario demo sintetico (2026-10-05)
-
-`core.demo_scenario` compone un escenario local usando los servicios de dominio
-existentes para reservas, pagos y tickets. Su identificacion se limita a prefijos y
-dominio `.invalid`; el comando no conoce secretos, no usa proveedores externos y el
-reset opera sobre conjuntos explicitamente identificados.
-
-## Worker de mantenimiento productivo (2026-10-06)
-
-`run_maintenance_worker` es un proceso separado de Gunicorn que sólo coordina
-ciclos de `run_operational_maintenance`; no duplica expiraciones, fulfillment ni
-notificaciones. `--once` ejecuta exactamente un ciclo para un cron externo, y el
-modo `resident` repite ciclos con intervalo y jitter configurables. SIGTERM y
-SIGINT impiden iniciar otro ciclo y permiten terminar el ciclo actual.
-
-En PostgreSQL el worker adquiere `pg_try_advisory_lock` de sesión con una clave
-estable y espera como máximo `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS`. El lock se
-libera explícitamente al finalizar y PostgreSQL también lo libera al morir la
-conexión; una segunda instancia emite un resumen sanitizado y termina sin
-procesar trabajos. SQLite usa un no-op sólo para desarrollo/tests y no promete
-exclusión entre procesos.
-
-La configuración `MAINTENANCE_WORKER_*` valida modo, intervalo, jitter, límite
-de espera, tiempo máximo por ciclo y habilitación. `Procfile` conserva `web` y
-agrega `worker` como procesos separados.
-## Pureza de lecturas públicas y transferencias (2026-10-05)
-
-Las vistas GET de resumen, pago pendiente y seguimiento de transferencia calculan
-el vencimiento efectivo en memoria. No cambian estados, timestamps, butacas,
-auditorías ni contadores; la expiración durable queda exclusivamente en servicios
-POST de operación o en `run_operational_maintenance`. La verificación QR pública y
-las descargas autorizadas son lecturas/streaming puros: conservan token, permisos,
-IDOR y almacenamiento privado sin crear auditorías por GET.
-
-## Fundación de validación de embarque
-
-`tickets.BoardingRecord` es el registro durable del embarque. Cada fila conserva el pasaje, pasajero, viaje, asignación de butaca, operador y fecha/hora consciente de zona horaria; una restricción única condicional permite un solo registro `ACTIVE` por pasaje y conserva las filas `REVERSED` como historial.
-
-La validación interna vive bajo `/panel/embarques/` y reutiliza el token opaco cuyo hash ya está almacenado en `Ticket.verification_token_hash`, además del código legible del pasaje. El servicio recarga y comprueba en servidor el pasaje, reserva `CONFIRMED`, asignación `CONFIRMED`, relaciones cruzadas y coincidencia exacta con el viaje seleccionado. La primera validación crea el registro y la siguiente devuelve el registro activo sin duplicarlo; la reversión es exclusivamente administrativa, exige motivo, usa POST+CSRF y conserva el historial.
-
-El manifiesto agrega el estado `Embarcado`/`Pendiente` y sus totales mediante una anotación `Exists`, sin escribir al consultar ni exponer información de contacto, pagos o comprobantes. La verificación pública del QR permanece de consulta y no registra embarques. Cámara web, funcionamiento offline y política automática de no-show quedan fuera de alcance.
+Este documento consolida la arquitectura del sistema SC Viajes tras la integración del PR #48, contrastando el código implementado, los modelos y las restricciones vigentes.
 
 ## Base técnica
 
-- Monolito modular en Django.
-- PostgreSQL en producción.
-- Renderizado con Django Templates, CSS local y HTMX cuando aporte valor.
-- Panel interno 100 % personalizado bajo `/panel/`.
-- Django Admin permanece deshabilitado.
-- Railway como plataforma de despliegue.
-- WhiteNoise para archivos estáticos.
-- Sin CDN de Tailwind ni dependencias frontend remotas.
+- **Monolito modular en Django**: separación en aplicaciones cohesivas (`operations`, `sales`, `payments`, `tickets`, `customers`, `notifications`, `cash_register`, `panel`, `core`).
+- **Base de datos de producción**: PostgreSQL (con bloqueos transaccionales `select_for_update`, advisory locks y restricciones de integridad condicionales). SQLite se reserva exclusivamente para desarrollo local y tests efímeros.
+- **Frontend y estilos**: Django Templates, CSS local nativo sin frameworks pesados, sin dependencias remotas y sin CDN de Tailwind.
+- **Panel interno**: 100 % personalizado bajo la ruta `/panel/`. Django Admin permanece estrictamente deshabilitado.
+- **Zona horaria y moneda**: `America/Argentina/Buenos_Aires` para todas las fechas y horas visibles y lógicas de corte; `Decimal` (dos decimales) para todos los importes monetarios.
+- **Plataforma de despliegue**: Railway y WhiteNoise para archivos estáticos locales (`staticfiles`).
+- **Procesamiento asíncrono y mantenimiento**: no se utilizan Celery ni Redis. Los procesos en segundo plano se gestionan mediante comandos Django efímeros (`run_operational_maintenance`) y workers dedicados con advisory locks de sesión PostgreSQL.
+
+## Módulo de operaciones (`operations`)
+
+### Recorridos, paradas y control interprovincial
+- Modelos: `Stop`, `Route`, `RouteStop`, `Bus`, `Seat`, `Trip`, `TripStop`, `TripFare`.
+- La parada Güemes (`GUE`, provincia de Salta) forma parte integral de ambos recorridos (Córdoba → Jujuy y Jujuy → Córdoba).
+- **Control interprovincial**: `Stop.province` define explícitamente la jurisdicción de cada parada. `Route.allows_journey` y los servicios de venta rechazan tramos cuyo origen y destino pertenezcan a la misma provincia.
+- `setup_initial_operations`: comando idempotente con soporte `--dry-run` para configurar paradas y recorridos sin alterar históricos de viajes existentes.
+
+### Tarifas por salida y categoría
+- `TripFare` define la tarifa a nivel de salida (`trip`) y categoría de butaca (`seat_category`), con restricción de unicidad `ops_fare_trip_category_unique` sobre `(trip, seat_category)`.
+- Reemplazó el modelo anterior de tarifas por par de paradas. El precio es uniforme en todos los tramos permitidos de la salida.
+- Edición exclusiva por Administradores antes de la partida (`now < trip.departure_at`), serializada con bloqueo `select_for_update()` sobre `Trip` y `TripFare`, y auditada en `panel.AuditEvent`.
+- Migración `operations.0003_tripfare_per_departure.py` consolida duplicados idénticos y aborta ante inconsistencias históricas sin inventar precios.
+
+### Butacas prioritarias 51 y 54
+- Las butacas 51 y 54 son prioritarias y se evalúan dinámicamente por número y salida, sin alterar el estado global de la butaca en el colectivo.
+- Quedan bloqueadas para venta general hasta las 00:00 de Argentina de dos días calendario antes de la fecha local de salida.
+- La validación se ejecuta en servidor en la consulta de disponibilidad y dentro de la transacción atómica de `create_booking`.
+
+### Horarios estimados por parada
+- Cada parada del cronograma (`TripStop`) almacena su horario estimado de arribo/partida en `scheduled_at`.
+- `update_trip_schedules`: servicio transaccional protegido con bloqueo exclusivo sobre `Trip`, `Bus` y `TripStop`, accesible únicamente para usuarios del grupo `Administrador` antes del inicio del viaje.
+- Valida orden estrictamente creciente de horarios, cruces de medianoche y no solapamiento del mismo colectivo con otros viajes activos.
+
+## Módulo de ventas y reservas (`sales`)
+
+### Agregado transaccional y canales
+- Modelos: `Booking`, `BookingLeg`, `BookingPassenger`, `SeatAssignment`.
+- Canales soportados: `ONLINE` y `MANUAL`.
+- `Booking` actúa como raíz transaccional bloqueada (`select_for_update()`).
+
+### Vencimientos y retención de butacas
+- **Canal ONLINE**: hold temporal de 15 minutos (`SALES_ONLINE_HOLD_MINUTES`) con vencimiento explícito `expires_at`.
+- **Canal MANUAL**: reserva rápida con `expires_at = None`. No expira automáticamente por tiempo; conserva la butaca hasta su pago o su liberación manual.
+  > [!NOTE]
+  > **Antecedente histórico**: la regla inicial contemplaba 24 horas (`SALES_MANUAL_HOLD_HOURS`), sustituida por la regla de retención indefinida sin vencimiento automático.
+- **Liberación de reservas**: restringida exclusivamente al creador de la reserva manual en el panel. Las reservas `CONFIRMED` no admiten liberación administrativa sin política comercial aprobada.
+- **Restricción de unicidad condicional**: `sales_active_trip_seat_unique` sobre `(trip, seat)` para estados `HELD` y `CONFIRMED`. Al expirar o liberar, pasa a `RELEASED` preservando la trazabilidad histórica.
+
+### Menores de cinco años sin butaca
+- Centralizado en `sales.minors` (`MINOR_FREE_AGE_YEARS = 5`).
+- Todo pasajero estrictamente menor de 5 años (0 a 4 años cumplidos) califica como menor gratuito en falda/brazos (`BookingPassenger.is_lap_infant = True`). Al cumplir 5 años exactos o más, abona pasaje regular y ocupa asiento propio.
+- Requiere madre o acompañante con butaca en la misma compra.
+- No genera `SeatAssignment`, no ocupa disponibilidad del colectivo, mantiene importe `Decimal("0.00")` y no genera comisión.
+- La condición se congela como snapshot inmutable al crear la reserva; compras ida/vuelta conservan la gratuidad en ambos tramos.
+  > [!NOTE]
+  > **Antecedente histórico**: el umbral inicial de menores de 2 años fue reemplazado por el de menores de 5 años tras la decisión de Sandro.
+
+### Cortes de venta
+- Venta online: cierra 60 minutos antes del horario de subida del pasajero.
+- Venta manual: corte estricto a los 30 minutos previos a la subida; a los 29 minutos se rechaza.
+- Viaje iniciado (`STARTED`): bloquea toda venta manual u online.
+
+## Módulo de pagos y caja (`payments`, `cash_register`)
+
+### Pagos manuales y transferencias
+- `payments.Payment` representa el cobro de una reserva: efectivo (`APPROVED` inmediato) o transferencia bancaria (`UNDER_REVIEW`).
+- **Revisión de transferencias**: potestad exclusiva de Administradores activos. Los rechazos conservan el intento fallido y permiten cargar un nuevo comprobante sin liberar la butaca retenida. La aprobación confirma atómicamente pago, reserva y butacas, disparando el fulfillment de pasajes.
+- Almacenamiento privado de comprobantes (`PrivateFileSystemStorage` / backend S3 configurable con URLs no públicas).
+
+### Caja diaria (`cash_register`)
+- Separada de `payments`. Cada pago manual en efectivo aprobado se vincula con un `CashMovement` único dentro de una sesión abierta del vendedor (`opened_by`).
+- Restricción de base de datos PostgreSQL: una única sesión de caja abierta por vendedor.
+- Movimientos inmutables y cierres auditados.
+
+## Módulo de pasajes y embarque (`tickets`)
+
+### Plantilla PDF oficial y estructura de dos talones
+- Generación de pasajes desacoplada en ReportLab (`tickets.rendering`):
+  - 1 sola página (596 x 842 pt).
+  - Dos talones: **Talón superior** ("Talón empresa/agencia") y **Talón inferior** ("Talón para el pasajero"), divididos por línea punteada.
+  - Logo oficial incrustado en ambos talones (`static/assets/scviajes-logo.png`).
+- **Supresión de códigos visuales**: la plantilla oficial aprobada no contiene códigos QR ni códigos de barras visuales en ninguno de los talones.
+- **Tokens seguros y validación de embarque**: los tokens criptográficos de alta entropía (`verification_token_hash`, `download_token_hash`) se conservan en la base de datos (hashes SHA-256). El embarque se valida internamente en `/panel/embarques/` mediante lectura de teclado o ingreso manual del código legible, persistiendo `tickets.BoardingRecord`.
+
+### Numeración secuencial persistente (`TicketSequence`)
+- Modelo `TicketSequence` con bloqueo transaccional `select_for_update()` para evitar colisiones bajo concurrencia PostgreSQL.
+- Formato `AAA-000000001` en adelante para pasajes reales (`AAA-000000000` para plantilla vacía).
+- El mismo número se replica exactamente en ambos talones. Tramos y pasajeros múltiples reciben números correlativos consecutivos. Idempotente ante reenvíos y descargas; no se reutilizan números ante anulaciones.
+
+### Emisión, almacenamiento y entrega
+- `issue_tickets_for_booking`: servicio transaccional top-level que congela instantáneas inmutables de pasajero, documento enmascarado, tramos, vendedor, paradas, horarios e importe. Limpieza física dual ante errores (rollback de base de datos y borrado físico de PDFs).
+- `send_booking_tickets`: envía un único correo agrupando todos los pasajes PDF de la reserva, con registro en `TicketEmailAttempt` y reintentos idempotentes.
+
+## Módulo del panel interno (`panel`)
+
+- **Control de acceso y roles**: usuarios del grupo `Administrador` y `Vendedor`. Superusuarios no asignables mediante panel.
+- **Alcance por vendedor**: aplicado en el QuerySet base antes de cualquier filtro, búsqueda, métrica o exportación CSV. Los vendedores únicamente acceden a sus propias operaciones.
+- **Gestión de staff y propietarios**: `panel.StaffProfile` registra datos del vendedor. La capacidad `is_owner` (no expuesta en la interfaz) restringe la invitación o promoción de administradores.
+- **Reportes y balance de vendedores**:
+  - Separa reservas confirmadas de pasajes y tramos comisionables.
+  - Comisión de `Decimal("5000.00")` por cada asignación confirmada con precio positivo.
+  - Muestra bruto, unidades comisionables, comisión y neto operativo. No ejecuta transferencias bancarias automáticas.
+- **Auditoría centralizada**: `panel.AuditEvent` registra eventos transaccionales con snapshots `before`/`after` sanitizados (sin contraseñas, secretos ni PII innecesaria).
 
-Se prevé procesamiento en segundo plano para vencimientos, correos, PDFs y reintentos. La tecnología queda diferida: no instalar Celery ni Redis ahora, ni introducir infraestructura sin una decisión aprobada.
-
-## Fundación de pagos manuales
-
-- `payments` depende de `sales` para reservas y snapshots de importe; `sales` y `operations` no dependen de `payments`.
-- `Payment` representa un cobro manual completo: efectivo aprobado inmediatamente o transferencia bancaria bajo revisión. El importe se calcula desde `SeatAssignment.price` y se conserva como `Decimal`.
-- Las transiciones bloquean `Booking` y luego `Payment` dentro de `transaction.atomic`; la confirmación actualiza pago, reserva y butacas atómicamente.
-- Los comprobantes usan almacenamiento privado compatible con `default_storage`, nombres UUID no predecibles, extensiones PDF/JPG/JPEG/PNG y límite configurable de 10 MB. La descarga requiere autenticación y permisos.
-- El panel ofrece registro de efectivo, presentación y revisión de transferencias, auditoría y métricas de pagos aprobados. No se habilitan pasarelas, pagos parciales ni caja.
-- Antes de producción debe definirse almacenamiento persistente para comprobantes en Railway.
-
-## Checkout publico hasta reserva HELD
-
-- `core` coordina la interfaz publica de busqueda, seleccion de viajes, butacas, pasajeros y resumen. La home institucional se conserva y las reglas de negocio no se implementan en JavaScript.
-- Las consultas parten de `operations` y usan la fecha y permisos de `TripStop` de la subida concreta. La creacion delega en `sales.services.create_online_booking` y `create_booking`, que mantienen la atomicidad, el cierre online y los snapshots de precio.
-- El estado previo a la creacion se limita a identificadores y criterios no sensibles en la sesion Django. Despues de crear `Booking`, el resumen requiere un token aleatorio asociado al `public_id` en esa sesion.
-- El alcance publico incluye una superficie limitada de `core` para seleccionar transferencia y cargar comprobantes de un `Booking` `ONLINE` `HELD`, protegida por sesion, token y CSRF. Los endpoints internos de `payments`, comprobantes y datos del panel no se exponen publicamente; pasajes, PDF, QR, correo y cuentas de clientes siguen fuera de alcance.
-- La proteccion inicial contra abuso combina CSRF, honeypot y limite de holds por sesion. Una politica distribuida de rate limiting y almacenamiento persistente quedan pendientes de infraestructura aprobada.
+## Notificaciones y mantenimiento (`notifications`, `core`)
 
-## Fundación de pasajes (PDF, QR y entrega agrupada)
-
-- `tickets` es un módulo independiente que depende únicamente de `sales` para consultar agregados confirmados (`Booking`, `BookingLeg`, `BookingPassenger`, `SeatAssignment`). `sales`, `operations`, `payments`, `panel` y `core` no dependen de `tickets`.
-- `Booking` actúa como raíz transaccional bloqueada (`select_for_update()`). Los pasajes capturan instantáneas inmutables de pasajero, documento enmascarado, tramo, horarios, butaca, categoría, moneda, código de reserva e importe histórico en `Decimal` (obtenido directamente de `SeatAssignment.price`, nunca recalculado desde `TripFare`).
-- Emisión atómica y durabilidad: `issue_tickets_for_booking` opera como servicio top-level que rechaza anidamiento en bloques atómicos previos para evitar archivos huérfanos. En caso de fallo en cualquier etapa (PDF, almacenamiento, base de datos o auditoría), revierte la transacción de base de datos y elimina físicamente del almacenamiento cada archivo PDF generado.
-- Generación portátil de PDF y QR: arquitectura desacoplada en datos (`TicketData`), generador (`build_ticket_pdf`) y plantilla provisional reemplazable (`draw_provisional_ticket`), basada en ReportLab y `qrcode` puro Python sin dependencias de motores HTML nativos, navegadores headless ni dependencias nativas/C (como `pyzbar` / `libzbar`).
-- Seguridad de tokens y privacidad:
-  - Generación de tokens opacos de alta entropía (>= 256 bits).
-  - Separación estricta de alcances: el token de verificación QR (`verification_token_hash`) solo permite consultar validez básica en modo lectura sin exponer motivo de anulación ni ningún dato fuera de estado, código, pasajero, documento oculto, origen, destino, fecha, butaca y categoría. No expone precio, email, teléfono, documento completo, pagos ni otros pasajeros. La descarga del archivo PDF requiere un token de descarga diferenciado (`download_token_hash`) o autenticación interna de rol autorizado (`Administrador`, `Vendedor`, superusuario).
-  - La base de datos almacena exclusivamente hashes SHA-256; los tokens en texto plano solo existen temporalmente en memoria o impresos en el pasaje.
-- Almacenamiento privado: `PrivateTicketFileSystemStorage` independiente de `payments`, con `base_url=None` y rutas impredecibles por UUID para impedir acceso público directo o indexación.
-- Entrega de correos agrupada: `send_booking_tickets` envía exactamente un correo al email de la reserva con todos los pasajes PDF adjuntos. Registra intentos en `TicketEmailAttempt` persistiendo el estado `PENDING` antes de la comunicación I/O de red, impidiendo envíos duplicados concurrentes y exigiendo reintento explícito (`retry=True`) únicamente tras fallos registrados.
-- Pendientes antes de producción: definición de almacenamiento persistente en Railway y proveedor SMTP definitivo. La emisión automática ligada a la aprobación de pagos se integrará en una rama posterior.
-
-## Ciclo de vida operativo de viajes (2026-10-01)
-
-## Almacenamiento privado y correo productivo (2026-10-02)
-
-Los pasajes PDF y comprobantes de transferencia usan storages privados separados
-de los archivos estáticos. Desarrollo y tests conservan filesystem local; producción
-debe seleccionar `PRIVATE_STORAGE_BACKEND=s3` mediante variables de entorno. El
-backend usa `django-storages` con un bucket S3-compatible, endpoint opcional,
-credenciales fuera del repositorio y objetos privados. No se generan URLs desde
-los modelos: las descargas siguen pasando por vistas autenticadas o tokens
-autorizados. La migración de archivos locales queda para una etapa posterior,
-con inventario, copia verificada, checksum, ventana de corte y rollback.
-
-WhiteNoise continúa sirviendo exclusivamente `staticfiles`; no comparte bucket,
-raíz ni permisos con el almacenamiento privado. El correo conserva console en
-desarrollo y locmem en tests, y permite SMTP genérico mediante entorno con TLS,
-SSL, timeout y reply-to validados. La entrega mantiene `TicketEmailAttempt` y sus
-reintentos idempotentes: un fallo SMTP no revierte pagos ni emisión de pasajes.
-
-## Mantenimiento operativo efímero (2026-10-02)
-
-`run_operational_maintenance` es un comando de proceso corto para un Cron futuro de
-Railway. Reutiliza `sales.expire_booking` y `tickets.process_booking_fulfillment`,
-procesa cada unidad en una transacción independiente y limita cantidad y tiempo.
-Los locks de filas y leases existentes son compatibles con PostgreSQL; SQLite se
-usa para pruebas. `--dry-run` sólo consulta y no crea trabajos, cambia estados,
-audita ni envía correo. El comando no usa Celery, Redis, señales ni migraciones.
-
-Las transiciones `SCHEDULED -> STARTED` y `STARTED -> COMPLETED` se ejecutan mediante servicios transaccionales del panel. Cada servicio bloquea el `Trip` con `select_for_update()`, valida la transición y registra actor, estado anterior, estado nuevo y timestamps en la auditoría dentro de la misma transacción; son idempotentes cuando el estado ya es el destino. Los timestamps `started_at` y `completed_at` se presentan en `America/Argentina/Buenos_Aires`. Sólo Administrador y Vendedor pueden invocarlas mediante POST con CSRF, y el inicio exige una pantalla de confirmación. Una vez iniciado el viaje, el dominio rechaza nuevas reservas, asignaciones y confirmaciones de ventas manuales, mantiene el corte online de una hora y no libera automáticamente reservas `HELD` ni transferencias pendientes.
-
-## Módulos conceptuales
-
-## Consolidación de reservas, permisos y balance (2026-10-24)
-
-`Booking` continúa siendo la raíz transaccional bloqueada. Las reservas manuales usan `expires_at=NULL` con una restricción que exige vencimiento para el canal online; todos los consumidores que calculan vencimientos deben tratar el valor nulo como indefinido. La retención manual ocupa la butaca hasta una liberación autorizada por el creador.
-
-El alcance de vendedores se aplica en el queryset base antes de filtros, búsquedas, detalles, descargas, HTML y CSV. La revisión de transferencias se valida en el servicio para Administradores activos. Los intentos rechazados son inmutables y un nuevo comprobante crea un intento nuevo; la aprobación es terminal y dispara fulfillment durable sin un correo independiente de aprobación.
-
-Los reportes y el dashboard separan compras, pasajes y tramos comisionables. La comisión se calcula con `Decimal` por asignación confirmada de precio positivo; ventas web sin vendedor, reservas impagas y rechazos no generan comisión. Las rendiciones bancarias no se marcan automáticamente.
-
-Las tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y Payway permanecen fuera de esta consolidación.
-
-## Rutas con Güemes y menores gratuitos sin butaca (2026-10-24)
-
-`operations.Stop.province` es la fuente explícita de provincia. `Route.allows_journey`, las tarifas, las reservas, la búsqueda pública y el formulario del panel validan pertenencia al recorrido, orden, permisos de subida/bajada y provincias diferentes. La configuración controlada de operaciones agrega Güemes y su comando es idempotente; `--dry-run` no escribe y una ruta parcial con viajes existentes se rechaza para proteger históricos.
-
-La política provisional de menores vive en `sales.minors`: clasifica por la fecha efectiva de creación de la reserva, persiste `is_lap_infant` y `accompanied_by` como snapshot, exige madre dentro de la misma compra y rechaza autorreferencias, ciclos y acompañantes que también sean menores gratuitos. El menor cuenta como persona, pero no consume `SeatAssignment`, importe ni comisión. `tickets` mantiene un ticket por pasajero y tramo; solo permite precio cero y ausencia de butaca para el snapshot gratuito. El manifiesto consulta esos pasajeros sin convertirlos en ocupación. La fecha de compra y cualquier política nueva de embarque para menores siguen pendientes de confirmación comercial.
-
-| Módulo | Responsabilidad |
-| --- | --- |
-| `operations` | Paradas, recorridos, colectivos, butacas, viajes y tarifas. |
-| `sales` | Reservas, ventas, pasajeros y asignación de butacas. |
-| `payments` | Pagos manuales en efectivo y transferencias bancarias; las pasarelas quedan para una etapa posterior. |
-| `tickets` | Generación de PDF, QR y embarque. |
-| `customers` | Cuentas, compra como invitado, Google y consentimiento comercial. |
-| `notifications` | Correos transaccionales y comunicaciones autorizadas. |
-| `migration` | Importación auditable desde Google Sheets/AppSheet. |
-| `panel` | Interfaz interna personalizada. |
-| `core` | Infraestructura compartida y sitio existente. |
-
-Esta separación es conceptual. No crear todos estos módulos todavía: se implementarán progresivamente. La primera implementación funcional será solamente el módulo `operations`.
-
-## Reglas de diseño
-
-- Las integraciones de pago deben utilizar adaptadores para no mezclar APIs externas con el dominio.
-- Los webhooks deberán ser idempotentes.
-- El precio pagado deberá guardarse como una instantánea histórica en la venta.
-- Usar `Decimal`, nunca `float`, para dinero.
-- La disponibilidad de una butaca no puede depender solamente de lo mostrado en pantalla: debe validarse transaccionalmente en el servidor.
-- Las operaciones sensibles deben registrar auditoría: usuario, fecha, acción y valores relevantes.
-- Las reglas de recorridos y horarios deben vivir en el dominio, no en templates o JavaScript.
-- El mapa visual debe construirse a partir de datos de posición de las butacas.
-- Las interfaces deben estar en español argentino. Las fechas y horas deben ser conscientes de zona horaria, usando `America/Argentina/Buenos_Aires`.
-- Toda regla de negocio debe tener pruebas. Los cambios de modelos deben acompañarse de sus migraciones, sin ejecutarlas contra bases reales.
-
-Las reglas del producto se encuentran en [PROJECT_SPEC.md](PROJECT_SPEC.md). Las definiciones abiertas se registran en [DECISIONS.md](DECISIONS.md); no deben resolverse por suposición.
-
-## Integración de fulfillment económico
-
-## Reportes básicos de ventas (2026-10-01)
-
-El panel personalizado expone `/panel/reportes/ventas/` y su descarga CSV en modo estrictamente lectura para Administrador/Vendedor. La fuente es `Payment` APPROVED unido a `Booking` CONFIRMED; cada fila representa un pago y se consulta con `select_related` para evitar N+1. Los filtros de fecha usan `America/Argentina/Buenos_Aires`, el límite de rango es configurable mediante `PANEL_REPORTS_MAX_RANGE_DAYS` (366 por defecto), y el CSV usa UTF-8 BOM, neutraliza fórmulas y no incluye PII, comprobantes ni datos de contabilidad/caja.
-
-La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con `tickets.services.reconcile_confirmed_fulfillments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
-## Cuentas de clientes
-
-La app `customers` reutiliza el usuario estándar de Django sin cambiar `AUTH_USER_MODEL`. `Customer` es un perfil separado y no otorga permisos del panel. El checkout sigue admitiendo invitados; las reservas nuevas de un cliente autenticado se vinculan explícitamente. Las compras invitadas se reclaman con un token aleatorio almacenado como hash, de un solo uso y con vencimiento configurable.
-
-El acceso con Google usa OAuth configurable por variables de entorno y `state` en sesión; la simulación solo se habilita explícitamente para desarrollo y pruebas. No se mezclan cuentas de clientes con Administrador o Vendedor. Los tickets continúan en almacenamiento privado y se autorizan por asociación de cuenta.
-
-Los consentimientos comerciales son eventos auditables separados de la compra y de la creación de cuenta; incluyen versión y origen y pueden revocarse sin borrar datos operativos.
-La confirmación continúa siendo responsabilidad de `payments`. Dentro de la misma transacción se crea un `tickets.TicketFulfillment` durable y se registra un callback `transaction.on_commit`; el callback nunca revierte el pago y los trabajos pendientes o fallidos se recuperan con el comando `reconcile_fulfillments` o `tickets.services.reconcile_confirmed_fulfillments`. Por lo tanto existe una dependencia explícita y unidireccional `payments -> tickets`; `tickets` no importa `payments`. La emisión y el correo permanecen en `tickets`, sin señales ocultas, Celery o Redis.
-
-Los trabajos tienen una concesión temporal (`lease_until`) para evitar doble procesamiento. Un proceso que cae deja el trabajo recuperable después de `TICKETS_FULFILLMENT_STALE_SECONDS`. La operación periódica futura podrá invocar `python manage.py reconcile_fulfillments --limit 100`; esta entrega no instala ni configura un programador.
-## Notificaciones transaccionales (2026-10-02)
-
-`notifications.TransactionalNotification` es un outbox durable separado de
-`tickets.TicketEmailAttempt`. Mantiene `PENDING`, `PROCESSING`, `SENT` y
-`FAILED`, con unicidad por evento, tipo y destinatario. Los servicios programan
-filas mediante `transaction.on_commit`, por lo que un rollback no deja correos
-huérfanos y SMTP no revierte pagos, reservas, butacas ni fulfillment.
-
-El procesamiento reclama cada fila con `select_for_update`, asigna un lease y
-envía fuera de la transacción. `SENT` es terminal; leases vencidos se recuperan.
-PostgreSQL serializa procesos mediante el lock de fila. SQLite conserva la
-semántica funcional para desarrollo, sin presentarse como garantía concurrente.
-La tarea `notifications` de `run_operational_maintenance` y el reintento POST
-del panel reutilizan este servicio. No se guardan tokens, comprobantes,
-contraseñas ni secretos y no se registra el destinatario en logs o auditoría.
-
-## Manifiesto operativo de pasajeros
-
-## Bandeja operativa de solo lectura (2026-10-02)
-
-`panel.inbox_services` compone señales existentes sin modelo propio ni migración. Valida filtros server-side, conserva contadores globales al paginar y enlaza a pantallas autorizadas. La prioridad es crítica para vencimientos/fallos/leases, alta para pendientes próximos y tickets incompletos, media para tareas pendientes o rechazos recientes e informativa para viajes próximos. No reemplaza caja, contabilidad ni mantenimiento programado.
-
-El manifiesto del panel es una consulta de solo lectura sobre un `Trip` concreto. La fuente de filas es `sales.SeatAssignment`, limitada simultáneamente por `trip_id`, `leg__trip_id`, `AssignmentStatus.CONFIRMED` y `BookingStatus.CONFIRMED`. La consulta usa `select_related` para pasajero, reserva, tramo y `TripStop` con su parada, y no consulta pagos, comprobantes, tickets, correos ni auditoría.
-
-Las paradas y el resumen se calculan con la fotografía real de `TripStop`; nunca se reconstruyen desde nombres o desde `Route`. La vista HTML, la vista de impresión y el CSV son endpoints GET protegidos por los roles Administrador/Vendedor y no modifican datos. El CSV se emite en UTF-8 con BOM y antepone una comilla simple a valores que podrían interpretarse como fórmulas de planilla.
-### Gestión interna de clientes
-
-El panel personalizado incorpora una consulta GET-only para Administrador y Vendedor. La lista y el detalle parten de `customers.Customer` y solo recorren asociaciones explícitas `CustomerBooking`; nunca enlazan reservas por coincidencia de email. Las reservas muestran estado, tramos, pasajes, pagos, fulfillment, estados de correo y reclamos únicamente como pendiente/consumido, sin tokens, hashes, comprobantes ni PII innecesaria. Los indicadores usan agregaciones y subconsultas de consentimiento actual para evitar N+1.
-## Explorador central de auditoría (2026-10-07)
-
-`panel.audit_services` normaliza en memoria `panel.AuditEvent`, `tickets.TicketAuditEvent` y `customers.CustomerConsent` sin crear eventos, modelos ni migraciones. La bandeja, detalle firmado y CSV son GET-only para Administrador/superusuario; filtran server-side, ordenan globalmente, paginan y omiten PII, secretos, tokens, hashes, comprobantes, credenciales, rutas privadas e IP/User-Agent.
-
-El inventario confirma que `operations`, `sales`, `payments`, `cash_register` y los reintentos de `notifications` ya registran en `panel.AuditEvent`; `tickets` y `boarding` reutilizan `tickets.TicketAuditEvent`; y los otorgamientos/retiros de consentimiento viven en `customers.CustomerConsent`. No se inventan eventos para lecturas. El actor se presenta como categoría no identificable (`Sistema`, `Usuario interno` o `Cliente`), nunca como username/email; las referencias son UUID públicos validados. Los importes, motivos y snapshots de caja no se proyectan en el explorador.
-
-## Preparación verificable para producción
-
-`/health/live/` confirma que el proceso responde y no consulta dependencias. `/health/ready/` verifica configuración crítica y una consulta mínima a la base; devuelve 200 solo si está listo y 503 cuando una dependencia crítica falla. Ambos contratos son mínimos y devuelven un `request_id` sin secretos.
-
-El comando `production_preflight` clasifica configuración, base, migraciones, estáticos, WhiteNoise, storage privado, URLs firmadas, SMTP, OAuth, mantenimiento, outbox y directorios locales como `PASS`, `WARNING` o `FAIL`. `--json` permite automatización y un `FAIL` devuelve código distinto de cero. El request ID se acepta solo con formato seguro o se genera internamente; el logging no serializa query strings, payloads, credenciales ni datos personales.
-
-## Fundación de caja diaria (2026-10-07)
-
-`cash_register` mantiene separadas las sesiones de caja de `payments`: `Payment`
-continúa siendo la fuente de verdad del cobro y cada pago `CASH/APPROVED` crea
-un único `CashMovement` enlazado por `OneToOneField` y clave de idempotencia.
-Cada vendedor puede tener una sola sesión abierta; PostgreSQL lo impide con una
-restricción parcial por `opened_by`, mientras que los servicios bloquean la
-sesión con `select_for_update()` durante cobros, ajustes y cierres.
-
-Los movimientos son inmutables. Aperturas, cierres y ajustes se auditan; los
- reportes diarios se calculan por fecha operativa en `America/Argentina/Buenos_Aires`,
- muestran únicamente cajas propias a vendedores y permiten filtros server-side,
- paginación y CSV BOM sin fórmulas. La revisión de cierre administrativa es
- idempotente y conserva actor, fecha y observación en la sesión sin alterar
- movimientos ni pagos; estos campos requieren la migración `0004` (no aplicada
- en bases persistentes).
-
-## Login de clientes con Apple (2026-10-08)
-
-Apple se integra como proveedor OIDC opcional, separado de login local, Google y
-la compra como invitado. La identidad se vincula exclusivamente por el `sub`
-estable de Apple mediante `Customer.apple_sub`; nunca se vincula una cuenta por
-coincidencia de correo. Los correos relay se conservan como correo normalizado y
-el nombre que Apple entrega solo durante el primer consentimiento se guarda en
-ese momento sin sobrescribir datos posteriores.
-
-El flujo web usa `response_mode=form_post`, `state` de un solo uso con TTL
-configurable, `nonce`, PKCE S256 y un client secret ES256 generado en memoria
-desde variables de entorno. La firma RS256 del `id_token` se valida contra JWKS
-cacheado por tiempo acotado, exigiendo `iss`, `aud`, `sub` y `exp`; tokens,
-secretos y payloads no se persisten ni se registran. La simulación solo existe
-en DEBUG/tests, el botón se oculta cuando Apple no está configurado y el
-callback POST está exento de CSRF únicamente porque Apple entrega el formulario
-desde su origen, quedando protegido por state y nonce.
-ajustes solo están disponibles para Administradores, exigen motivo y no cambian
-pagos, reservas, pasajes ni fulfillment. El panel es personalizado y todas las
-acciones mutables usan POST+CSRF. SQLite se mantiene para desarrollo y tests,
-sin presentarse como garantía de concurrencia equivalente a PostgreSQL.
-
-## Accesibilidad y responsive (2026-10-08)
-
-## Configuracion productiva y contenido (2026-10-09)
-
-La configuracion bancaria se obtiene exclusivamente de variables de entorno y se valida
-server-side antes de mostrar o iniciar una transferencia. En desarrollo puede faltar y
-la interfaz lo informa; en produccion el preflight falla ante ausencia, placeholders o
-formatos invalidos. `PUBLIC_BASE_URL` es la unica fuente para enlaces absolutos de
-invitaciones y verificaciones, siempre HTTPS y sin construir URLs desde `Host`.
-
-El branding publico usa `SC Viajes`; telefono y WhatsApp son opcionales y no tienen
-defaults reales. El prototipo HTML de la raiz no forma parte del runtime Django y fue
-retirado tras verificar que no existian referencias. El frontend servido permanece
-local, y el contenido no afirma servicios comerciales no confirmados.
-
-Las plantillas públicas, de clientes y del panel mantienen landmarks, salto al contenido, foco visible, navegación de menú con teclado y `prefers-reduced-motion`. El mapa de butacas conserva controles checkbox nativos operables por teclado con etiquetas accesibles para disponibilidad, ocupación y tarifa; el CSS usa `focus-visible` sin cambiar la lógica comercial. Las auditorías axe-core y Playwright se ejecutan sobre Chromium a 360px y escritorio; sus artefactos solo se publican ante fallos. No se agregan dependencias frontend remotas de ejecución ni migraciones.
-## Gestión de usuarios internos
-
-El panel personalizado administra exclusivamente usuarios internos con los grupos
-`Administrador` y `Vendedor`; `Customer` permanece separado y los superusuarios no
-se editan desde esta interfaz. Las invitaciones crean usuarios inactivos con
-contraseña inutilizable, almacenan únicamente el hash SHA-256 del token de un solo
-uso y vencen después de 24 horas. El correo de invitación reutiliza el backend de
-correo configurado y cualquier error revierte la transacción completa.
-
-Las mutaciones usan POST con CSRF y servicios transaccionales. El servicio bloquea
-ordenadamente los Administradores activos con `select_for_update` antes de cambiar
-roles o estados, evitando dejar cero Administradores activos bajo concurrencia de
-PostgreSQL. La desactivación o cambio de rol revoca sesiones existentes y cada
-cambio real genera una auditoría con datos mínimos, sin contraseñas, tokens ni
-contenido sensible.
-## Distributed abuse protection (2026-10-10)
-
-Abuse limits use `core.AbuseCounter` counters by scope and time window. The
-identifier is HMAC-SHA256 and never stores IP, session, email, token, or other
-PII. PostgreSQL serializes increments with `select_for_update` and a unique
-scope/hash/window constraint. SQLite remains functional for development and
-tests without equivalent cross-process guarantees. Cleanup is bounded and runs
-through operational maintenance. Some GET requests write only this technical
-counter; they never mutate domain entities or create audit events.
-
-## Tarifas por salida y butacas prioritarias (2026-10-25)
-
-`TripFare` es una tarifa por salida y categoría, no por tramo. La actualización administrativa y la creación de reserva bloquean el viaje y la tarifa en orden determinista; las reservas conservan su snapshot aunque sigan impagas. La migración `operations.0003` consolida duplicados históricos idénticos y rechaza conflictos sin elegir precios arbitrarios.
-
-Las butacas 51 y 54 se calculan como prioritarias por número y viaje, con liberación a medianoche de Argentina dos días calendario antes. La regla se aplica en disponibilidad, panel, web y servicio de creación, sin worker ni escrituras GET. Las ocupaciones previas no se modifican.
+- **Outbox transaccional**: `notifications.TransactionalNotification` garantiza que no se envíen correos de transacciones revertidas (vía `transaction.on_commit`).
+- **Worker de mantenimiento**: `run_maintenance_worker` y `run_operational_maintenance` gestionan expiraciones y fulfillment periódico con advisory lock de sesión PostgreSQL (`pg_try_advisory_lock`), impidiendo ejecuciones simultáneas.
+- **Protección contra abuso**: `core.AbuseCounter` registra contadores basados en HMAC-SHA256 por ventana de tiempo, sin persistir direcciones IP ni datos sensibles en texto plano.

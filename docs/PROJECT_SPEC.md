@@ -1,12 +1,12 @@
 # Especificación del proyecto SC Viajes
 
-Este documento registra las reglas confirmadas y distingue las referencias iniciales de las definiciones pendientes. No implica que las funcionalidades ya estén implementadas. Ver [estado](STATUS.md) y [decisiones](DECISIONS.md).
+Este documento consolida las reglas de negocio confirmadas y vigentes tras la integración del PR #48, distinguiendo el estado comprobado en código de los antecedentes históricos y de las definiciones comerciales pendientes de validación con Sandro. Ver [estado](STATUS.md) y [decisiones](DECISIONS.md).
 
 ## Producto
 
-SC Viajes venderá pasajes online y permitirá gestionar operaciones y ventas desde un panel interno personalizado.
+SC Viajes comercializa pasajes de colectivos de larga distancia a través de un canal de venta online y gestiona la operación, ventas, caja y despacho mediante un panel interno 100 % personalizado.
 
-## Recorridos
+## Recorridos y paradas
 
 ### Córdoba → Jujuy
 
@@ -26,92 +26,123 @@ SC Viajes venderá pasajes online y permitirá gestionar operaciones y ventas de
 5. Jesús María: solamente bajan; nadie sube.
 6. Córdoba Capital: terminal final; bajan todos los pasajeros restantes.
 
-La solución debe validar origen y destino según el orden y los permisos de subida y bajada de cada recorrido. Para el MVP no se revende una misma butaca por tramos dentro del mismo viaje.
+### Reglas de recorrido y tramos interprovinciales
 
-Origen y destino deben pertenecer a provincias diferentes. Se permiten varias paradas de una misma provincia dentro del recorrido, pero no se vende un tramo dentro de una sola provincia. La provincia se configura explícitamente en cada parada.
+- El sistema valida origen y destino según el orden secuencial y los permisos de subida y bajada de cada recorrido.
+- Para el MVP no se revende una misma butaca por tramos intermedios dentro del mismo viaje.
+- **Prohibición de tramos intraprovinciales**: origen y destino deben pertenecer a provincias diferentes (`origin.province != destination.province`). La provincia se configura explícitamente en cada parada (`operations.Stop.province`). No se permite la venta de tramos dentro de una misma provincia.
 
-## Compra
+## Compra y pasajeros
 
-- Se permiten pasajes únicamente de ida o de ida y vuelta.
-- Una compra puede incluir varios pasajeros.
-- Los datos definitivos por pasajero se terminarán de validar con Sandro. La referencia actual es: nombre, apellido, DNI, fecha de nacimiento, nacionalidad, género, correo y teléfono.
-- La política provisional implementada permite gratuidad sin butaca para menores de dos años a la fecha de creación de la reserva, con snapshot inmutable y madre acompañante dentro de la misma compra. La confirmación, emisión y consulta no recalculan la edad.
-- Se puede comprar como invitado.
-- El cliente puede registrarse con correo y contraseña o iniciar sesión con Google.
-- No se utilizarán códigos enviados por correo para iniciar sesión.
-- Apple/iCloud queda fuera de la primera versión.
-- El correo de compra es obligatorio.
-- El consentimiento para comunicaciones comerciales debe ser explícito, separado y auditable.
+- Se permiten compras de pasajes únicamente de ida o de ida y vuelta.
+- Una compra puede incluir varios pasajeros (hasta `SALES_MAX_PASSENGERS_PER_BOOKING`, configurable; 4 por defecto).
+- **Menores de cinco años (gratuidad sin butaca)**:
+  - Todo menor que tenga estrictamente menos de 5 años (`0` a `4` años cumplidos) a la fecha de referencia de compra califica como menor gratuito sin butaca (`BookingPassenger.is_lap_infant = True`).
+  - Al cumplir **exactamente 5 años** (o más) a la fecha de compra, el menor deja de ser gratuito: abona tarifa completa y ocupa butaca propia.
+  - El menor gratuito no genera `SeatAssignment`, no descuenta disponibilidad del colectivo, mantiene importe `Decimal("0.00")`, no computa unidad comisionable de vendedor y recibe su pasaje sin asiento (`seat_number = None`, categoría `LAP_INFANT`).
+  - Requiere obligatoriamente estar asociado a una madre o persona acompañante con butaca propia dentro de la misma compra; se rechazan autorreferencias, ciclos y acompañantes que sean a su vez menores gratuitos.
+  - **Compras ida y vuelta**: el snapshot de gratuidad se evalúa al crear la reserva y se congela para ambos tramos. Si la compra de ida y vuelta se realiza antes de cumplir 5 años, conserva la gratuidad en ida y regreso. Si el regreso se compra por separado después de cumplir 5 años, constituye una compra nueva y abona tarifa completa.
+  - **Antecedente histórico corregido**: en etapas iniciales se contempló un umbral provisional de menores de 2 años; dicha regla fue formalmente actualizada y sustituida por el umbral de menores de 5 años.
+- Datos de contacto y autenticación:
+  - Se puede comprar como invitado en el canal online.
+  - El cliente puede registrarse con correo y contraseña o iniciar sesión con Google u opcionalmente Apple OIDC.
+  - No se utilizan códigos enviados por correo para iniciar sesión.
+  - El correo de compra es obligatorio.
+  - El consentimiento para comunicaciones comerciales es explícito, separado y auditable.
 
-## Butacas y colectivos
+## Butacas, colectivos y prioridades
 
-- Existen categorías cama y semicama con precios diferentes.
-- La referencia inicial del colectivo es de 60 butacas.
-- Referencia visual: butacas 1 a 48 en planta alta, semicama; butacas 49 a 60 en planta baja, cama.
-- La distribución debe modelarse de manera flexible y no quedar rígidamente dibujada en el código.
-- Esta distribución debe validarse con Sandro antes de utilizarla como configuración productiva.
-- En la operación informada no se cambia el colectivo una vez programado el viaje.
+- Categorías: Cama y Semicama con precios diferenciados.
+- Colectivo de referencia inicial: 60 butacas (planta alta: semicama 1 a 48; planta baja: cama 49 a 60). La distribución se modela dinámicamente mediante coordenadas relativas (`position_x`, `position_y`) y plantas (`Seat.Deck`), sin esquemas rígidos en el código.
+- No se cambia el colectivo una vez programado el viaje en la operación comercial informada.
+- **Butacas prioritarias 51 y 54**:
+  - Las butacas 51 y 54 están reservadas prioritariamente y bloqueadas para la venta general hasta las 00:00 (hora local de Argentina, `America/Argentina/Buenos_Aires`) de dos días calendario antes de la fecha local de salida del viaje (por ejemplo, salida un jueves a las 20:00 se libera el martes previo a las 00:00).
+  - No se liberan calculando 48 horas exactas.
+  - La restricción se valida server-side en disponibilidad y en el servicio de creación de reservas con bloqueo transaccional. Ocupaciones previas se preservan.
 
-## Disponibilidad y vencimientos
+## Tarifas por salida
 
-- Una selección online mantiene la butaca durante 15 minutos.
-- Una reserva manual rápida del panel no vence automáticamente y conserva la butaca hasta liberación autorizada, mientras que una selección online mantiene la butaca durante 15 minutos.
-- La reserva manual exige DNI y nombre completo para retener; email y datos completos de venta se validan antes de iniciar o confirmar el pago.
-- Al subir un comprobante de transferencia, la operación pasa a revisión manual.
-- La conducta exacta del vencimiento durante la revisión queda pendiente de definición.
-- La venta online cierra una hora antes del horario de subida del pasajero.
-- Administradores y vendedores pueden registrar ventas manuales hasta que se inicie el viaje.
-- Las ventas manuales deben afectar disponibilidad, caja, ventas y métricas exactamente igual que las ventas online.
+- **Tarifa por salida y categoría**: cada salida (`operations.Trip`) define una tarifa activa para `CAMA` y una para `SEMI_CAMA`, con restricción única de base de datos sobre `(trip, seat_category)`.
+- **Precio uniforme**: dentro de una misma salida, el importe es idéntico para todos los tramos permitidos del recorrido.
+- **Edición administrativa auditada**: sólo usuarios del grupo `Administrador` o superusuarios pueden modificar tarifas antes de la hora de partida (`now < trip.departure_at`).
+- **Inmutabilidad histórica**: el cambio de tarifa solo aplica a nuevas reservas sobre disponibilidad libre; reservas existentes (`HELD` o `CONFIRMED`) conservan su snapshot de precio en `SeatAssignment.price`.
 
-## Pagos
+## Horarios estimados por parada
 
-Métodos previstos:
+- Cada cronograma de viaje registra la fecha y hora programada/estimada por parada (`TripStop.scheduled_at`).
+- Los administradores pueden visualizar y editar los horarios por parada desde el panel interno antes de la salida del viaje.
+- El servicio exige cronología estrictamente creciente entre paradas consecutivas (admitiendo cruces de medianoche), pertenencia al recorrido y ausencia de superposiciones operativas del mismo colectivo.
 
-- Efectivo, registrado manualmente.
-- Transferencia a cuenta de Mercado Pago, con comprobante y aprobación manual.
-- QR de Mercado Pago.
-- Tarjetas de crédito y débito mediante Payway.
+## Disponibilidad, vencimientos y cortes
 
-Las integraciones reales de Mercado Pago y Payway se harán después de la migración desde Google Sheets.
+- **Retención online**: una selección online mantiene la butaca durante 15 minutos (`SALES_ONLINE_HOLD_MINUTES`).
+- **Reserva manual rápida sin expiración automática**:
+  - Las reservas manuales creadas desde el panel interno tienen `expires_at = None` y no vencen automáticamente por tiempo.
+  - La butaca se retiene hasta su cobro o hasta su liberación manual explícita.
+  - **Antecedente histórico corregido**: la regla inicial histórica contemplaba un vencimiento de 24 horas para reservas manuales (`SALES_MANUAL_HOLD_HOURS`), la cual quedó superada tras la decisión operativa de Sandro.
+- **Alcance y liberación por vendedor**:
+  - Las reservas manuales se atribuyen al vendedor autenticado.
+  - La acción de liberación de una reserva manual está restringida exclusivamente al vendedor creador de la misma.
+  - El alcance por vendedor se aplica en el QuerySet base: los vendedores sólo visualizan, filtran y exportan sus propias reservas y pagos.
+- **Corte de ventas**:
+  - Venta online: cierra exactamente una hora antes del horario de subida del pasajero (`SALES_ONLINE_CUTOFF_MINUTES = 60`).
+  - Venta manual: se permite registrar ventas manuales hasta el corte estricto de 30 minutos antes de la subida (`SALES_MANUAL_CUTOFF_MINUTES = 30`). A los 29 minutos la venta manual es rechazada por el servidor.
+  - Una vez iniciado el viaje (`STARTED`), no se admiten nuevas reservas ni confirmaciones de ningún tipo.
 
-## Consolidación Sandro 2026-10-24
+## Pagos, transferencias y comisiones
 
-Las reservas manuales se atribuyen al vendedor autenticado, y solo su creador puede liberarlas. Los vendedores consultan únicamente sus reservas y pagos; la revisión de transferencias corresponde a Administradores activos. Los rechazos conservan el intento y permiten un nuevo comprobante sin liberar automáticamente la butaca. El corte manual se permite exactamente 30 minutos antes de la subida y se rechaza a los 29 minutos; la referencia a la subida queda provisional hasta validación comercial.
+- Métodos implementados:
+  - Efectivo, registrado manualmente en el panel (requiere sesión de caja diaria abierta).
+  - Transferencia bancaria manual, con comprobante subido por el cliente o vendedor.
+- **Revisión administrativa de transferencias**:
+  - La revisión, aprobación y rechazo de comprobantes de transferencia corresponde con exclusividad a usuarios del grupo `Administrador` activos. Los vendedores no pueden revisar transferencias de otros ni aprobar las propias.
+  - El rechazo de un comprobante preserva el registro del intento y su motivo, manteniendo la butaca retenida para permitir la carga de un nuevo comprobante.
+  - La aprobación confirma de forma atómica y terminal el pago, la reserva y las butacas, disparando el fulfillment durable de pasajes.
+- **Balance y comisiones de vendedores**:
+  - Perfil de vendedor gestionado en `panel.StaffProfile`.
+  - La comisión se fija en `Decimal("5000.00")` por cada asignación confirmada con precio positivo (por pasajero y tramo).
+  - Los menores gratuitos sin butaca ($0,00) y las ventas web sin vendedor no generan comisión.
+  - Los ingresos y comisiones se basan en pagos `APPROVED` de reservas `CONFIRMED`.
+  - El sistema muestra ventas brutas, unidades comisionables, comisión total y neto operativo; no realiza transferencias bancarias automáticas ni marca rendiciones automáticamente.
+- Métodos previstos diferidos: pasarelas automáticas (Mercado Pago QR y tarjetas Payway) se encuentran diferidas para después de la migración de datos.
 
-El balance calcula comisiones por asignación confirmada con precio positivo, separa compras de pasajes/tramos y no marca rendiciones bancarias automáticamente. Güemes y menores sin butaca están implementados en las entregas integradas. Siguen pendientes tarifas por salida, asientos prioritarios, PDFs/comprobante/CNRT y Payway.
+## Pasajes y emisión
 
-La fecha usada como “compra” es provisionalmente el instante efectivo de creación recibido por el servicio (`Booking.created_at` o el `now` inyectado), no `confirmed_at`. La gratuidad de ida/vuelta se conserva para ambos tramos aunque el menor cumpla dos años antes del regreso. La diferencia comercial entre creación de reserva y confirmación de pago queda pendiente de consulta.
+- **Plantilla PDF oficial aprobada**:
+  - Documento PDF de exactamente 1 página (596 x 842 pt).
+  - Estructurado en dos talones: **Talón superior** ("Talón empresa/agencia") y **Talón inferior** ("Talón para el pasajero"), separados por línea punteada de corte.
+  - Logo oficial incrustado en ambos talones (`static/assets/scviajes-logo.png`).
+- **Supresión de códigos visuales**:
+  - No se imprimen códigos QR ni códigos de barras visuales en ninguno de los talones.
+  - Los tokens criptográficos (`verification_token_hash`, `download_token_hash`) se conservan internamente en la base de datos para la validación de embarque en el panel interno (`/panel/embarques/`).
+- **Numeración persistente correlativa (serie AAA)**:
+  - Numeración única y consecutiva gestionada mediante el modelo transaccional `TicketSequence` con bloqueo `select_for_update()`.
+  - Formato `AAA-000000001` en adelante para pasajes reales emitidos (`AAA-000000000` reservado para plantilla vacía). El mismo código se imprime en ambos talones.
+- **Entrega**:
+  - Se genera pasaje PDF descargable desde la web y se envía agrupado por correo electrónico al titular de la compra. No se envían pasajes por WhatsApp.
+  - Para menores de cinco años, el pasaje expresa "Pasaje gratuito — sin butaca", indica el acompañante y consigna importe "$ 0,00".
+  - Las condiciones generales del pasaje se reproducen en dos columnas con advertencia de validación comercial pendiente.
 
-## Pasajes
+## Cambios y cancelaciones (políticas pendientes)
 
-## Consolidación tarifas por salida y butacas prioritarias (2026-10-25)
+- El pasajero no puede autogestionar la cancelación del pasaje desde la web.
+- La solicitud de cambio requiere gestión operativa.
+- Se encuentran pendientes de definición comercial con Sandro:
+  - Plazos definitivos y porcentaje o monto de penalización por cambio.
+  - Política de devolución o saldo a favor ante contingencias de la empresa.
+  - Condiciones comerciales y operativas para cambio de titularidad/nombre del pasajero.
 
-Cada salida mantiene una tarifa activa por categoría (`CAMA` y `SEMI_CAMA`), igual para todos sus tramos permitidos. El precio se obtiene server-side y se congela en la reserva; cambiar la tarifa solo afecta nuevas reservas libres. Menores gratuitos permanecen en cero y sin comisión. Solo administradores pueden modificar tarifas antes de la salida, con Decimal, CSRF, auditoría y bloqueo transaccional.
+## Migración de datos heredados
 
-Las butacas 51 y 54 se liberan para venta general a las 00:00 de Argentina de dos días calendario antes de la salida local. La disponibilidad y la creación de reservas vuelven a validar la regla dentro de la transacción; las ocupaciones existentes se conservan y los GET no escriben.
+- SC Viajes operó históricamente con AppSheet y Google Sheets.
+- Se cuenta con un toolkit seguro de solo lectura para inventario y análisis de archivos exportados (`inventory_legacy_exports`), con datos sintéticos auditados.
+- La migración real de datos históricos se realizará en una etapa controlada previa a la puesta en marcha de pasarelas de pago, sujeta a validación previa de esquemas en staging y autorización comercial expresa.
 
-Esta consolidación reemplaza el estado anterior que listaba tarifas por salida y butacas prioritarias como pendientes. Siguen pendientes PDFs/comprobante/CNRT y Payway.
+## Decisiones comerciales pendientes de Sandro
 
-- El pasaje final será un PDF.
-- Se enviará por correo electrónico y también quedará descargable desde la web.
-- No se enviará automáticamente por WhatsApp.
-- El diseño exacto utilizará como referencia un pasaje real y una plantilla en blanco que entregará el cliente.
-- Cada pasaje tendrá un código QR único para control de embarque.
-- La validación del QR y el estado de embarque se implementarán posteriormente.
-
-## Cambios y cancelaciones
-
-- El pasajero no puede cancelar el pasaje.
-- Puede solicitar un cambio hasta cinco horas antes de su horario de subida.
-- El cambio tiene penalización; el importe o fórmula está pendiente.
-- La política de saldo a favor o devolución en situaciones atribuibles a la empresa está pendiente.
-- El cambio de nombre del pasajero debe consultarse con Sandro.
-
-## Migración
-
-- SC Viajes utiliza actualmente AppSheet conectado con Google Sheets.
-- La migración será una etapa controlada y auditable.
-- Se realizará en la etapa penúltima, antes de activar las pasarelas de pago.
-- Primero se importará a un entorno de prueba.
-- Deben existir validaciones, reporte de errores, conteos y posibilidad de repetir la importación sin duplicar datos.
-- No implementar todavía la migración: aún no se conocen las hojas y columnas reales.
+1. **Fecha comercial de compra del menor**: definir si la edad se evalúa al instante de creación de la reserva (`Booking.created_at`) o al momento de confirmación del pago (`Booking.confirmed_at`).
+2. **Seguro de menores gratuitos sin butaca**: confirmar si debe cobrarse póliza o cargo de seguro obligatorio, su importe y leyenda en el pasaje.
+3. **Validación de identidad y vínculo (RENAPER)**: definir el mecanismo de acreditación del vínculo del menor y si se integrará validación oficial o control manual al embarque.
+4. **Autorización previa de butacas prioritarias**: definir el procedimiento, usuario autorizante y tarifa aplicable para asignar las butacas 51 y 54 antes de su liberación comercial general a 2 días de la salida.
+5. **Políticas de devolución y cambios**: aprobar porcentajes de retención, plazos límites y régimen de reembolsos o créditos.
+6. **Datos fijos de transporte y legales**: razón social, CUIT, condición de IVA, Ingresos Brutos, fecha de inicio de actividades, compañía aseguradora, número de póliza y direcciones exactas de boletería/plataforma en cada parada.
