@@ -26,15 +26,15 @@ El objetivo de este plan es ordenar la secuencia de activación en staging, docu
    - Compatibilidad completa con SQLite para suites de pruebas locales y desarrollo efímero.
 
 3. **Almacenamiento Privado de Archivos Sensibles**:
-   - Módulo unificado `core.private_storage` con selector de backend (`filesystem` local vs. `s3` compatible vía `django-storages[s3]`).
+   - Módulo unificado `core.private_storage` con selector de backend (`filesystem` local frente a `s3` compatible vía `django-storages[s3]`).
    - Alcances separados para pasajes PDF (`TICKETS_STORAGE_ROOT`) y comprobantes de transferencias (`PROTECTED_MEDIA_ROOT`).
    - Política de URLs públicas denegada (`base_url=None`, método `url()` bloqueado); todas las descargas son intermediadas por endpoints de Django con validación de tokens hash o roles internos (`Administrador`, `Vendedor`).
 
 4. **Motor de Pasajes Oficiales y Verificación**:
    - Generador ReportLab y `qrcode` en Python puro (sin dependencias C/nativas frágiles).
-   - Plantilla oficial aprobada de 1 página con dos talones (empresa y pasajero), línea de corte, condiciones generales reproducidas textualmente y contacto WhatsApp centralizado.
+   - Plantilla oficial aprobada de 1 página con dos talones (empresa y pasajero), línea de corte punteada, condiciones generales reproducidas textualmente y canal de atención comercial centralizado.
    - Numeración secuencial persistente `TicketSequence` con bloqueo transaccional (`AAA-000000001` en adelante).
-   - Códigos QR visuales eliminados de la impresión; persistencia de hashes criptográficos (SHA-256) para verificación de embarque por teclado/lector en `/panel/embarques/`.
+   - Códigos QR visuales eliminados de la impresión; persistencia de hashes criptográficos (SHA-256) para verificación de embarque por teclado o lector en `/panel/embarques/`.
 
 5. **Caja Diaria y Cobros**:
    - Módulo `cash_register` con sesiones individuales de apertura, arqueo y cierre por vendedor.
@@ -71,7 +71,7 @@ Para que el entorno de staging esté plenamente operativo se debe configurar fue
    - Configurar un servicio SMTP de prueba (por ejemplo, Mailtrap, Mailgun Sandbox o un buzón de captura interna) para validar el envío real de correos de pasajes e invitaciones sin riesgo de despachar mensajes a clientes o pasajeros reales.
 
 4. **Dominio Público HTTPS y Orígenes Confiables**:
-   - Asignar una URL canónica HTTPS (ejemplo: `https://staging-scviajes.up.railway.app`).
+   - Asignar una URL canónica HTTPS para staging.
    - Declarar dicha URL en `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` y `PUBLIC_BASE_URL`.
 
 5. **Definición Operativa del Worker de Mantenimiento**:
@@ -81,165 +81,234 @@ Para que el entorno de staging esté plenamente operativo se debe configurar fue
 
 ## 2. Variables Requeridas por Entorno
 
-A continuación se listan las variables de entorno necesarias para operar el sistema. Cada variable se detalla con su nombre exacto, finalidad operativa y rol responsable de proveerla o definirla. **No se incluyen contraseñas, secretos ni valores reales en este documento.**
+A continuación se listan las variables de entorno necesarias para operar el sistema en sus distintas áreas funcionales, abarcando `settings`, `.env.example` y los chequeos de `production_preflight`. Cada variable se detalla con su nombre exacto, finalidad operativa y rol responsable de proveerla o definirla. **No se incluyen contraseñas, secretos, números de teléfono ni valores o defaults concretos en este documento.**
 
-### 2.1. Núcleo, Seguridad y Plataforma (Django)
+### 2.1. Núcleo, Seguridad y Plataforma (Django y Preflight)
 
 | Variable | Finalidad / Uso en el Sistema | Responsable |
 | :--- | :--- | :--- |
-| `SECRET_KEY` | Clave criptográfica para firmas de sesión, cookies CSRF y tokens internos. Debe tener al menos 50 caracteres y alta entropía. | DevOps / Infraestructura |
-| `DEBUG` | Control de depuración de Django. En staging debe configurarse estrictamente en `False`. | DevOps / Coordinador Técnico |
-| `ALLOWED_HOSTS` | Lista de nombres de host / dominios autorizados a recibir peticiones (separados por coma). | DevOps / Infraestructura |
+| `SECRET_KEY` | Clave criptográfica para firmas de sesión, cookies CSRF y tokens internos del framework. | DevOps / Infraestructura |
+| `DEBUG` | Control del modo de depuración de Django (debe estar desactivado en staging y producción). | DevOps / Coordinador Técnico |
+| `ALLOWED_HOSTS` | Lista de nombres de host y dominios autorizados a recibir peticiones HTTP. | DevOps / Infraestructura |
 | `CSRF_TRUSTED_ORIGINS` | Lista de orígenes HTTPS completos confiables para la validación CSRF en peticiones POST. | DevOps / Infraestructura |
-| `PUBLIC_BASE_URL` | URL canónica HTTPS de la aplicación utilizada para construir enlaces absolutos en correos y pasajes. | DevOps / Infraestructura |
-| `DATABASE_URL` | URI de conexión a la base de datos PostgreSQL de staging (`postgres://...`). | DevOps / Infraestructura |
-| `SECURE_HSTS_SECONDS` | Segundos para la cabecera HSTS en HTTPS (opcional en staging, recomendado `3600`). | DevOps / Seguridad |
-| `ABUSE_HASH_SECRET` | Clave secreta para el cálculo de HMAC en contadores de protección distribuida antiabuso. | DevOps / Seguridad |
-| `ABUSE_TRUSTED_PROXY_IPS` | Lista de direcciones IP de proxies de confianza para la lectura de la cabecera `X-Forwarded-For`. | DevOps / Infraestructura |
+| `PUBLIC_BASE_URL` | URL canónica HTTPS utilizada para construir enlaces absolutos en correos, invitaciones y pasajes. | DevOps / Infraestructura |
+| `DATABASE_URL` | URI de conexión a la base de datos PostgreSQL del entorno correspondiente. | DevOps / Infraestructura |
+| `SECURE_HSTS_SECONDS` | Duración en segundos de la cabecera HSTS para forzar conexiones seguras vía HTTPS. | DevOps / Seguridad |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | Habilitación de la política HSTS para todos los subdominios del proyecto. | DevOps / Seguridad |
+| `SECURE_HSTS_PRELOAD` | Bandera de autorización para inclusión en la lista de precarga HSTS de los navegadores. | DevOps / Seguridad |
+| `LOG_FORMAT` | Formato de serialización de logs de la aplicación (texto estructurado o JSON). | DevOps / Infraestructura |
 
-### 2.2. Almacenamiento Privado de Documentos
+### 2.2. Almacenamiento Privado de Documentos (Storage Privado)
 
 | Variable | Finalidad / Uso en el Sistema | Responsable |
 | :--- | :--- | :--- |
-| `PRIVATE_STORAGE_BACKEND` | Define el motor de almacenamiento de pasajes y comprobantes (`filesystem` o `s3`). | DevOps / Infraestructura |
-| `PRIVATE_STORAGE_S3_BUCKET` | Nombre del bucket privado S3-compatible asignado al entorno de staging. | DevOps / Proveedor Cloud |
-| `PRIVATE_STORAGE_S3_ENDPOINT_URL` | URL del endpoint de la API S3 (requerido para proveedores como Cloudflare R2 o MinIO). | DevOps / Proveedor Cloud |
-| `PRIVATE_STORAGE_S3_REGION_NAME` | Región geográfica del bucket (ej. `us-east-1` o `auto`). | DevOps / Proveedor Cloud |
-| `PRIVATE_STORAGE_S3_ACCESS_KEY_ID` | Identificador de clave de acceso al almacenamiento privado. | DevOps / Proveedor Cloud |
-| `PRIVATE_STORAGE_S3_SECRET_ACCESS_KEY` | Clave secreta para la autenticación en el bucket privado. | DevOps / Proveedor Cloud |
-| `PRIVATE_STORAGE_S3_QUERYSTRING_EXPIRE` | Tiempo de vida en segundos de firmas temporales si se consultan internamente (default `300`). | DevOps / Configuración |
-| `TICKETS_STORAGE_ROOT` | Directorio local absoluto si se utiliza `filesystem` (debe ser externo al repositorio). | DevOps / Infraestructura |
-| `PROTECTED_MEDIA_ROOT` | Directorio local absoluto para comprobantes si se utiliza `filesystem` (externo al repo). | DevOps / Infraestructura |
+| `PRIVATE_STORAGE_BACKEND` | Selector del motor de almacenamiento para pasajes y comprobantes (`filesystem` o `s3`). | DevOps / Infraestructura |
+| `PRIVATE_STORAGE_S3_BUCKET` | Nombre del bucket privado S3-compatible asignado al entorno. | DevOps / Proveedor Cloud |
+| `PRIVATE_STORAGE_S3_ENDPOINT_URL` | URL del endpoint de la API S3 del proveedor cloud contratado. | DevOps / Proveedor Cloud |
+| `PRIVATE_STORAGE_S3_REGION_NAME` | Región geográfica asignada al bucket de almacenamiento privado. | DevOps / Proveedor Cloud |
+| `PRIVATE_STORAGE_S3_ACCESS_KEY_ID` | Identificador de clave de acceso al bucket de almacenamiento privado. | DevOps / Proveedor Cloud |
+| `PRIVATE_STORAGE_S3_SECRET_ACCESS_KEY` | Clave secreta para autenticación en la API del bucket privado. | DevOps / Proveedor Cloud |
+| `PRIVATE_STORAGE_S3_QUERYSTRING_EXPIRE` | Tiempo de expiración en segundos de firmas temporales si se consultan internamente. | DevOps / Configuración |
+| `TICKETS_STORAGE_ROOT` | Ruta absoluta al directorio local para pasajes PDF cuando se usa backend filesystem. | DevOps / Infraestructura |
+| `PROTECTED_MEDIA_ROOT` | Ruta absoluta al directorio local para comprobantes de pago cuando se usa backend filesystem. | DevOps / Infraestructura |
+| `MEDIA_ROOT` | Ruta absoluta al directorio local de almacenamiento para medios generales. | DevOps / Infraestructura |
 
 ### 2.3. Correo Transaccional (SMTP)
 
 | Variable | Finalidad / Uso en el Sistema | Responsable |
 | :--- | :--- | :--- |
-| `EMAIL_BACKEND` | Clase del backend de correo (en staging: `django.core.mail.backends.smtp.EmailBackend`). | DevOps / Configuración |
-| `EMAIL_HOST` | Nombre de host del servidor SMTP de pruebas/staging (ej. Mailtrap, Mailgun Sandbox). | DevOps / Proveedor SMTP |
-| `EMAIL_PORT` | Puerto de conexión SMTP (ej. 587 para STARTTLS o 465 para SSL). | DevOps / Proveedor SMTP |
-| `EMAIL_HOST_USER` | Usuario de autenticación en el servidor SMTP. | DevOps / Proveedor SMTP |
-| `EMAIL_HOST_PASSWORD` | Contraseña o token de autenticación en el servidor SMTP. | DevOps / Proveedor SMTP |
-| `EMAIL_USE_TLS` | Booleano (`True`/`False`) para habilitar STARTTLS. | DevOps / Proveedor SMTP |
-| `EMAIL_USE_SSL` | Booleano (`True`/`False`) para habilitar SSL implícito (mutuamente excluyente con TLS). | DevOps / Proveedor SMTP |
-| `EMAIL_TIMEOUT` | Tiempo límite de espera en segundos para operaciones SMTP (default `10`). | DevOps / Configuración |
-| `DEFAULT_FROM_EMAIL` | Dirección de remitente que figura en los pasajes y avisos a los pasajeros. | Sandro / Comercial |
-| `SERVER_EMAIL` | Dirección de remitente para notificaciones técnicas de errores 500. | DevOps / Soporte |
-| `EMAIL_REPLY_TO` | Dirección a la que se envían las respuestas de los clientes ante un correo transaccional. | Sandro / Atención al Cliente |
+| `EMAIL_BACKEND` | Clase del backend de correo utilizada por Django para el envío de mensajes. | DevOps / Configuración |
+| `EMAIL_HOST` | Nombre de host o dirección del servidor SMTP transaccional. | DevOps / Proveedor SMTP |
+| `EMAIL_PORT` | Puerto de conexión de red del servidor SMTP. | DevOps / Proveedor SMTP |
+| `EMAIL_HOST_USER` | Nombre de usuario o credencial de acceso al servicio SMTP. | DevOps / Proveedor SMTP |
+| `EMAIL_HOST_PASSWORD` | Contraseña o token de autenticación en el servicio SMTP. | DevOps / Proveedor SMTP |
+| `EMAIL_USE_TLS` | Habilitación de cifrado STARTTLS para la conexión SMTP (mutuamente excluyente con SSL). | DevOps / Proveedor SMTP |
+| `EMAIL_USE_SSL` | Habilitación de cifrado SSL implícito para la conexión SMTP (mutuamente excluyente con TLS). | DevOps / Proveedor SMTP |
+| `EMAIL_TIMEOUT` | Tiempo límite de espera en segundos para la comunicación con el servidor SMTP. | DevOps / Configuración |
+| `DEFAULT_FROM_EMAIL` | Dirección de correo de remitente para comunicaciones a pasajeros y emisión de pasajes. | Sandro / Comercial |
+| `SERVER_EMAIL` | Dirección de remitente utilizada para el despacho de alertas técnicas internas. | DevOps / Soporte |
+| `EMAIL_REPLY_TO` | Dirección de respuesta a la cual se dirigen los correos que responden los clientes. | Sandro / Atención al Cliente |
 
-### 2.4. Datos Bancarios para Transferencias
+### 2.4. Configuración Bancaria y Ventanas de Pago
 
 | Variable | Finalidad / Uso en el Sistema | Responsable |
 | :--- | :--- | :--- |
 | `BANK_TRANSFER_ACCOUNT_HOLDER` | Nombre o razón social del titular de la cuenta bancaria de recaudación. | Sandro (Titular Comercial) |
-| `BANK_TRANSFER_ALIAS` | Alias de la cuenta bancaria / CVU (de 6 a 32 caracteres alfanuméricos válidos). | Sandro (Titular Comercial) |
-| `BANK_TRANSFER_CVU` | Clave Bancaria Uniforme (CBU) o Virtual (CVU) de exactamente 22 dígitos numéricos. | Sandro (Titular Comercial) |
-| `BANK_TRANSFER_CUIT` | CUIT del titular de la cuenta bancaria (11 dígitos, con o sin guiones, con checksum válido). | Sandro (Titular Comercial) |
-| `BANK_TRANSFER_ENTITY` | Nombre de la entidad financiera o billetera virtual receptora (ej. Banco de Córdoba, Mercado Pago). | Sandro (Titular Comercial) |
+| `BANK_TRANSFER_ALIAS` | Alias bancario oficial de la cuenta receptora de transferencias. | Sandro (Titular Comercial) |
+| `BANK_TRANSFER_CVU` | Clave Bancaria Uniforme (CBU) o Clave Virtual Uniforme (CVU) de 22 dígitos numéricos. | Sandro (Titular Comercial) |
+| `BANK_TRANSFER_CUIT` | CUIT tributario asociado al titular de la cuenta bancaria de recaudación. | Sandro (Titular Comercial) |
+| `BANK_TRANSFER_ENTITY` | Nombre de la entidad bancaria o billetera virtual receptora de las transferencias. | Sandro (Titular Comercial) |
+| `PAYMENTS_PROOF_WINDOW_MINUTES` | Plazo en minutos otorgado al comprador para transferir y adjuntar su comprobante de pago. | Sandro / Operaciones |
+| `PAYMENTS_REVIEW_WINDOW_HOURS` | Plazo en horas para la revisión y aprobación/rechazo manual de transferencias en panel. | Sandro / Operaciones |
+| `PAYMENTS_MAX_VOUCHER_SIZE_BYTES` | Tamaño máximo en bytes permitido para los archivos de comprobante subidos por clientes. | DevOps / Configuración |
 
-### 2.5. Datos Fiscales y Legales del Transportista (Pasaje Oficial PDF)
+### 2.5. Datos Fiscales, Legales y Operativos del Pasaje (PDF y Transporte)
 
 | Variable | Finalidad / Uso en el Sistema | Responsable |
 | :--- | :--- | :--- |
-| `TICKETS_AGENCY_NAME` | Nombre de la agencia comercializadora ("SC VIAJES"). | Sandro / Comercial |
-| `TICKETS_CARRIER_NAME` | Nombre de fantasía o comercial de la empresa transportista autorizada. | Sandro / Transportista |
-| `TICKETS_CARRIER_LEGAL_NAME` | Razón social formal inscrita del transportista ante organismos fiscales y de transporte. | Sandro / Transportista |
-| `TICKETS_CARRIER_CUIT` | CUIT tributario de la empresa transportista. | Sandro / Transportista |
-| `TICKETS_CARRIER_VAT_CONDITION` | Condición frente al IVA del transportista (ej. Responsable Inscripto). | Sandro / Transportista |
-| `TICKETS_CARRIER_ACTIVITY_START` | Fecha oficial de inicio de actividades del transportista (formato DD/MM/AAAA). | Sandro / Transportista |
-| `TICKETS_CARRIER_IIBB` | Número de inscripción en el impuesto sobre los Ingresos Brutos del transportista. | Sandro / Transportista |
-| `TICKETS_INSURER_NAME` | Nombre de la compañía de seguros que cubre los vehículos y pasajeros. | Sandro / Aseguradora |
-| `TICKETS_INSURANCE_POLICY_REF` | Número de póliza o referencia de contratación del seguro de transporte. | Sandro / Aseguradora |
-| `TICKETS_SERVICE_QUALITY_DISPLAY` | Nivel de servicio homologado según normativa (ej. "Común con aire", "Diferencial"). | Sandro / Operaciones |
-| `TICKETS_PLATFORM_ANNOUNCEMENT` | Texto reglamentario o aviso de presentación en plataforma para los pasajeros. | Sandro / Operaciones |
-| `TICKETS_CONTACT_WHATSAPP` | Teléfono centralizado oficial de atención al pasajero para impresión en pasajes. | Sandro / Comercial |
+| `TICKETS_AGENCY_NAME` | Nombre comercial de la agencia emisora y comercializadora de los pasajes. | Sandro / Comercial |
+| `TICKETS_CARRIER_NAME` | Denominación comercial o nombre de fantasía de la empresa transportista autorizada. | Sandro / Transportista |
+| `TICKETS_CARRIER_LEGAL_NAME` | Razón social formalmente inscripta de la empresa transportista titular del servicio. | Sandro / Transportista |
+| `TICKETS_CARRIER_CUIT` | CUIT tributario oficial de la empresa transportista. | Sandro / Transportista |
+| `TICKETS_CARRIER_VAT_CONDITION` | Condición tributaria formal frente al IVA de la empresa transportista. | Sandro / Transportista |
+| `TICKETS_CARRIER_ACTIVITY_START` | Fecha oficial registrada de inicio de actividades comerciales del transportista. | Sandro / Transportista |
+| `TICKETS_CARRIER_IIBB` | Número de inscripción tributaria en Ingresos Brutos de la empresa transportista. | Sandro / Transportista |
+| `TICKETS_INSURER_NAME` | Nombre de la compañía de seguros que provee la cobertura a vehículos y pasajeros. | Sandro / Aseguradora |
+| `TICKETS_INSURANCE_POLICY_REF` | Número de póliza o certificado de cobertura de seguro obligatorio de transporte. | Sandro / Aseguradora |
+| `TICKETS_SERVICE_QUALITY_DISPLAY` | Nivel o categoría homologada del servicio a bordo para impresión en el documento. | Sandro / Operaciones |
+| `TICKETS_PLATFORM_ANNOUNCEMENT` | Texto reglamentario o aviso de presentación en plataforma impreso para los pasajeros. | Sandro / Operaciones |
+| `TICKETS_CONTACT_WHATSAPP` | Línea telefónica centralizada de atención al cliente para impresión oficial en pasajes. | Sandro / Comercial |
+| `TICKETS_VERIFICATION_BASE_URL` | URL base utilizada para construir enlaces de verificación y consulta de pasajes. | DevOps / Infraestructura |
+| `TICKETS_RATE_LIMIT_PER_MINUTE` | Límite de peticiones por minuto permitidas para consultas del endpoint de verificación. | DevOps / Configuración |
 
 ### 2.6. Identidad de Clientes (Google OAuth y Apple OIDC)
 
 | Variable | Finalidad / Uso en el Sistema | Responsable |
 | :--- | :--- | :--- |
-| `GOOGLE_OAUTH_CLIENT_ID` | Identificador de cliente para la integración de login con Google en la web pública. | Sandro / DevOps |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Secreto de cliente para Google OAuth. | Sandro / DevOps |
-| `GOOGLE_OAUTH_SIMULATION_ENABLED` | Permite simulación en desarrollo/tests. En staging debe estar en `False`. | DevOps / Configuración |
-| `APPLE_OIDC_CLIENT_ID` | Services ID configurado en Apple Developer para el login OIDC. | Sandro / DevOps |
-| `APPLE_OIDC_TEAM_ID` | Team ID de la cuenta de Apple Developer de la empresa. | Sandro / DevOps |
-| `APPLE_OIDC_KEY_ID` | Identificador de la clave privada generada en Apple Developer. | Sandro / DevOps |
-| `APPLE_OIDC_PRIVATE_KEY` | Clave privada en formato PEM (una línea o multilínea segura) para firmar tokens. | Sandro / DevOps |
-| `APPLE_OIDC_ENABLED` | Bandera general para activar Apple en staging (`False` si aún no se cuenta con credenciales). | DevOps / Comercial |
+| `GOOGLE_OAUTH_CLIENT_ID` | Identificador de cliente para integración de autenticación social con Google. | Sandro / DevOps |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Secreto de cliente para la autenticación social mediante Google OAuth. | Sandro / DevOps |
+| `GOOGLE_OAUTH_SIMULATION_ENABLED` | Permite modo de simulación de Google OAuth en suites de prueba y desarrollo local. | DevOps / Configuración |
+| `APPLE_OIDC_CLIENT_ID` | Services ID configurado en Apple Developer para el inicio de sesión con Apple. | Sandro / DevOps |
+| `APPLE_OIDC_TEAM_ID` | Team ID asociado a la cuenta empresarial en Apple Developer. | Sandro / DevOps |
+| `APPLE_OIDC_KEY_ID` | Identificador de la clave privada generada en la consola de Apple Developer. | Sandro / DevOps |
+| `APPLE_OIDC_PRIVATE_KEY` | Clave privada en formato PEM para la firma criptográfica de peticiones a Apple. | Sandro / DevOps |
+| `APPLE_OIDC_ENABLED` | Bandera de activación global del mecanismo de autenticación con Apple OIDC. | DevOps / Comercial |
+| `APPLE_OIDC_SIMULATION_ENABLED` | Permite modo de simulación de Apple OIDC en suites de prueba y desarrollo local. | DevOps / Configuración |
+| `APPLE_OIDC_AUTHORIZATION_URL` | Endpoint de autorización OAuth del proveedor Apple. | DevOps / Configuración |
+| `APPLE_OIDC_TOKEN_URL` | Endpoint de intercambio de tokens criptográficos de Apple. | DevOps / Configuración |
+| `APPLE_OIDC_JWKS_URL` | URL de publicación del conjunto de claves públicas JWKS de Apple. | DevOps / Configuración |
+| `APPLE_OIDC_ISSUER` | Emisor institucional esperado en la verificación de tokens de identidad de Apple. | DevOps / Configuración |
+| `APPLE_OIDC_JWKS_CACHE_SECONDS` | Tiempo de retención en memoria para la caché de claves JWKS de Apple. | DevOps / Configuración |
+| `APPLE_OIDC_STATE_TTL_SECONDS` | Tiempo de vida del estado transaccional para flujos de autenticación Apple OIDC. | DevOps / Configuración |
+| `CUSTOMERS_CLAIM_TOKEN_HOURS` | Plazo en horas de validez para enlaces de reclamo de reservas emitidas como invitado. | DevOps / Configuración |
 
-### 2.7. Operación del Worker y Backups
+### 2.7. Worker de Mantenimiento y Tareas Operacionales
 
 | Variable | Finalidad / Uso en el Sistema | Responsable |
 | :--- | :--- | :--- |
-| `MAINTENANCE_WORKER_MODE` | Modo del worker: `resident` para proceso daemon permanente o `cron` para comando efímero. | DevOps / Arquitectura |
-| `MAINTENANCE_WORKER_INTERVAL_SECONDS` | Intervalo base de espera entre ciclos sucesivos de mantenimiento (default `60`). | DevOps / Configuración |
-| `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS` | Tiempo máximo de espera para obtener el advisory lock de sesión en PostgreSQL (default `0`). | DevOps / Configuración |
-| `BACKUP_OUTPUT_ROOT` | Ruta absoluta del directorio donde se almacenarán las copias `pg_dump` (fuera del repo). | DevOps / Infraestructura |
-| `BACKUP_MINIMUM_COPIES` | Cantidad mínima de copias de seguridad locales a conservar (default `7`). | DevOps / Políticas |
-| `BACKUP_RETENTION_DAYS` | Días de antigüedad tras los cuales una copia puede ser rotada (default `30`). | DevOps / Políticas |
+| `MAINTENANCE_WORKER_ENABLED` | Habilitación general para la ejecución del proceso worker de mantenimiento. | DevOps / Configuración |
+| `MAINTENANCE_WORKER_MODE` | Modo operativo del worker (proceso permanente `resident` o ejecución única `cron`). | DevOps / Arquitectura |
+| `MAINTENANCE_WORKER_INTERVAL_SECONDS` | Intervalo base de espera en segundos entre ciclos sucesivos de mantenimiento. | DevOps / Configuración |
+| `MAINTENANCE_WORKER_JITTER_SECONDS` | Variación aleatoria en segundos entre ciclos para prevenir sincronizaciones periódicas. | DevOps / Configuración |
+| `MAINTENANCE_WORKER_MAX_CYCLE_SECONDS` | Tiempo máximo de ejecución permitido por ciclo individual de mantenimiento. | DevOps / Configuración |
+| `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS` | Tiempo máximo de espera para obtener el advisory lock de sesión en PostgreSQL. | DevOps / Configuración |
+| `OPERATIONAL_MAINTENANCE_MAX_LIMIT` | Límite máximo de elementos procesados por cada tarea individual en una corrida. | DevOps / Configuración |
+| `OPERATIONAL_MAINTENANCE_MAX_SECONDS` | Tiempo límite de ejecución del comando de mantenimiento operacional por lotes. | DevOps / Configuración |
+| `OPERATIONAL_MAINTENANCE_LEASE_SECONDS` | Duración del bloqueo temporal (lease) de exclusión sobre tareas en procesamiento. | DevOps / Configuración |
+| `OPERATIONAL_MAINTENANCE_ENABLE_EXPIRE` | Habilitación de la tarea de expiración de reservas vencidas en el mantenimiento. | DevOps / Configuración |
+| `OPERATIONAL_MAINTENANCE_ENABLE_PAYMENTS` | Habilitación de la tarea de expiración de pagos vencidos en el mantenimiento. | DevOps / Configuración |
+| `OPERATIONAL_MAINTENANCE_ENABLE_FULFILLMENT` | Habilitación de la tarea de reconciliación de pasajes pendientes en el mantenimiento. | DevOps / Configuración |
+| `OPERATIONAL_MAINTENANCE_ENABLE_NOTIFICATIONS` | Habilitación de la tarea de despacho del outbox de notificaciones en el mantenimiento. | DevOps / Configuración |
+
+### 2.8. Notificaciones y Outbox Transaccional
+
+| Variable | Finalidad / Uso en el Sistema | Responsable |
+| :--- | :--- | :--- |
+| `TRANSACTIONAL_NOTIFICATIONS_ENABLED` | Habilitación del sistema de despacho transaccional desacoplado vía outbox. | DevOps / Operaciones |
+| `NOTIFICATIONS_MAX_ATTEMPTS` | Cantidad máxima de reintentos permitidos para el despacho de una notificación. | DevOps / Configuración |
+| `NOTIFICATIONS_RETRY_DELAY_SECONDS` | Demora en segundos antes de reintentar el despacho de una notificación fallida. | DevOps / Configuración |
+| `NOTIFICATIONS_LEASE_SECONDS` | Duración de la exclusión transaccional temporal de un mensaje durante su envío. | DevOps / Configuración |
+
+### 2.9. Copias de Seguridad (Backups de Base de Datos)
+
+| Variable | Finalidad / Uso en el Sistema | Responsable |
+| :--- | :--- | :--- |
+| `BACKUP_OUTPUT_ROOT` | Ruta absoluta al directorio local externo al repositorio para copias de seguridad PostgreSQL. | DevOps / Infraestructura |
+| `BACKUP_MINIMUM_COPIES` | Cantidad mínima de copias de seguridad a conservar en la política de rotación. | DevOps / Políticas |
+| `BACKUP_RETENTION_DAYS` | Plazo en días tras los cuales una copia de seguridad es candidata a rotación. | DevOps / Políticas |
+| `BACKUP_REQUIRE_ENCRYPTION` | Exigencia obligatoria de cifrado para las copias generadas mediante `pg_dump`. | DevOps / Seguridad |
+| `BACKUP_ENCRYPTION_TOOL` | Ruta o ejecutable de la herramienta externa encargada de cifrar las copias de seguridad. | DevOps / Infraestructura |
+
+### 2.10. Parámetros de Ventas y Protección Antiabuso
+
+| Variable | Finalidad / Uso en el Sistema | Responsable |
+| :--- | :--- | :--- |
+| `SALES_MAX_PASSENGERS_PER_BOOKING` | Límite máximo de pasajeros permitidos en una misma compra o transacción. | DevOps / Políticas |
+| `SALES_ONLINE_HOLD_MINUTES` | Plazo en minutos de retención de butacas en estado retenido para compras online. | DevOps / Políticas |
+| `SALES_ONLINE_CUTOFF_MINUTES` | Plazo en minutos de antelación previo a la subida en el que cierra la venta online. | DevOps / Operaciones |
+| `SALES_MANUAL_HOLD_HOURS` | Plazo en horas de retención para reservas manuales cargadas desde el panel interno. | DevOps / Operaciones |
+| `SALES_MANUAL_CUTOFF_MINUTES` | Plazo en minutos de antelación previo a la subida en el que cierra la venta manual en panel. | DevOps / Operaciones |
+| `ABUSE_HASH_SECRET` | Clave secreta para el cálculo de firmas HMAC en los contadores hash de antiabuso. | DevOps / Seguridad |
+| `ABUSE_TRUSTED_PROXY_IPS` | Lista de direcciones IP de proxies de confianza para lectura de cabeceras de proxy inverso. | DevOps / Infraestructura |
+| `ABUSE_VERIFY_LIMIT` | Límite de consultas permitidas en la ventana de verificación de pasajes. | DevOps / Configuración |
+| `ABUSE_VERIFY_WINDOW_SECONDS` | Ventana temporal en segundos para el contador de consultas de verificación. | DevOps / Configuración |
+| `ABUSE_TRANSFER_LIMIT` | Límite de inicios de transferencia permitidos por ventana en checkout. | DevOps / Configuración |
+| `ABUSE_TRANSFER_WINDOW_SECONDS` | Ventana temporal en segundos para el control antiabuso en transferencias. | DevOps / Configuración |
+| `ABUSE_CHECKOUT_LIMIT` | Límite de operaciones de checkout permitidas por ventana en el canal web. | DevOps / Configuración |
+| `ABUSE_CHECKOUT_WINDOW_SECONDS` | Ventana temporal en segundos para el control antiabuso en checkout. | DevOps / Configuración |
+| `ABUSE_COUNTER_RETENTION_SECONDS` | Tiempo de retención en segundos de los registros históricos de contadores en base. | DevOps / Configuración |
+| `ABUSE_COUNTER_CLEANUP_LIMIT` | Límite de filas a purgar en cada ciclo de limpieza de contadores expirados. | DevOps / Configuración |
+| `SITE_BRAND_NAME` | Nombre institucional público de la plataforma en cabeceras y vistas web. | Sandro / Comercial |
+| `SITE_BRAND_TAGLINE` | Lema o subtítulo descriptivo del servicio en el sitio institucional. | Sandro / Comercial |
+| `SITE_SUPPORT_EMAIL` | Dirección de correo de soporte técnico exhibida en la interfaz web pública. | Sandro / Soporte |
+| `SITE_WHATSAPP_URL` | Enlace institucional de contacto a WhatsApp exhibido en la interfaz web pública. | Sandro / Comercial |
 
 ---
 
 ## 3. Datos Pendientes del Transportista y Póliza de Seguro
 
-En la implementación actual del generador de pasajes PDF (`tickets/rendering/data.py`), los siguientes campos figuran con el marcador de texto provisional: `"Pendiente de confirmación con Sandro"`.
+En la implementación actual del generador de pasajes PDF (`tickets/rendering/data.py`), los campos tributarios, legales y operativos del transporte figuran con el marcador provisional de texto pendiente de confirmación.
 
-Para emitir pasajes oficiales plenamente válidos legalmente y superar la verificación estética y formal del documento, se requiere que Sandro confirme los siguientes datos:
+Para emitir pasajes oficiales legalmente válidos y superar la verificación formal del documento, se requiere que Sandro confirme los siguientes datos:
 
-1. **Nombre del Transportista (`TICKETS_CARRIER_NAME`)**: Denominación comercial que opera el servicio y figura en la cabecera de ambos talones del pasaje.
-2. **Razón Social (`TICKETS_CARRIER_LEGAL_NAME`)**: Razón social de la entidad jurídica titular de la explotación del recorrido.
-3. **CUIT del Transportista (`TICKETS_CARRIER_CUIT`)**: Clave Única de Identificación Tributaria del transportista para facturación y fiscalización.
-4. **Condición frente al IVA (`TICKETS_CARRIER_VAT_CONDITION`)**: Estado impositivo (ejemplo: "IVA Responsable Inscripto").
-5. **Fecha de Inicio de Actividades (`TICKETS_CARRIER_ACTIVITY_START`)**: Fecha fiscal de alta registrada ante el organismo recaudador.
-6. **Ingresos Brutos (`TICKETS_CARRIER_IIBB`)**: Número de inscripción en la jurisdicción provincial correspondiente o Convenio Multilateral.
-7. **Compañía Aseguradora (`TICKETS_INSURER_NAME`)**: Entidad aseguradora contratada para la cobertura civil de pasajeros transportados.
-8. **Número de Póliza de Seguro (`TICKETS_INSURANCE_POLICY_REF`)**: Número de póliza vigente exigible en ruta por las autoridades de control (CNRT / Policía Vial).
-9. **Categoría / Calidad del Servicio (`TICKETS_SERVICE_QUALITY_DISPLAY`)**: Denominación técnica reglamentaria del servicio a bordo (ejemplo: "Servicio Semi Cama con Aire y Calefacción").
-10. **Aviso de Embarque en Plataforma (`TICKETS_PLATFORM_ANNOUNCEMENT`)**: Indicación operativa que se imprime en el talón del pasajero sobre la antelación de presentación y el aviso por altavoz en terminales.
-11. **Línea de WhatsApp de Atención al Pasajero (`TICKETS_CONTACT_WHATSAPP`)**: Actualmente el sistema utiliza como valor por defecto `+5493513954420`. Sandro debe ratificar si esta línea telefónica es la oficial definitiva de atención comercial.
+1. **Nombre Comercial del Transportista (`TICKETS_CARRIER_NAME`)**: Denominación comercial o nombre de fantasía que opera el servicio y figura en ambos talones del pasaje (pendiente de confirmación con Sandro).
+2. **Razón Social (`TICKETS_CARRIER_LEGAL_NAME`)**: Razón social de la entidad jurídica formalmente habilitada para la explotación del servicio de transporte (pendiente de confirmación con Sandro).
+3. **CUIT del Transportista (`TICKETS_CARRIER_CUIT`)**: Clave Única de Identificación Tributaria del transportista para fiscalización y facturación (pendiente de confirmación con Sandro).
+4. **Condición frente al IVA (`TICKETS_CARRIER_VAT_CONDITION`)**: Estado impositivo registrado ante la autoridad fiscal (pendiente de confirmación con Sandro).
+5. **Fecha de Inicio de Actividades (`TICKETS_CARRIER_ACTIVITY_START`)**: Fecha fiscal de alta registrada ante el organismo tributario (pendiente de confirmación con Sandro).
+6. **Ingresos Brutos (`TICKETS_CARRIER_IIBB`)**: Número de inscripción en la jurisdicción provincial o Convenio Multilateral (pendiente de confirmación con Sandro).
+7. **Compañía Aseguradora (`TICKETS_INSURER_NAME`)**: Entidad aseguradora contratada para la cobertura civil de los pasajeros transportados (pendiente de confirmación con Sandro).
+8. **Número de Póliza de Seguro (`TICKETS_INSURANCE_POLICY_REF`)**: Número de póliza vigente exigible en ruta por las autoridades de fiscalización vial y transporte (pendiente de confirmación con Sandro).
+9. **Categoría / Calidad del Servicio (`TICKETS_SERVICE_QUALITY_DISPLAY`)**: Denominación técnica homologada del servicio a bordo para impresión en el pasaje (pendiente de confirmación con Sandro).
+10. **Aviso de Embarque en Plataforma (`TICKETS_PLATFORM_ANNOUNCEMENT`)**: Indicación operativa reglamentaria para el pasajero sobre presentación en plataforma y llamado por altavoz (pendiente de confirmación con Sandro).
+11. **Línea de WhatsApp de Atención al Pasajero (`TICKETS_CONTACT_WHATSAPP`)**: Línea telefónica centralizada oficial de atención al cliente para impresión en pasajes (pendiente de confirmación con Sandro).
 
 ---
 
-## 4. Decisiones Comerciales Realmente Abiertas
+## 4. Decisiones Comerciales Consolidadas y Preguntas Realmente Abiertas
 
-Con el propósito de evitar redundancias, a continuación se distinguen las definiciones que **ya fueron resueltas y codificadas** en la documentación canónica (`docs/DECISIONS.md`, `docs/PROJECT_SPEC.md` y `docs/STATUS.md`) de aquellas que **continúan estrictamente abiertas**:
+Con el propósito de evitar reiterar definiciones ya consolidadas en el código y en la documentación canónica (`docs/DECISIONS.md`, `docs/PROJECT_SPEC.md`, `docs/STATUS.md` y documentos de integración asociados), a continuación se distinguen las definiciones ya resueltas de aquellas que continúan formalmente abiertas.
 
 ### 4.1. Decisiones ya Cerradas y Confirmadas (NO preguntar nuevamente)
 
-- **Recorridos y paradas**: Dos recorridos definidos (Córdoba Capital ↔ San Salvador de Jujuy) con 6 paradas en cada sentido (Córdoba, Jesús María, Güemes, Perico, Palpalá, Jujuy). Se prohíbe la venta de tramos dentro de una misma provincia.
+- **Recorridos, paradas y tramos prohibidos**: Dos recorridos definidos (Córdoba Capital ↔ San Salvador de Jujuy) con 6 paradas en cada sentido incorporando Güemes con provincia explícita, orden y permisos de subida/bajada (Córdoba, Jesús María, Güemes, Perico, Palpalá, Jujuy). Se prohíbe de forma estricta la venta de tramos dentro de una misma provincia.
 - **Reventa de butacas por tramo**: Para el MVP está confirmado que una butaca asignada bloquea el viaje completo; no se revende el asiento en tramos intermedios.
 - **Canales de venta y retención**:
   - Canal Online: Retención de butaca por 15 minutos en estado `HELD`. Cierre de venta exactamente 60 minutos antes del horario de subida del pasajero.
   - Canal Manual (Vendedor en Panel): Retención rápida sin vencimiento automático (`expires_at=NULL`) hasta liberación expresa por el propio vendedor creador. Cierre de venta exactamente 30 minutos antes de la subida.
-- **Tarifas operativas**: Cada salida programada posee una tarifa única por categoría (`CAMA` y `SEMI_CAMA`), uniforme para cualquier tramo permitido. Solo los administradores pueden modificarla antes de la salida mediante transacción auditada.
-- **Butacas prioritarias**: Las butacas número 51 y 54 están reservadas internamente y se liberan automáticamente para venta general a las 00:00 (hora argentina) de dos días calendario antes de la salida del viaje.
-- **Menores sin butaca**: Gratuidad aplicable exclusivamente a menores de dos años a la fecha efectiva de creación de la reserva, asociados a una madre acompañante dentro de la misma compra. No ocupan asiento ni generan comisión.
-- **Diseño del pasaje PDF**: Aprobado el formato de 1 página con dos talones (empresa y pasajero), línea de corte punteada, numeración secuencial persistente `AAA-000000001`+, sin QR visibles impresos, con WhatsApp y condiciones generales textualmente reproducidas.
-- **Caja de vendedores**: Apertura y cierre por vendedor con balance esperado. Pagos en efectivo aprobados exigen caja abierta del vendedor e impactan en movimientos inmutables.
+- **Límites documentados de compra**: Límite máximo de 4 pasajeros por transacción, configurable en el servidor mediante `SALES_MAX_PASSENGERS_PER_BOOKING`.
+- **Tarifas operativas por salida**: Cada salida programada posee una tarifa única por categoría (`CAMA` y `SEMI_CAMA`), uniforme para cualquier tramo permitido. Solo los administradores pueden modificarla antes de la salida mediante transacción auditada; la reserva congela inmutablemente el precio histórico unitario.
+- **Butacas prioritarias**: Las butacas número 51 y 54 están reservadas internamente y se liberan automáticamente para venta general a las 00:00 (hora argentina) de dos días calendario antes de la salida del viaje. No existen bypasses ni tarifas especiales previas a esa liberación.
+- **Menores sin butaca**: Gratuidad aplicable a menores de cinco años (0 a 4 años cumplidos) evaluados a la fecha efectiva de compra, asociados obligatoriamente a una madre acompañante con butaca propia en la misma compra. No ocupan asiento, no descuentan disponibilidad del colectivo, mantienen precio cero y no generan comisión; viajan como pasajeros gratuitos sin butaca.
+- **Fecha de compra para menores**: Consolidada en el dominio (`sales/minors.py`) como la fecha y hora efectiva de creación de la reserva (`Booking.created_at` / `purchase_at`), conservándose la gratuidad en compras de ida y vuelta aunque el menor cumpla 5 años antes del viaje o del regreso.
+- **Diseño del pasaje PDF**: Aprobado el formato oficial de 1 página con dos talones (empresa y pasajero), línea de corte punteada, numeración secuencial persistente `AAA-000000001` en adelante mediante el modelo `TicketSequence` con exclusión concurrente en PostgreSQL, sin códigos QR ni barras gráficos visibles impresos, con canal de contacto oficial y condiciones generales textualmente reproducidas.
+- **Caja de vendedores**: Módulo `cash_register` con sesiones individuales de apertura, arqueo y cierre por vendedor. Pagos en efectivo aprobados exigen caja abierta del vendedor e impactan en movimientos inmutables.
 - **Retiro del prototipo inicial**: Confirmado por el cliente que no existen datos reales a conservar en las tablas legacy de `core`.
 
 ### 4.2. Decisiones Comerciales que Continúan ABIERTAS (Requieren Definición de Sandro)
 
 1. **Datos de la Cuenta Bancaria de Recaudación**:
-   - Falta la designación formal de la cuenta bancaria / Mercado Pago oficial de la empresa para recibir las transferencias de los pasajeros (Titular, CUIT, Alias, CVU/CBU y Entidad). Sin esto, las transferencias permanecen inhabilitadas y el preflight productivo emite un `FAIL`.
+   - Falta la designación formal de la cuenta bancaria o billetera virtual oficial de la empresa para recibir las transferencias de los pasajeros (Titular, CUIT, Alias, CVU/CBU y Entidad). Sin esto, las transferencias permanecen inhabilitadas y el preflight productivo emite un `FAIL`.
 2. **Datos Fiscales y Legales del Transportista**:
-   - Pendiente la documentación legal detallada en la [Sección 3](#3-datos-pendientes-del-transportista-y-póliza-de-seguro) para regularizar la emisión de los pasajes.
+   - Pendiente la documentación formal detallada en la [Sección 3](#3-datos-pendientes-del-transportista-y-póliza-de-seguro) para regularizar la emisión de los pasajes oficiales.
 3. **Datos Personales Obligatorios de Pasajeros**:
-   - Confirmar si para emitir un pasaje es obligatorio registrar de forma inexcusable fecha de nacimiento, género y nacionalidad en el checkout web, o si basta con Nombre, Apellido y DNI/Pasaporte.
-4. **Límite Máximo de Pasajeros por Compra**:
-   - Actualmente configurado en 4 pasajeros por transacción (`SALES_MAX_PASSENGERS_PER_BOOKING`). Requiere ratificación comercial.
-5. **Políticas de Cambio de Pasaje y Penalización**:
+   - Confirmar si para emitir un pasaje es obligatorio registrar de forma inexcusable fecha de nacimiento, género y nacionalidad en el checkout web público, o si basta con Nombre, Apellido y DNI/Pasaporte.
+4. **Políticas de Cambio de Pasaje y Penalización**:
    - La especificación prevé que el pasajero puede solicitar un cambio hasta 5 horas antes de la subida. Falta definir el **monto o porcentaje de la penalización** económica aplicable y el procedimiento operativo de cobro del diferencial tarifario.
-6. **Política ante Cancelación del Viaje por la Empresa**:
-   - Definir si en caso de fuerza mayor, rotura de unidad o cancelación operativa se genera saldo a favor en cuenta del cliente, reprogramación automática o reintegro bancario.
-7. **Política de Cambio de Titularidad / Nombre**:
+5. **Política ante Cancelación del Viaje por la Empresa**:
+   - Definir si en caso de fuerza mayor, desperfecto de unidad o cancelación operativa se genera saldo a favor en cuenta del cliente, reprogramación automática o reintegro bancario.
+6. **Política de Cambio de Titularidad / Nombre**:
    - Definir si se permite transferir un pasaje ya emitido a otra persona física y bajo qué plazo y costo administrativo.
-8. **Distribución Física Real de la Flota**:
-   - Ratificar si las unidades a utilizar respetan exactamente el esquema de 60 butacas (1 a 48 semicama en planta alta; 49 a 60 cama en planta baja) o si existen unidades con otra cantidad de asientos o butacas permanentemente inhabilitadas por razones mecánicas.
-9. **Tiempos de Escala y Preparación**:
-   - Confirmar si se debe incorporar un margen de preparación obligatorio entre la llegada de un colectivo y su siguiente salida programada.
-10. **Requisitos de Manifiesto Reglamentario (CNRT)**:
-    - Ratificar si la exportación tabular actual del manifiesto operativo satisface los requerimientos de inspección en terminal y ruta o si exige campos regulatorios específicos adicionales.
+7. **Distribución Física Real de la Flota y Butacas Inhabilitadas**:
+   - Ratificar si las unidades a utilizar respetan exactamente el esquema de 60 butacas (planta alta semicama, planta baja cama) o si existen unidades con otra disposición o butacas permanentemente inhabilitadas por razones mecánicas.
+8. **Horarios Habituales y Tiempos de Escala entre Viajes**:
+   - Confirmar horarios de llegada estimados y si se debe incorporar un margen de preparación obligatorio entre la llegada de un colectivo y su siguiente salida programada.
+9. **Requisitos de Manifiesto Reglamentario (CNRT)**:
+   - Ratificar si la exportación tabular actual del manifiesto operativo satisface la totalidad de los requerimientos de inspección en terminal y ruta o si exige campos regulatorios específicos adicionales.
+10. **Proveedor Definitivo para Envío de Correo Transaccional**:
+    - Selección comercial del proveedor SMTP productivo para el despacho de pasajes y notificaciones.
+11. **Estructura y Calidad de Planillas AppSheet / Google Sheets**:
+    - Entrega del volcado o acceso de solo lectura al esquema real de planillas operativas para el diseño de la herramienta de migración previa a producción.
 
 ---
 
@@ -259,16 +328,16 @@ flowchart TD
 ```
 
 ### Paso 1: Aprovisionamiento de la Base de Datos Aislada
-- Crear una nueva base de datos PostgreSQL en Railway dentro del proyecto de staging.
+- Crear una nueva base de datos PostgreSQL en Railway dentro del entorno exclusivo de staging.
 - Extraer la URL de conexión interna e inyectarla en la variable `DATABASE_URL` del servicio staging.
 - **Control de aislamiento**: Verificar que el host y la base sean completamente diferentes de cualquier base de producción o datos locales.
 
 ### Paso 2: Configuración del Almacenamiento Privado
 - Asignar el bucket S3-compatible de staging y cargar las variables `PRIVATE_STORAGE_BACKEND=s3`, `PRIVATE_STORAGE_S3_BUCKET`, `PRIVATE_STORAGE_S3_ENDPOINT_URL`, etc.
-- Alternativamente, si en staging se usa almacenamiento local efímero, asegurar que `PRIVATE_STORAGE_BACKEND=filesystem` y que las rutas `TICKETS_STORAGE_ROOT` y `PROTECTED_MEDIA_ROOT` apunten a directorios absolutos fuera del código.
+- Alternativamente, si en staging se usa almacenamiento local efímero, asegurar que `PRIVATE_STORAGE_BACKEND=filesystem` y que las rutas `TICKETS_STORAGE_ROOT` y `PROTECTED_MEDIA_ROOT` apunten a directorios absolutos fuera del repositorio.
 
 ### Paso 3: Configuración del Servidor de Correo Controlado
-- Configurar el backend SMTP apuntando a una cuenta de pruebas o buzón seguro (ej. Mailtrap).
+- Configurar el backend SMTP apuntando a una cuenta de pruebas o buzón seguro (por ejemplo, Mailtrap o entorno sandbox).
 - Probar que las credenciales funcionen y que ningún correo enviado desde staging pueda llegar a direcciones reales de clientes.
 
 ### Paso 4: Ejecución de Migraciones de Base de Datos Autorizadas
@@ -326,8 +395,8 @@ Se debe recorrer el ciclo de vida completo de una operación para garantizar la 
    - Cerrar la caja con el arqueo correspondiente y verificar el reporte.
 4. **Emisión de Pasajes PDF y Notificaciones**:
    - Comprobar que la confirmación económica haya creado el registro en `TicketFulfillment`.
-   - Verificar que se hayan generado los archivos PDF con la plantilla oficial aprobada, con numeración correlativa inmutable (ej. `AAA-000000001`).
-   - Descargar el pasaje y corroborar que se respeten los dos talones, que el WhatsApp impreso sea visible y que no existan códigos QR gráficos.
+   - Verificar que se hayan generado los archivos PDF con la plantilla oficial aprobada, con numeración correlativa inmutable (modelo `TicketSequence`).
+   - Descargar el pasaje y corroborar que se respeten los dos talones, que el canal de atención comercial para impresión en pasajes sea visible y que no existan códigos QR gráficos.
    - Verificar en el buzón SMTP controlado que se haya recibido el correo agrupado con los PDFs adjuntos.
 5. **Control de Embarque en Terminal**:
    - Dirigirse a `/panel/embarques/`.
@@ -420,7 +489,7 @@ flowchart LR
         F1B["Creación de base PostgreSQL aislada"]
         F1C["Ejecución de migraciones sobre DB vacía"]
         F1D["Storage local o bucket aislado de test"]
-        F1E["SMTP simulado (Mailtrap / console)"]
+        F1E["SMTP simulado (Mailtrap / sandbox)"]
         F1F["Datos operacionales sintéticos (colectivo demo, viaje demo)"]
         F1G["Pruebas E2E de compra, caja, PDF y embarque sintéticos"]
     end
@@ -443,7 +512,7 @@ flowchart LR
 - Ejecutar `python manage.py migrate` sobre la base de pruebas.
 - Ejecutar `collectstatic` y `production_preflight` con variables sintéticas de prueba.
 - Configurar almacenamiento `filesystem` o bucket S3 de staging con claves de desarrollo.
-- Configurar servidor SMTP ficticio o sandbox (Mailtrap).
+- Configurar servidor SMTP ficticio o sandbox (Mailtrap o buzón seguro).
 - Ejecutar comandos de inicialización operativa (`setup_initial_operations` y `setup_roles`).
 - Dar de alta unidades, paradas y viajes con datos de simulación en `/panel/`.
 - Realizar pruebas integrales de navegación, reserva, comprobantes sintéticos, caja y embarque.
@@ -467,8 +536,8 @@ Para un seguimiento transparente de las dependencias técnicas y operativas, se 
 | Bloqueo / Dependencia | Impacto en el Sistema | Artefacto o Acción Necesaria | Responsable |
 | :--- | :--- | :--- | :--- |
 | **Ausencia de datos bancarios para transferencias** | El comando `production_preflight` falla con `FAIL` y el sistema inhabilita la carga de transferencias para clientes. | Definir y cargar `BANK_TRANSFER_ACCOUNT_HOLDER`, `BANK_TRANSFER_ALIAS`, `BANK_TRANSFER_CVU`, `BANK_TRANSFER_CUIT` y `BANK_TRANSFER_ENTITY`. | **Sandro** |
-| **Datos fiscales y legales del transportista pendientes** | Los pasajes PDF oficiales se emiten con la leyenda provisional *"Pendiente de confirmación con Sandro"*. | Suministrar Razón Social, CUIT, Inicio de actividades, IIBB, Aseguradora y Póliza de transporte. | **Sandro** |
-| **Falta de proveedor SMTP para correo en staging** | Las notificaciones transaccionales y la entrega agrupada de pasajes quedan en estado `FAILED`. | Aprovisionar cuenta en servicio SMTP de prueba (Mailtrap / Mailgun) y cargar variables `EMAIL_*`. | **DevOps / Infraestructura** |
+| **Datos fiscales y legales del transportista pendientes** | Los pasajes PDF oficiales se emiten con la leyenda provisional de texto pendiente de confirmación. | Suministrar Razón Social, CUIT, Inicio de actividades, IIBB, Aseguradora y Póliza de transporte. | **Sandro** |
+| **Falta de proveedor SMTP para correo en staging** | Las notificaciones transaccionales y la entrega agrupada de pasajes quedan en estado `FAILED`. | Aprovisionar cuenta en servicio SMTP de prueba (Mailtrap / sandbox) y cargar variables `EMAIL_*`. | **DevOps / Infraestructura** |
 | **Credenciales OAuth pendientes para autenticación social** | Los botones de acceso con Google y Apple deben permanecer en modo simulación o deshabilitados. | Generar credenciales en Google Cloud Console y Apple Developer con las URLs del entorno. | **Sandro / DevOps** |
 | **Estructura y calidad de planillas AppSheet desconocidas** | Imposibilidad técnica de diseñar y auditar la herramienta de migración de datos históricos. | Entregar export o acceso de solo lectura a las hojas de cálculo operativas de Google Sheets. | **Sandro** |
 | **Políticas de penalización y cambios sin definición** | No se pueden codificar las reglas de cobro de penalidades ni la reubicación de butacas por solicitud del pasajero. | Definir porcentaje o fórmula de penalización y plazo límite comercial. | **Sandro / Comercial** |
