@@ -373,8 +373,10 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         _draw_text_auto(c, data.origin_stop_name, 68.0, 485.0, max_width=220, font_size=7.2, bold=True)
         _draw_text_box(c, data.origin_address, 35.7, 480.0, 255, 11, font_size=6.5, leading=5.6)
 
-        _draw_text_box(c, data.destination_stop_name, 345.0, 489.0, 215, 10, font_size=7.2, bold=True)
-        _draw_text_box(c, data.destination_address, 311.2, 480.0, 250, 11, font_size=6.5, leading=5.6)
+        # Destino inferior usa tres bandas independientes: el nombre no comparte
+        # línea ni área de pintura con la etiqueta o la dirección.
+        _draw_text_box(c, data.destination_stop_name, 345.0, 487.0, 215, 8, font_size=6.2, bold=True)
+        _draw_text_box(c, data.destination_address, 311.2, 475.0, 250, 6, font_size=5.8, leading=5.5)
 
     # Box 8: Asiento | Salida | Se anuncia a | Arribo estimado | Plataforma
     c.roundRect(28.5, 415.59, 537.75, 45.01, 5, stroke=1, fill=0)
