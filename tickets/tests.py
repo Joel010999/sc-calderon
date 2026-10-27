@@ -880,6 +880,52 @@ class TicketEmailGroupedTests(TicketBaseMixin, TransactionTestCase):
             self.assertTrue(att[0].endswith(".pdf"))
             self.assertEqual(att[2], "application/pdf")
 
+        # Contenido del cuerpo: indicación neutral y sin QR impreso
+        self.assertIn(
+            "Presentar el pasaje y la documentación correspondiente al embarcar.",
+            sent_msg.body,
+        )
+        self.assertNotIn("código QR impreso", sent_msg.body)
+        self.assertNotIn("escanear", sent_msg.body.lower())
+
+    def test_ticket_email_contains_neutral_instructions_without_printed_qr_scan(self):
+        """Verifica que el correo enviado contenga la indicación neutral al pasajero
+
+        y no incluya la instrucción desactualizada de escanear el código QR impreso.
+        """
+        booking = self.create_confirmed_booking(passenger_count=2, round_trip=False)
+        attempt = send_booking_tickets(booking)
+
+        self.assertEqual(attempt.status, EmailAttemptStatus.SENT)
+        self.assertEqual(attempt.recipient_email, "comprador@scviajes.com.ar")
+
+        # Se generó el correo en locmem
+        self.assertEqual(len(mail.outbox), 1)
+        sent_msg = mail.outbox[0]
+        self.assertEqual(sent_msg.to, ["comprador@scviajes.com.ar"])
+
+        # Preservar adjuntos de pasajes
+        self.assertEqual(len(sent_msg.attachments), 2)
+        for att in sent_msg.attachments:
+            self.assertTrue(att[0].endswith(".pdf"))
+            self.assertEqual(att[2], "application/pdf")
+
+        # Afirmar que el texto neutral aparece
+        self.assertIn(
+            "Presentar el pasaje y la documentación correspondiente al embarcar.",
+            sent_msg.body,
+        )
+        self.assertIn(
+            "presentar el pasaje y la documentación correspondiente al embarcar",
+            sent_msg.body.lower(),
+        )
+
+        # Afirmar que la instrucción desactualizada de escanear QR impreso no aparece
+        self.assertNotIn("código QR impreso", sent_msg.body)
+        self.assertNotIn("código qr impreso", sent_msg.body.lower())
+        self.assertNotIn("escaneando", sent_msg.body.lower())
+        self.assertNotIn("escanear", sent_msg.body.lower())
+
     def test_email_idempotency_does_not_resend_if_already_sent(self):
         booking = self.create_confirmed_booking(passenger_count=1)
         attempt_1 = send_booking_tickets(booking)
