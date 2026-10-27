@@ -545,7 +545,10 @@ class TicketSequence(models.Model):
                     seq = cls.objects.select_for_update().filter(name="TICKET_NUMBER").first()
                     if seq is None:
                         try:
-                            cls.objects.create(name="TICKET_NUMBER", last_number=0)
+                            # El savepoint permite continuar en PostgreSQL cuando
+                            # otro hilo ganó la creación de la fila única.
+                            with transaction.atomic():
+                                cls.objects.create(name="TICKET_NUMBER", last_number=0)
                         except IntegrityError:
                             pass
                         seq = cls.objects.select_for_update().get(name="TICKET_NUMBER")
