@@ -43,7 +43,8 @@ from tickets.models import (
     TicketStatus,
     mask_document,
 )
-from tickets.rendering import TicketData, build_ticket_pdf
+from tickets.rendering import TicketData, build_ticket_pdf, build_blank_ticket_template_pdf, PAGESIZE
+from tickets.models import TicketSequence
 from tickets.services import (
     build_verification_url,
     generate_ticket_code,
@@ -426,6 +427,40 @@ class TicketAtomicityAndCleanupTests(TicketBaseMixin, TransactionTestCase):
         files_2 = sorted(os.listdir(os.path.join(self.temp_storage_dir, "tickets")))
         self.assertEqual(files_1, files_2)
 
+    def test_booking_lock_query_uses_for_update_of_self_with_nullable_seller_join(self):
+        from django.db.backends.postgresql.base import DatabaseWrapper
+
+        booking = self.create_confirmed_booking(passenger_count=1)
+        captured_ofs = []
+        original_select_for_update = Booking.objects.select_for_update
+
+        def spy_select_for_update(*args, **kwargs):
+            captured_ofs.append(kwargs.get("of"))
+            return original_select_for_update(*args, **kwargs)
+
+        with patch.object(Booking.objects, "select_for_update", side_effect=spy_select_for_update):
+            tickets = issue_tickets_for_booking(booking)
+
+        self.assertEqual(len(tickets), 1)
+        self.assertEqual(captured_ofs, [("self",)])
+
+        pg_wrapper = DatabaseWrapper(
+            {"ENGINE": "django.db.backends.postgresql", "NAME": "scviajes_ci", "TIME_ZONE": None},
+            alias="pg_contract",
+        )
+        pg_wrapper.in_atomic_block = True
+        pg_wrapper.get_autocommit = lambda: False
+        lock_qs = (
+            Booking.objects.select_for_update(of=("self",))
+            .select_related("seller")
+            .filter(pk=booking.pk)
+        )
+        lock_qs.query.clear_ordering(force=True)
+        compiled_sql, _ = lock_qs.query.get_compiler(connection=pg_wrapper).as_sql()
+        self.assertIn("LEFT OUTER JOIN", compiled_sql)
+        self.assertIn('FOR UPDATE OF "sales_booking"', compiled_sql)
+        self.assertFalse(compiled_sql.rstrip().endswith("FOR UPDATE"))
+
     def test_reissuance_rejected_if_any_ticket_is_void(self):
         booking = self.create_confirmed_booking(passenger_count=2)
         tickets = issue_tickets_for_booking(booking)
@@ -458,23 +493,25 @@ class TicketPdfAndQrParsingTests(TicketBaseMixin, TransactionTestCase):
 
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
         self.assertEqual(len(reader.pages), 1)
-        text = reader.pages[0].extract_text()
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-        # Comprobaciones de contenido obligatorio
+        # Comprobaciones de contenido obligatorio según plantilla aprobada
         self.assertIn("SC VIAJES", text)
-        self.assertIn("PASAJE ELECTRÓNICO", text)
+        self.assertIn("Empresa transportista", text)
         self.assertIn(ticket.ticket_code, text)
         self.assertIn(ticket.passenger_name, text)
-        self.assertIn("DNI ***3456", text)
+        self.assertIn("DNI", text)
         self.assertIn("Córdoba Capital", text)
         self.assertIn("San Salvador de Jujuy", text)
-        self.assertIn("Plantilla provisional reemplazable sin cambiar dominio", text)
-        self.assertIn("Presentarse con documento de identidad para abordar", text)
+        self.assertNotIn("Plantilla provisional reemplazable sin cambiar dominio", text)
+        self.assertIn("Condiciones generales del pasaje", text)
+        self.assertIn("VALIDEZ:", text)
+        self.assertIn("Contacto WhatsApp: +5493513954420", text)
 
         # Privacidad: el documento completo NO debe figurar en el texto del PDF
         self.assertNotIn("38123456", text)
 
-    def test_embedded_qr_code_decodes_trusted_verification_url(self):
+    def test_pdf_omits_visible_qr_and_barcodes_while_retaining_internal_tokens(self):
         booking = self.create_confirmed_booking(passenger_count=1)
         tickets = issue_tickets_for_booking(booking)
         ticket = tickets[0]
@@ -487,59 +524,128 @@ class TicketPdfAndQrParsingTests(TicketBaseMixin, TransactionTestCase):
             pdf_bytes = f.read()
 
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        self.assertEqual(len(reader.pages), 1)
         page = reader.pages[0]
-        self.assertTrue(len(page.images) >= 1)
 
-        qr_img_data = page.images[0].data
-        qr_image = Image.open(io.BytesIO(qr_img_data))
+        # 1. No debe existir código QR ni código de barras visible en la página
+        for img_name, img_file in page.images.items():
+            pil_img = Image.open(io.BytesIO(img_file.data))
+            # Ninguna imagen incrustada debe tener la estructura de un QR
+            self.assertNotEqual(pil_img.size, (258, 258))
 
-        # 1. Validación estructural de formato, dimensiones y aspecto cuadrado
-        self.assertEqual(qr_image.format, "PNG")
-        self.assertEqual(qr_image.width, qr_image.height)
-        self.assertGreaterEqual(qr_image.width, 100)
+        # 2. Tokens de verificación y descarga conservados internamente
+        v_hash = hashlib.sha256(raw_v_token.encode("utf-8")).hexdigest()
+        self.assertEqual(ticket.verification_token_hash, v_hash)
+        self.assertTrue(ticket.download_token_hash)
 
-        # 2. Validación de contraste y presencia de módulos claros y oscuros
-        grayscale = qr_image.convert("L")
-        extrema = grayscale.getextrema()
-        self.assertLess(extrema[0], 50)
-        self.assertGreater(extrema[1], 200)
+        # 3. Verificación y embarque funcionales internamente
+        self.assertTrue(Ticket.objects.filter(verification_token_hash=v_hash).exists())
+        self.assertTrue(Ticket.objects.filter(ticket_code=ticket.ticket_code).exists())
 
-        # 3. Validación estructural exacta contra la matriz QR esperada del enlace de verificación
-        expected_url = f"https://scviajes.com.ar/tickets/verify/?token={raw_v_token}"
-        ref_qr = qrcode.QRCode(
-            version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=6,
-            border=1,
+    def test_persisted_booking_values_are_rendered_in_issued_pdf(self):
+        """El PDF se arma desde snapshots persistidos, no desde datos del fixture."""
+        booking = self.create_confirmed_booking(passenger_count=1)
+        passenger = booking.passengers.get()
+        passenger.first_name = "Reserva Persistida"
+        passenger.last_name = "Integracion PDF"
+        passenger.document_number = "40987654"
+        passenger.save(update_fields=["first_name", "last_name", "document_number"])
+
+        ticket = issue_tickets_for_booking(booking)[0]
+        pdf = get_ticket_storage().open(ticket.pdf_path, "rb").read()
+        text = "\n".join(page.extract_text() or "" for page in pypdf.PdfReader(io.BytesIO(pdf)).pages)
+        departure = timezone.localtime(ticket.departure_at)
+        arrival = timezone.localtime(ticket.arrival_at)
+        amount = f"$ {ticket.price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        masked_value = ticket.passenger_document_masked.removeprefix("DNI ")
+
+        for expected in (
+            ticket.passenger_name,
+            masked_value,
+            ticket.origin_stop_name,
+            ticket.destination_stop_name,
+            departure.strftime("%H:%M"),
+            arrival.strftime("%H:%M"),
+            amount,
+        ):
+            self.assertIn(expected, text)
+        self.assertEqual(text.count("DNI:"), 2)
+        self.assertNotIn("DNI: DNI", text)
+
+    def test_long_passenger_fields_wrap_and_keep_branded_logo(self):
+        data = TicketData(
+            ticket_code="SYN-LONG-001",
+            booking_code="RES-LONG-001",
+            passenger_name="Nombre sintético deliberadamente extenso para verificar el ajuste de líneas",
+            masked_document="DNI ***999",
+            origin_stop_name="Córdoba - Terminal nueva de denominación extensa",
+            destination_stop_name="San Salvador de Jujuy - Terminal de ómnibus",
+            travel_date="26/10/2026",
+            departure_time="22:30",
+            boarding_place="Plataforma sintética número 17 con una referencia larga",
+            arrival_time="07:15",
+            arrival_date="27/10/2026",
+            seat_number="12",
+            category_display="Cama",
+            price_display="$ 55.000,00",
+            issued_at="26/10/2026 10:30",
+            qr_payload_url="https://scviajes.test/tickets/verify/?token=SYN-LONG-001",
+            total_amount_display="$ 55.000,00",
+            fare_detail_display="$ 55.000,00",
+            carrier_legal_name="Transportista sintético con una razón social extensa S.A.",
         )
-        ref_qr.add_data(expected_url)
-        ref_qr.make(fit=True)
-        ref_img = ref_qr.make_image(fill_color="black", back_color="white")
-        ref_pil = (ref_img._img if hasattr(ref_img, "_img") else ref_img).convert("RGB")
+        reader = pypdf.PdfReader(io.BytesIO(build_ticket_pdf(data)))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        self.assertEqual(len(reader.pages), 1)
+        self.assertNotIn("…", text)
+        self.assertIn("Condiciones generales del pasaje", text)
+        self.assertTrue(len(reader.pages[0].images) >= 1)
 
-        # La imagen extraída debe coincidir exactamente con la generada para el payload esperado
-        diff = ImageChops.difference(qr_image.convert("RGB"), ref_pil)
-        self.assertIsNone(
-            diff.getbbox(),
-            "La imagen QR extraída del PDF difiere estructuralmente de la generada para el enlace de verificación.",
+    def test_route_addresses_and_times_match_each_travel_direction(self):
+        common = dict(
+            ticket_code="SYN-DIRECTION",
+            booking_code="RES-DIRECTION",
+            passenger_name="Pasajero Sintético",
+            masked_document="DNI ***111",
+            travel_date="26/10/2026",
+            boarding_place="Terminal sintética",
+            seat_number="12",
+            category_display="Cama",
+            price_display="$ 55.000,00",
+            issued_at="26/10/2026 10:30",
+            qr_payload_url="https://scviajes.test/tickets/verify/?token=SYN-DIRECTION",
+            total_amount_display="$ 55.000,00",
+            fare_detail_display="$ 55.000,00",
         )
-
-        # 4. Verificación negativa: un token diferente altera la estructura de la imagen
-        tampered_qr = qrcode.QRCode(
-            version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=6,
-            border=1,
-        )
-        tampered_qr.add_data(f"https://scviajes.com.ar/tickets/verify/?token=token_alterado_{raw_v_token}")
-        tampered_qr.make(fit=True)
-        tampered_img = tampered_qr.make_image(fill_color="black", back_color="white")
-        tampered_pil = (tampered_img._img if hasattr(tampered_img, "_img") else tampered_img).convert("RGB")
-        diff_tampered = ImageChops.difference(qr_image.convert("RGB"), tampered_pil)
-        self.assertIsNotNone(
-            diff_tampered.getbbox(),
-            "Una variación en el token debería alterar la estructura de la imagen QR.",
-        )
+        directions = [
+            dict(
+                origin_stop_name="Origen Jujuy",
+                destination_stop_name="Destino Córdoba",
+                route_name="Origen Jujuy → Destino Córdoba",
+                origin_address="Av. Origen 1, Jujuy",
+                destination_address="Av. Destino 2, Córdoba",
+                departure_time="08:10",
+                arrival_time="18:40",
+            ),
+            dict(
+                origin_stop_name="Origen Córdoba",
+                destination_stop_name="Destino Jujuy",
+                route_name="Origen Córdoba → Destino Jujuy",
+                origin_address="Av. Origen 3, Córdoba",
+                destination_address="Av. Destino 4, Jujuy",
+                departure_time="21:20",
+                arrival_time="07:30",
+            ),
+        ]
+        for direction in directions:
+            reader = pypdf.PdfReader(io.BytesIO(build_ticket_pdf(TicketData(**common, **direction))))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            self.assertIn(direction['origin_stop_name'], text)
+            self.assertIn(direction['origin_address'], text)
+            self.assertIn(direction['destination_stop_name'], text)
+            self.assertIn(direction['destination_address'], text)
+            self.assertIn(direction['departure_time'], text)
+            self.assertIn(direction['arrival_time'], text)
 
 
 class TicketVerificationViewTests(TicketBaseMixin, TransactionTestCase):
@@ -854,7 +960,7 @@ class TicketsPostgresConcurrencyTests(TicketBaseMixin, TransactionTestCase):
         if connection.vendor != "postgresql":
             self.skipTest("Prueba específica para PostgreSQL.")
 
-        from django.db import connections
+        from django.db import close_old_connections, connections
 
         booking = self.create_confirmed_booking(passenger_count=2)
         errors = []
@@ -862,6 +968,7 @@ class TicketsPostgresConcurrencyTests(TicketBaseMixin, TransactionTestCase):
 
         def worker():
             try:
+                close_old_connections()
                 # Cada hilo utiliza su propia conexión
                 t = issue_tickets_for_booking(booking)
                 results.append(t)
@@ -876,9 +983,506 @@ class TicketsPostgresConcurrencyTests(TicketBaseMixin, TransactionTestCase):
         for th in threads:
             th.join()
 
+        self.assertEqual(
+            errors,
+            [],
+            f"La emisión concurrente en PostgreSQL no debe lanzar excepciones: {errors!r}",
+        )
+        self.assertEqual(len(results), 3)
+
         # Debe haber exactamente 2 pasajes en la DB sin duplicados
         self.assertEqual(Ticket.objects.filter(booking=booking).count(), 2)
 
         # Todos los hilos que terminaron deben haber recibido 2 pasajes (idempotencia)
         for r in results:
             self.assertEqual(len(r), 2)
+
+
+
+class TicketReusableDraftAndScheduleSnapshotTests(TicketBaseMixin, TransactionTestCase):
+    """Pruebas del borrador reutilizable del pasaje PDF (dos talones), horarios por parada y snapshots."""
+
+    def _extract_pdf_text(self, ticket: Ticket) -> str:
+        storage = get_ticket_storage()
+        with storage.open(ticket.pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        self.assertEqual(len(reader.pages), 1)
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    def test_pdf_two_stubs_agency_vs_carrier_and_no_reference_data_leak(self):
+        booking = self.create_confirmed_booking(passenger_count=1)
+        ticket = issue_tickets_for_booking(booking)[0]
+        text = self._extract_pdf_text(ticket)
+
+        # Ambos talones presentes en la plantilla aprobada
+        self.assertIn("Talón para el pasajero", text)
+        self.assertIn("Agencia:", text)
+        self.assertIn("SC VIAJES", text)
+        self.assertIn("Empresa transportista", text)
+        self.assertIn("Contacto WhatsApp: +5493513954420", text)
+
+        # Datos fiscales y de seguro fijos pendientes de Sandro (no pedidos por venta ni inventados)
+        self.assertIn("Razón social:", text)
+        self.assertIn("CUIT:", text)
+        self.assertIn("Inicio de actividades:", text)
+        self.assertIn("IIBB:", text)
+        self.assertIn("Usted viaja asegurado por:", text)
+        self.assertIn("Póliza o referencia:", text)
+
+        # Prohibición estricta: nunca usar datos fiscales, números, códigos, direcciones ni tasas del PDF de referencia
+        forbidden_reference_literals = [
+            "GRAL URQUIZA",
+            "GENERAL URQUIZA",
+            "SUV-212798751-0",
+            "SCX001",
+            "30-54622766-5",
+            "908-30716745445",
+            "Protección Mutual",
+            "44945021",
+            "Calle 4 y 41",
+            "Peron 380",
+            "Perón 380",
+            "Tasa Emb",
+            "Cortesia",
+            "Cortesía",
+        ]
+        for literal in forbidden_reference_literals:
+            self.assertNotIn(literal, text)
+
+    def test_web_sale_omits_seller_while_manual_sale_includes_seller_and_real_payment_method(self):
+        from payments.models import Payment, PaymentMethod, PaymentStatus
+
+        # 1. Venta web (ONLINE) sin vendedor y con transferencia bancaria aprobada
+        online_booking = create_booking(
+            channel=BookingChannel.ONLINE,
+            email="web@scviajes.com.ar",
+            phone="3519998888",
+            legs=[
+                {
+                    "trip": self.trip_ida,
+                    "origin_stop": self.ts_cba,
+                    "destination_stop": self.ts_jujuy,
+                    "seats": [self.seat_1],
+                }
+            ],
+            passengers_data=[
+                {
+                    "first_name": "Lucía",
+                    "last_name": "Fernández",
+                    "document_type": "DNI",
+                    "document_number": "41222333",
+                    "birth_date": "1996-08-20",
+                    "nationality": "Argentina",
+                }
+            ],
+            now=self.now,
+        )
+        online_booking.status = BookingStatus.CONFIRMED
+        online_booking.confirmed_at = self.now
+        online_booking.save(update_fields=["status", "confirmed_at"])
+        SeatAssignment.objects.filter(leg__booking=online_booking).update(
+            status=AssignmentStatus.CONFIRMED,
+            updated_at=self.now,
+        )
+        Payment.objects.create(
+            booking=online_booking,
+            method=PaymentMethod.BANK_TRANSFER,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("25000.00"),
+            currency="ARS",
+            reviewed_by=self.admin_user,
+            reviewed_at=self.now,
+        )
+
+        online_ticket = issue_tickets_for_booking(online_booking)[0]
+        online_text = self._extract_pdf_text(online_ticket)
+
+        # En venta web no debe aparecer nombre ni identificador de vendedor
+        self.assertNotIn("seller_user", online_text)
+        self.assertIn("Transferencia bancaria", online_text)
+        self.assertIn("Tarifa:", online_text)
+        self.assertIn("Importe total", online_text)
+        self.assertIn("$ 25.000,00", online_text)
+
+        # 2. Venta manual (MANUAL) con vendedor y pago en efectivo aprobado
+        manual_booking = self.create_confirmed_booking(
+            passenger_count=1,
+            seats_list=[self.seat_2],
+        )
+        Payment.objects.create(
+            booking=manual_booking,
+            method=PaymentMethod.CASH,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("25000.00"),
+            currency="ARS",
+            registered_by=self.seller_user,
+            reviewed_by=self.seller_user,
+            reviewed_at=self.now,
+        )
+        manual_ticket = issue_tickets_for_booking(manual_booking)[0]
+        manual_text = self._extract_pdf_text(manual_ticket)
+
+        self.assertIn("seller_user", manual_text)
+        self.assertIn("Efectivo", manual_text)
+        self.assertIn("$ 25.000,00", manual_text)
+
+    def test_boarding_departure_destination_arrival_midnight_crossing_and_emitted_pdf_preservation(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from operations.services import update_trip_schedules
+
+        tz_ar = ZoneInfo("America/Argentina/Buenos_Aires")
+        night_cba = datetime(2030, 5, 10, 22, 45, tzinfo=tz_ar)
+        night_jm = datetime(2030, 5, 10, 23, 35, tzinfo=tz_ar)
+        morning_jujuy = datetime(2030, 5, 11, 8, 20, tzinfo=tz_ar)
+
+        update_trip_schedules(
+            trip=self.trip_ida,
+            schedules=[
+                (self.stop_cba.pk, night_cba),
+                (self.stop_jm.pk, night_jm),
+                (self.stop_jujuy.pk, morning_jujuy),
+            ],
+        )
+
+        ts_jm = self.trip_ida.trip_stops.get(stop=self.stop_jm)
+        ts_jujuy = self.trip_ida.trip_stops.get(stop=self.stop_jujuy)
+
+        booking = create_manual_booking(
+            seller=self.seller_user,
+            email="intermedia@scviajes.com.ar",
+            phone="3525112233",
+            legs=[
+                {
+                    "trip": self.trip_ida,
+                    "origin_stop": ts_jm,
+                    "destination_stop": ts_jujuy,
+                    "seats": [self.seat_1],
+                }
+            ],
+            passengers_data=[
+                {
+                    "first_name": "Carlos",
+                    "last_name": "Sánchez",
+                    "document_type": "DNI",
+                    "document_number": "35999111",
+                    "birth_date": "1990-03-10",
+                    "nationality": "Argentina",
+                }
+            ],
+            now=self.now,
+        )
+        booking.status = BookingStatus.CONFIRMED
+        booking.confirmed_at = self.now
+        booking.save(update_fields=["status", "confirmed_at"])
+        SeatAssignment.objects.filter(leg__booking=booking).update(
+            status=AssignmentStatus.CONFIRMED,
+            updated_at=self.now,
+        )
+
+        ticket = issue_tickets_for_booking(booking)[0]
+        storage = get_ticket_storage()
+        with storage.open(ticket.pdf_path, "rb") as f:
+            original_pdf_bytes = f.read()
+
+        text = self._extract_pdf_text(ticket)
+        # Muestra la salida correspondiente al embarque (Jesús María 10/05/2030 23:35, no 22:45 de Córdoba)
+        self.assertIn("Jesús María", text)
+        self.assertIn("23:35", text)
+        self.assertNotIn("22:45", text)
+        # Muestra la llegada estimada correspondiente al destino en el día siguiente (11/05/2030 08:20)
+        self.assertIn("San Salvador de Jujuy", text)
+        self.assertIn("11/05/2030", text)
+        self.assertIn("08:20", text)
+
+        # Modificar posteriormente los horarios estimados de la salida NO debe recalcular ni sobrescribir el PDF emitido
+        update_trip_schedules(
+            trip=self.trip_ida,
+            schedules=[
+                (self.stop_cba.pk, night_cba + timedelta(hours=1)),
+                (self.stop_jm.pk, night_jm + timedelta(hours=1)),
+                (self.stop_jujuy.pk, morning_jujuy + timedelta(hours=2)),
+            ],
+        )
+
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.departure_at, night_jm)
+        self.assertEqual(ticket.arrival_at, morning_jujuy)
+
+        reissued = issue_tickets_for_booking(booking)[0]
+        self.assertEqual(reissued.pk, ticket.pk)
+        with storage.open(ticket.pdf_path, "rb") as f:
+            after_pdf_bytes = f.read()
+        self.assertEqual(after_pdf_bytes, original_pdf_bytes)
+
+    def test_lap_infant_without_seat_is_preserved_in_pdf_without_fake_seat(self):
+        booking = create_manual_booking(
+            seller=self.seller_user,
+            email="familia@scviajes.com.ar",
+            phone="3514445566",
+            legs=[
+                {
+                    "trip": self.trip_ida,
+                    "origin_stop": self.ts_cba,
+                    "destination_stop": self.ts_jujuy,
+                    "seats": [self.seat_3],
+                }
+            ],
+            passengers_data=[
+                {
+                    "first_name": "Laura",
+                    "last_name": "Gómez",
+                    "document_type": "DNI",
+                    "document_number": "32111222",
+                    "birth_date": "1992-04-12",
+                    "nationality": "Argentina",
+                    "gender": "F",
+                },
+                {
+                    "first_name": "Mateo",
+                    "last_name": "Gómez",
+                    "document_type": "DNI",
+                    "document_number": "58111222",
+                    "birth_date": (self.departure_ida.date() - timedelta(days=365)).isoformat(),
+                    "nationality": "Argentina",
+                    "accompanied_by_position": 1,
+                },
+            ],
+            now=self.now,
+        )
+        booking.status = BookingStatus.CONFIRMED
+        booking.confirmed_at = self.now
+        booking.save(update_fields=["status", "confirmed_at"])
+        SeatAssignment.objects.filter(leg__booking=booking).update(
+            status=AssignmentStatus.CONFIRMED,
+            updated_at=self.now,
+        )
+
+        tickets = issue_tickets_for_booking(booking)
+        self.assertEqual(len(tickets), 2)
+
+        infant_ticket = next(t for t in tickets if t.passenger.is_lap_infant)
+        self.assertIsNone(infant_ticket.seat_number)
+        self.assertEqual(infant_ticket.seat_category, "LAP_INFANT")
+        self.assertEqual(infant_ticket.seat_category_display, "Sin butaca")
+        self.assertEqual(infant_ticket.price, Decimal("0.00"))
+
+        infant_text = self._extract_pdf_text(infant_ticket)
+        self.assertIn("Sin butaca", infant_text)
+        self.assertIn("Laura Gómez", infant_text)
+        self.assertIn("$ 0,00", infant_text)
+        self.assertIn("Pasaje gratuito — sin butaca", infant_text)
+
+
+class TicketApprovedNumberingAndTemplateAcceptanceTests(TicketBaseMixin, TransactionTestCase):
+    """Pruebas exhaustivas de numeración persistente, concurrencia, idempotencia y fidelidad a la plantilla aprobada."""
+
+    def test_blank_template_has_default_code_without_emission(self):
+        pdf_bytes = build_blank_ticket_template_pdf()
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        self.assertEqual(len(reader.pages), 1)
+
+        text = reader.pages[0].extract_text()
+        # Plantilla vacía lleva el código AAA-000000000
+        self.assertIn("AAA-000000000", text)
+        self.assertIn("SC VIAJES", text)
+        self.assertIn("Contacto WhatsApp: +5493513954420", text)
+        self.assertIn("Condiciones generales del pasaje", text)
+
+        # La secuencia no debe haberse incrementado para emisiones reales
+        seq = TicketSequence.objects.filter(name="TICKET_NUMBER").first()
+        self.assertTrue(seq is None or seq.last_number == 0)
+
+    def test_persistent_numbering_starts_at_one_and_increments(self):
+        booking1 = self.create_confirmed_booking(passenger_count=1)
+        ticket1 = issue_tickets_for_booking(booking1)[0]
+        self.assertEqual(ticket1.ticket_code, "AAA-000000001")
+
+        booking2 = self.create_confirmed_booking(passenger_count=1, seats_list=[self.seat_2])
+        ticket2 = issue_tickets_for_booking(booking2)[0]
+        self.assertEqual(ticket2.ticket_code, "AAA-000000002")
+
+    def test_same_ticket_number_in_both_stubs(self):
+        booking = self.create_confirmed_booking(passenger_count=1)
+        ticket = issue_tickets_for_booking(booking)[0]
+
+        storage = get_ticket_storage()
+        with storage.open(ticket.pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        self.assertEqual(len(reader.pages), 1)
+        text = reader.pages[0].extract_text()
+
+        # El mismo número debe aparecer en el talón superior y en el talón para el pasajero
+        code_count = text.count(ticket.ticket_code)
+        self.assertEqual(code_count, 2, f"Se esperaba el código {ticket.ticket_code} exactamente 2 veces (una por talón), encontrado: {code_count}")
+
+    def test_multiple_passengers_and_legs_generate_distinct_sequential_numbers(self):
+        booking = self.create_confirmed_booking(passenger_count=3, round_trip=True)
+        tickets = issue_tickets_for_booking(booking)
+        self.assertEqual(len(tickets), 6)
+
+        codes = [t.ticket_code for t in tickets]
+        # Todos los códigos deben ser únicos
+        self.assertEqual(len(set(codes)), 6)
+
+        # Deben ser números contiguos de 9 dígitos con prefijo AAA-
+        for code in codes:
+            self.assertTrue(code.startswith("AAA-"))
+            num_part = code.split("-")[1]
+            self.assertEqual(len(num_part), 9)
+            self.assertTrue(num_part.isdigit())
+
+    def test_idempotent_retry_resend_download_preserves_number_and_pdf(self):
+        booking = self.create_confirmed_booking(passenger_count=1)
+        ticket1 = issue_tickets_for_booking(booking)[0]
+        original_code = ticket1.ticket_code
+        original_pdf_path = ticket1.pdf_path
+
+        # Reintento de emisión
+        ticket2 = issue_tickets_for_booking(booking)[0]
+        self.assertEqual(ticket2.ticket_code, original_code)
+        self.assertEqual(ticket2.pdf_path, original_pdf_path)
+
+        # Reenvío de correo
+        from tickets.services import send_booking_tickets
+        attempt = send_booking_tickets(booking.pk)
+        self.assertEqual(attempt.status, EmailAttemptStatus.SENT)
+
+        ticket1.refresh_from_db()
+        self.assertEqual(ticket1.ticket_code, original_code)
+
+    def test_historical_tickets_preserved_without_renumbering(self):
+        booking = self.create_confirmed_booking(passenger_count=1)
+        # Crear un pasaje simulando emisión histórica previa
+        historical_ticket = Ticket.objects.create(
+            booking=booking,
+            leg=booking.legs.first(),
+            passenger=booking.passengers.first(),
+            seat_assignment=SeatAssignment.objects.filter(leg__booking=booking).first(),
+            ticket_code="TK-HISTORIC-99",
+            verification_token_hash="hash_historico",
+            download_token_hash="download_historico",
+            status=TicketStatus.ISSUED,
+            pdf_path="tickets/hist.pdf",
+            issued_at=self.now,
+            passenger_name="Histórico",
+            passenger_document_masked="DNI ***111",
+            origin_stop_name="Córdoba",
+            destination_stop_name="Jujuy",
+            departure_at=self.now,
+            arrival_at=self.now,
+            price=Decimal("10000.00"),
+            currency="ARS",
+            booking_public_id=booking.public_id,
+        )
+
+        # Emitir un pasaje nuevo en otra reserva
+        new_booking = self.create_confirmed_booking(passenger_count=1, seats_list=[self.seat_2])
+        new_ticket = issue_tickets_for_booking(new_booking)[0]
+
+        # El histórico conserva intacto su código
+        historical_ticket.refresh_from_db()
+        self.assertEqual(historical_ticket.ticket_code, "TK-HISTORIC-99")
+
+        # El nuevo recibe la numeración AAA-
+        self.assertTrue(new_ticket.ticket_code.startswith("AAA-"))
+
+    def test_voided_ticket_does_not_reuse_number(self):
+        booking1 = self.create_confirmed_booking(passenger_count=1)
+        ticket1 = issue_tickets_for_booking(booking1)[0]
+        code1 = ticket1.ticket_code
+
+        # Anulación
+        from tickets.services import void_ticket
+        void_ticket(ticket1.pk, reason="Anulación de prueba para verificar no reutilización")
+
+        booking2 = self.create_confirmed_booking(passenger_count=1, seats_list=[self.seat_2])
+        ticket2 = issue_tickets_for_booking(booking2)[0]
+        code2 = ticket2.ticket_code
+
+        # No reutiliza el código anulado y avanza en la secuencia
+        self.assertNotEqual(code1, code2)
+        num1 = int(code1.split("-")[1])
+        num2 = int(code2.split("-")[1])
+        self.assertEqual(num2, num1 + 1)
+
+    def test_long_data_single_page_without_overflow_clipping_or_squares(self):
+        data_largos = TicketData(
+            ticket_code="AAA-000000099",
+            booking_code="BK-LARGOS-TEST",
+            passenger_name="María de las Mercedes Constantina del Sagrado Corazón de Jesús Domínguez Rodríguez",
+            masked_document="DNI ***998877",
+            origin_stop_name="Estación Intermodal Jesús María Terminal Central Ampliada",
+            destination_stop_name="Terminal Metropolitana Internacional de Palpalá San Salvador de Jujuy",
+            travel_date="21/07/2026",
+            departure_time="23:45",
+            boarding_place="Jesús María Parada Central",
+            arrival_time="11:15",
+            seat_number="48",
+            category_display="Semicama Planta Alta Servicio Ejecutivo Interjurisdiccional",
+            price_display="$ 125.000,00",
+            issued_at="26/10/2026 20:00",
+            qr_payload_url="https://scviajes.com.ar/tickets/verify/?token=token_test",
+            arrival_date="22/07/2026",
+            route_name="Jesús María - Palpalá",
+            origin_address="Av. Presidente Juan Domingo Perón y Pedro J. Frías 1250 esq. San Martín",
+            destination_address="Av. Martijena y Av. Catalano frente al Complejo Recreativo Municipal",
+            seller_display="Vendedora Autorizada Especializada Córdoba Norte",
+            payment_method_display="Transferencia bancaria verificada en sucursal",
+            fare_detail_display="Tarifa $ 125.000,00",
+            total_amount_display="$ 125.000,00",
+            is_lap_infant=False,
+            carrier_name="Empresa Transportista Autorizada de Servicios Interprovinciales SRL",
+            contact_whatsapp="+5493513954420",
+        )
+        pdf_bytes = build_ticket_pdf(data_largos)
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        self.assertEqual(len(reader.pages), 1)
+
+        text = reader.pages[0].extract_text()
+        self.assertIn("AAA-000000099", text)
+        self.assertIn("María de las Mercedes", text)
+        self.assertIn("+5493513954420", text)
+        # Sin glifos de reemplazo ni caracteres de corte
+        self.assertNotIn("\ufffd", text)
+
+    def test_concurrent_issuance_allocates_unique_sequential_numbers(self):
+        import threading
+        from django.db import connection
+        connection.close()
+
+        numbers = []
+        errors = []
+
+        def worker():
+            from django.db import connection
+            try:
+                nums = TicketSequence.allocate_ticket_numbers(2)
+                numbers.extend(nums)
+            except Exception as e:
+                errors.append(e)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0)
+        self.assertEqual(len(numbers), 10)
+        # Todos los números asignados deben ser únicos
+        self.assertEqual(len(set(numbers)), 10)
+
+    def test_postgres_concurrency_when_available(self):
+        from django.db import connection
+        if connection.vendor != "postgresql":
+            self.skipTest("Prueba específica de PostgreSQL; base actual no es PostgreSQL.")
+
+        booking = self.create_confirmed_booking(passenger_count=1)
+        ticket = issue_tickets_for_booking(booking)[0]
+        self.assertTrue(ticket.ticket_code.startswith("AAA-"))

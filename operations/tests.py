@@ -13,7 +13,12 @@ from django.db.models.deletion import ProtectedError
 from django.test import TestCase
 
 from .models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, Trip, TripFare, TripStop
-from .services import detect_trip_fare_conflicts, schedule_trip, validate_no_trip_fare_conflicts
+from .services import (
+    detect_trip_fare_conflicts,
+    schedule_trip,
+    update_trip_schedules,
+    validate_no_trip_fare_conflicts,
+)
 
 
 class InitialOperationsTests(TestCase):
@@ -461,6 +466,96 @@ class SchedulingTests(OperationsDataMixin, TestCase):
         item.scheduled_at = self.start.replace(tzinfo=None)
         with self.assertRaises(ValidationError):
             item.full_clean()
+
+
+class UpdateTripSchedulesTests(OperationsDataMixin, TestCase):
+    """Pruebas de actualización de horarios estimados por parada reutilizando TripStop.scheduled_at."""
+
+    def setUp(self):
+        self.ensure_active_seat()
+        self.trip = self.create_trip()
+
+    def test_updates_schedules_across_midnight_in_buenos_aires_reusing_trip_stop(self):
+        tz_ar = ZoneInfo("America/Argentina/Buenos_Aires")
+        night_departure = datetime(2030, 1, 15, 23, 30, tzinfo=tz_ar)
+        new_schedules = {
+            self.stops["CBA"].pk: night_departure,
+            self.stops["JMA"].pk: datetime(2030, 1, 16, 0, 20, tzinfo=tz_ar),
+            self.stops["GUE"].pk: datetime(2030, 1, 16, 9, 0, tzinfo=tz_ar),
+            self.stops["PER"].pk: datetime(2030, 1, 16, 9, 45, tzinfo=tz_ar),
+            self.stops["PAL"].pk: datetime(2030, 1, 16, 10, 15, tzinfo=tz_ar),
+            self.stops["SSJ"].pk: datetime(2030, 1, 16, 10, 45, tzinfo=tz_ar),
+        }
+
+        updated_trip = update_trip_schedules(trip=self.trip, schedules=new_schedules)
+        self.assertEqual(updated_trip.pk, self.trip.pk)
+        self.assertEqual(Trip.objects.count(), 1)
+        self.assertEqual(TripStop.objects.filter(trip=self.trip).count(), 6)
+
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.departure_at, night_departure)
+        for stop_id, expected_dt in new_schedules.items():
+            ts = self.trip.trip_stops.get(stop_id=stop_id)
+            self.assertEqual(ts.scheduled_at, expected_dt)
+            self.assertEqual(ts.scheduled_at.astimezone(tz_ar).strftime("%Y-%m-%d %H:%M"), expected_dt.strftime("%Y-%m-%d %H:%M"))
+
+    def test_rejects_midnight_inversion_on_same_day(self):
+        tz_ar = ZoneInfo("America/Argentina/Buenos_Aires")
+        night_departure = datetime(2030, 1, 15, 23, 30, tzinfo=tz_ar)
+        invalid_schedules = {
+            self.stops["CBA"].pk: night_departure,
+            # Error común: poner 00:20 del mismo día 15/01 en lugar del 16/01
+            self.stops["JMA"].pk: datetime(2030, 1, 15, 0, 20, tzinfo=tz_ar),
+            self.stops["GUE"].pk: datetime(2030, 1, 16, 9, 0, tzinfo=tz_ar),
+            self.stops["PER"].pk: datetime(2030, 1, 16, 9, 45, tzinfo=tz_ar),
+            self.stops["PAL"].pk: datetime(2030, 1, 16, 10, 15, tzinfo=tz_ar),
+            self.stops["SSJ"].pk: datetime(2030, 1, 16, 10, 45, tzinfo=tz_ar),
+        }
+        before = dict(self.trip.trip_stops.values_list("stop_id", "scheduled_at"))
+        with self.assertRaises(ValidationError):
+            update_trip_schedules(trip=self.trip, schedules=invalid_schedules)
+        self.assertEqual(dict(self.trip.trip_stops.values_list("stop_id", "scheduled_at")), before)
+
+    def test_rejects_stop_not_in_route_missing_stop_and_naive_datetime(self):
+        outside = Stop.objects.create(code="OTRA", name="Otra", city="Otra", province="Otra")
+        before = dict(self.trip.trip_stops.values_list("stop_id", "scheduled_at"))
+
+        # Parada ajena al recorrido
+        with_outside = self.schedules()
+        with_outside[outside.pk] = self.start + timedelta(hours=10)
+        with self.assertRaises(ValidationError):
+            update_trip_schedules(trip=self.trip, schedules=with_outside)
+
+        # Parada faltante
+        missing_one = self.schedules()
+        del missing_one[self.stops["PER"].pk]
+        with self.assertRaises(ValidationError):
+            update_trip_schedules(trip=self.trip, schedules=missing_one)
+
+        # Fecha/hora sin zona horaria (naive)
+        naive_times = self.schedules()
+        naive_times[self.stops["JMA"].pk] = (self.start + timedelta(hours=1)).replace(tzinfo=None)
+        with self.assertRaises(ValidationError):
+            update_trip_schedules(trip=self.trip, schedules=naive_times)
+
+        self.assertEqual(dict(self.trip.trip_stops.values_list("stop_id", "scheduled_at")), before)
+
+    def test_rejects_started_completed_cancelled_and_bus_overlaps(self):
+        other_trip = self.create_trip(days_offset=2)
+        overlapping_schedules = {
+            item.stop_id: other_trip.departure_at + timedelta(hours=index)
+            for index, item in enumerate(self.trip.trip_stops.order_by("sequence"))
+        }
+        with self.assertRaisesMessage(ValidationError, "superpuestos"):
+            update_trip_schedules(trip=self.trip, schedules=overlapping_schedules)
+
+        for status in (Trip.Status.STARTED, Trip.Status.COMPLETED, Trip.Status.CANCELLED):
+            Trip.objects.filter(pk=self.trip.pk).update(status=status)
+            with self.subTest(status=status), self.assertRaises(ValidationError):
+                update_trip_schedules(
+                    trip=self.trip,
+                    schedules={k: v + timedelta(hours=1) for k, v in self.schedules().items()},
+                )
 
 
 class FareTests(OperationsDataMixin, TestCase):

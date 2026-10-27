@@ -19,7 +19,14 @@ from operations.models import Bus, Route, Seat, SeatCategory, Trip, TripFare, Tr
 from operations.services import schedule_trip
 from .models import AuditEvent
 from .trip_forms import TripFareForm
-from .trip_services import create_panel_trip, save_fare, set_fare_active, start_trip, complete_trip
+from .trip_services import (
+    complete_trip,
+    create_panel_trip,
+    save_fare,
+    save_trip_schedules,
+    set_fare_active,
+    start_trip,
+)
 
 
 class TripDataMixin:
@@ -393,6 +400,7 @@ class TripPermissionTests(TripDataMixin, TestCase):
         return [
             (self.url("trip_create"), {"route": self.route.pk, "bus": self.bus.pk}),
             (self.schedule_url(), {**self.schedule_data(), "action": "review"}),
+            (self.url("trip_stops_schedule", trip_pk=self.trip.pk), self.schedule_data(self.start + timedelta(days=1, hours=1))),
             (self.url("fare_create", trip_pk=self.trip.pk), self.fare_data(self.trip)),
             (self.url("fare_edit", trip_pk=self.trip.pk, pk=self.fare.pk), self.fare_data(self.trip, amount="999.00")),
             (self.url("fare_activate", trip_pk=self.trip.pk, pk=self.fare.pk), {}),
@@ -406,11 +414,18 @@ class TripPermissionTests(TripDataMixin, TestCase):
         for url in self.read_urls():
             self.assertEqual(self.client.get(url, secure=True).status_code, 200)
         self.assertEqual(self.client.get(self.url("trip_start_confirm", trip_pk=self.trip.pk), secure=True).status_code, 200)
+        self.assertEqual(self.client.get(self.url("trip_stops_schedule", trip_pk=self.trip.pk), secure=True).status_code, 403)
+        self.assertEqual(self.client.post(
+            self.url("trip_stops_schedule", trip_pk=self.trip.pk),
+            self.schedule_data(self.start + timedelta(days=1, hours=1)),
+            secure=True,
+        ).status_code, 403)
 
         self.client.force_login(self.staff)
         for url in self.read_urls():
             self.assertEqual(self.client.get(url, secure=True).status_code, 403)
         self.assertEqual(self.client.get(self.url("trip_start_confirm", trip_pk=self.trip.pk), secure=True).status_code, 403)
+        self.assertEqual(self.client.get(self.url("trip_stops_schedule", trip_pk=self.trip.pk), secure=True).status_code, 403)
         before = self.database_state()
         for url, data in self.writes():
             self.assertEqual(self.client.post(url, data, secure=True).status_code, 403)
@@ -418,13 +433,13 @@ class TripPermissionTests(TripDataMixin, TestCase):
 
     def test_anonymous_redirect_and_common_user_rejection(self):
         self.client.logout()
-        for url in self.read_urls():
+        for url in self.read_urls() + [self.url("trip_stops_schedule", trip_pk=self.trip.pk)]:
             self.assertRedirects(self.client.get(url, secure=True), f"{self.url('login')}?next={url}", fetch_redirect_response=False)
         for url, data in self.writes():
             self.assertEqual(self.client.post(url, data, secure=True).status_code, 302)
         self.client.force_login(self.common)
         before = self.database_state()
-        for url in self.read_urls():
+        for url in self.read_urls() + [self.url("trip_stops_schedule", trip_pk=self.trip.pk)]:
             self.assertEqual(self.client.get(url, secure=True).status_code, 403)
         for url, data in self.writes():
             self.assertEqual(self.client.post(url, data, secure=True).status_code, 403)
@@ -446,6 +461,8 @@ class TripPermissionTests(TripDataMixin, TestCase):
             with self.assertRaises(PermissionDenied):
                 create_panel_trip(actor=user, route=self.route, bus=self.bus, schedules=self.schedules())
             with self.assertRaises(PermissionDenied):
+                save_trip_schedules(actor=user, trip_pk=self.trip.pk, data=self.schedule_data(self.start + timedelta(days=1, hours=1)))
+            with self.assertRaises(PermissionDenied):
                 save_fare(actor=user, trip_pk=self.trip.pk, data=self.fare_data(self.trip))
             with self.assertRaises(PermissionDenied):
                 set_fare_active(actor=user, trip_pk=self.trip.pk, pk=self.fare.pk, active=False)
@@ -464,6 +481,118 @@ class TripPermissionTests(TripDataMixin, TestCase):
         for suffix in ("editar/", "estado/", "eliminar/", "horarios/editar/", f"tarifas/{self.fare.pk}/eliminar/"):
             self.assertEqual(self.client.post(f"/panel/operaciones/viajes/{self.trip.pk}/{suffix}", secure=True).status_code, 404)
         self.assertEqual(self.database_state(), before)
+
+
+class TripStopSchedulePanelTests(TripDataMixin, TestCase):
+    """Pruebas del panel para carga y edición de horarios estimados por parada (Sandro/Administrador)."""
+
+    def setUp(self):
+        super().setUp()
+        self.trip = self.make_trip(self.start + timedelta(days=2))
+
+    def test_admin_can_update_stop_schedules_crossing_midnight_with_sanitized_audit(self):
+        url = self.url("trip_stops_schedule", trip_pk=self.trip.pk)
+        get_res = self.client.get(url, secure=True)
+        self.assertEqual(get_res.status_code, 200)
+        self.assertContains(get_res, "Horarios estimados por parada")
+        self.assertContains(get_res, "America/Argentina/Buenos_Aires")
+
+        # Configurar salida nocturna a las 23:30 que cruza medianoche hacia el día siguiente
+        night_base = (self.start + timedelta(days=4)).replace(hour=23, minute=30)
+        offsets_minutes = [0, 50, 540, 585, 615, 645]
+        stops = list(self.trip.trip_stops.order_by("sequence"))
+        payload = {
+            f"stop_{ts.stop_id}": (night_base + timedelta(minutes=offset)).strftime("%Y-%m-%dT%H:%M")
+            for ts, offset in zip(stops, offsets_minutes)
+        }
+
+        post_res = self.client.post(url, payload, secure=True)
+        self.assertRedirects(post_res, self.url("trip_detail", pk=self.trip.pk), fetch_redirect_response=False)
+
+        self.trip.refresh_from_db()
+        self.assertEqual(timezone.localtime(self.trip.departure_at).strftime("%Y-%m-%d %H:%M"), night_base.strftime("%Y-%m-%d %H:%M"))
+
+        updated_stops = list(self.trip.trip_stops.order_by("sequence"))
+        # La primera parada está en el día D (23:30) y la segunda ya en el día D+1 (00:20)
+        self.assertEqual(timezone.localtime(updated_stops[0].scheduled_at).strftime("%H:%M"), "23:30")
+        self.assertEqual(timezone.localtime(updated_stops[1].scheduled_at).strftime("%H:%M"), "00:20")
+        self.assertEqual(
+            timezone.localtime(updated_stops[1].scheduled_at).date(),
+            timezone.localtime(updated_stops[0].scheduled_at).date() + timedelta(days=1),
+        )
+
+        # Verificar evento de auditoría sanitizado
+        event = AuditEvent.objects.get()
+        self.assertEqual(event.actor, self.admin)
+        self.assertEqual(event.action, AuditEvent.Action.UPDATE)
+        self.assertEqual(event.entity_type, "operations.Trip")
+        self.assertEqual(event.entity_id, str(self.trip.pk))
+        self.assertEqual(len(event.before["stops"]), 6)
+        self.assertEqual(len(event.after["stops"]), 6)
+        self.assertNotIn("csrfmiddlewaretoken", str(event.after))
+
+        # Verificar visualización en el explorador de auditoría del panel
+        audit_res = self.client.get(self.url("audit_list"), secure=True)
+        self.assertEqual(audit_res.status_code, 200)
+        self.assertContains(audit_res, "operations")
+        self.assertContains(audit_res, "Edición")
+
+    def test_missing_or_date_only_values_are_rejected_without_00_00_fallback(self):
+        url = self.url("trip_stops_schedule", trip_pk=self.trip.pk)
+        base_payload = self.schedule_data(self.start + timedelta(days=3))
+        first_key = next(iter(base_payload))
+        second_key = list(base_payload.keys())[1]
+
+        # 1. Valor vacío
+        empty_payload = {**base_payload, second_key: ""}
+        before = self.database_state()
+        res_empty = self.client.post(url, empty_payload, secure=True)
+        self.assertEqual(res_empty.status_code, 200)
+        self.assertTrue(res_empty.context["form"].errors)
+        self.assertEqual(self.database_state(), before)
+
+        # 2. Solo fecha sin hora (nunca debe autocompletarse como 00:00)
+        date_only_str = (self.start + timedelta(days=3)).strftime("%Y-%m-%d")
+        date_only_payload = {**base_payload, first_key: date_only_str}
+        res_date_only = self.client.post(url, date_only_payload, secure=True)
+        self.assertEqual(res_date_only.status_code, 200)
+        self.assertIn(first_key, res_date_only.context["form"].errors)
+        self.assertEqual(self.database_state(), before)
+
+    def test_rejects_unordered_extra_past_or_locked_trip_schedules(self):
+        url = self.url("trip_stops_schedule", trip_pk=self.trip.pk)
+        base_payload = self.schedule_data(self.start + timedelta(days=3))
+        keys = list(base_payload.keys())
+        before = self.database_state()
+
+        # Orden no creciente
+        unordered = {**base_payload, keys[2]: base_payload[keys[1]]}
+        res_unordered = self.client.post(url, unordered, secure=True)
+        self.assertEqual(res_unordered.status_code, 200)
+        self.assertTrue(res_unordered.context["form"].errors)
+
+        # Parada ajena
+        extra = {**base_payload, "stop_999999": base_payload[keys[-1]]}
+        res_extra = self.client.post(url, extra, secure=True)
+        self.assertEqual(res_extra.status_code, 200)
+        self.assertTrue(res_extra.context["form"].errors)
+
+        # Salida en el pasado
+        past_payload = self.schedule_data(timezone.now() - timedelta(days=1))
+        res_past = self.client.post(url, past_payload, secure=True)
+        self.assertEqual(res_past.status_code, 200)
+        self.assertContains(res_past, "La salida debe estar en el futuro.")
+
+        self.assertEqual(self.database_state(), before)
+
+        # Estados bloqueados (STARTED, COMPLETED, CANCELLED)
+        for status in (Trip.Status.STARTED, Trip.Status.COMPLETED, Trip.Status.CANCELLED):
+            Trip.objects.filter(pk=self.trip.pk).update(status=status)
+            before_locked = self.database_state()
+            res_locked = self.client.post(url, base_payload, secure=True)
+            self.assertEqual(res_locked.status_code, 200)
+            self.assertContains(res_locked, "antes de la salida")
+            self.assertEqual(self.database_state(), before_locked)
 
 
 class TripFarePanelTests(TripDataMixin, TestCase):
@@ -712,7 +841,13 @@ class TripReadTests(TripDataMixin, TestCase):
         trip = self.make_trip()
         self.assertNotIn("django.contrib.admin", settings.INSTALLED_APPS)
         self.assertEqual(self.client.get("/admin/", secure=True).status_code, 404)
-        for url in (self.url("trips"), self.url("trip_detail", pk=trip.pk), self.url("trip_create"), self.schedule_url()):
+        for url in (
+            self.url("trips"),
+            self.url("trip_detail", pk=trip.pk),
+            self.url("trip_create"),
+            self.schedule_url(),
+            self.url("trip_stops_schedule", trip_pk=trip.pk),
+        ):
             response = self.client.get(url, secure=True)
             for remote in ('src="http', 'cdn.tailwindcss', 'cdn.jsdelivr', 'unpkg.com'):
                 self.assertNotContains(response, remote)

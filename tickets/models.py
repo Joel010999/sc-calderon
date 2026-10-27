@@ -497,3 +497,70 @@ class TicketFulfillment(models.Model):
 
     def __str__(self):
         return f"Fulfillment {self.booking.public_id} · {self.issue_status}/{self.email_status}"
+
+
+class TicketSequence(models.Model):
+    """Secuencia persistente y protegida bajo concurrencia para la numeración de pasajes.
+
+    - Plantilla vacía: 'AAA-000000000' (nunca se asigna a emisiones reales).
+    - Primera emisión real: 'AAA-000000001' y secuencia incremental de 9 dígitos.
+    - Bloqueo transaccional exclusivo con select_for_update().
+    - Los números son únicos, no se reutilizan ante anulaciones o saltos, y no alteran pasajes históricos.
+    """
+
+    name = models.CharField(
+        "nombre de la secuencia",
+        max_length=50,
+        unique=True,
+        default="TICKET_NUMBER",
+    )
+    last_number = models.PositiveBigIntegerField(
+        "último número emitido",
+        default=0,
+    )
+    updated_at = models.DateTimeField(
+        "última actualización",
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "secuencia de pasajes"
+        verbose_name_plural = "secuencias de pasajes"
+
+    def __str__(self):
+        return f"Secuencia {self.name}: último {self.last_number}"
+
+    @classmethod
+    def allocate_ticket_numbers(cls, count: int) -> list[str]:
+        if count <= 0:
+            return []
+
+        import time
+        from django.db import IntegrityError, OperationalError, transaction
+
+        max_retries = 25
+        for attempt in range(max_retries):
+            try:
+                with transaction.atomic():
+                    seq = cls.objects.select_for_update().filter(name="TICKET_NUMBER").first()
+                    if seq is None:
+                        try:
+                            # El savepoint permite continuar en PostgreSQL cuando
+                            # otro hilo ganó la creación de la fila única.
+                            with transaction.atomic():
+                                cls.objects.create(name="TICKET_NUMBER", last_number=0)
+                        except IntegrityError:
+                            pass
+                        seq = cls.objects.select_for_update().get(name="TICKET_NUMBER")
+
+                    start = seq.last_number + 1
+                    end = seq.last_number + count
+                    seq.last_number = end
+                    seq.save(update_fields=["last_number", "updated_at"])
+
+                    return [f"AAA-{num:09d}" for num in range(start, end + 1)]
+            except OperationalError as err:
+                if "locked" in str(err).lower() and attempt < max_retries - 1:
+                    time.sleep(0.05 * (attempt + 1))
+                    continue
+                raise

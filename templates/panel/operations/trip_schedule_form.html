@@ -1,0 +1,17 @@
+{% extends 'panel/operations/base.html' %}
+{% block operations_content %}
+<p><a href="{% url 'panel:trip_detail' pk=trip.pk %}">← Volver al viaje {{ trip.pk }}</a></p>
+<div class="ops-card">
+    <h2>Horarios estimados por parada · {{ trip.route.name }} · Viaje {{ trip.pk }}</h2>
+    <p>Colectivo: {{ trip.bus.code }} · {{ trip.bus.display_name }}</p>
+    <p class="muted">Cargá la fecha y hora estimada de paso/llegada para cada parada en horario argentino (America/Argentina/Buenos_Aires). Si el viaje cruza la medianoche, indicá la fecha del día siguiente en las paradas posteriores a las 00:00.</p>
+</div>
+<form method="post" class="ops-card ops-form" novalidate>
+    {% csrf_token %}
+    {% include 'panel/operations/form_fields.html' %}
+    <div class="form-actions">
+        <button class="ops-button" type="submit">Guardar horarios por parada</button>
+        <a class="ops-button secondary" href="{% url 'panel:trip_detail' pk=trip.pk %}">Cancelar</a>
+    </div>
+</form>
+{% endblock %}

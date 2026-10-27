@@ -8,6 +8,16 @@ from operations.validators import validate_aware_datetime
 from .forms import OperationalForm
 
 
+DATETIME_LOCAL_INPUT_FORMATS = (
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+)
+
+
 class TripSelectionForm(forms.Form):
     route = forms.ModelChoiceField(
         label="Recorrido", queryset=Route.objects.none(), empty_label="Seleccioná un recorrido",
@@ -29,7 +39,24 @@ class TripSelectionForm(forms.Form):
 
 
 class LocalDateTimeField(forms.DateTimeField):
+    """Campo de fecha y hora local en zona Argentina.
+
+    Exige fecha y hora explícitas (con horas y minutos): nunca convierte una
+    fecha sola en 00:00 ni inventa horarios faltantes.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("input_formats", DATETIME_LOCAL_INPUT_FORMATS)
+        super().__init__(*args, **kwargs)
+
     def to_python(self, value):
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped and ":" not in stripped:
+                raise ValidationError(
+                    "Indicá fecha y hora completas (con hora y minutos); no se asume 00:00 para horarios faltantes.",
+                    code="invalid",
+                )
         # datetime-local no envía un offset: Django interpreta la entrada local
         # en la zona configurada y entrega un datetime consciente al dominio.
         with timezone.override(settings.TIME_ZONE):
@@ -86,6 +113,58 @@ class TripScheduleForm(forms.Form):
                 for item in self.route_stops
             ],
         }
+
+
+class TripStopScheduleForm(forms.Form):
+    """Formulario de carga/edición de horarios estimados por parada de una salida."""
+
+    def __init__(self, *args, trip, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.trip = trip
+        self.trip_stops = list(trip.trip_stops.select_related("stop").order_by("sequence"))
+        for item in self.trip_stops:
+            boarding = "sí" if item.allows_boarding else "no"
+            alighting = "sí" if item.allows_alighting else "no"
+            role_label = "Salida inicial" if item.sequence == 1 else "Llegada estimada"
+            local_value = timezone.localtime(item.scheduled_at) if item.scheduled_at else None
+            self.fields[f"stop_{item.stop_id}"] = LocalDateTimeField(
+                label=f"{item.sequence}. {item.stop.name}",
+                initial=local_value.strftime("%Y-%m-%dT%H:%M") if local_value else None,
+                help_text=f"{role_label}. Subida: {boarding}. Bajada: {alighting}. Horario argentino ({settings.TIME_ZONE}).",
+                widget=forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={
+                    "type": "datetime-local", "class": "form-input", "step": "60",
+                }),
+            )
+
+    def clean(self):
+        cleaned = super().clean()
+        allowed = set(self.fields) | {"csrfmiddlewaretoken"}
+        extra_keys = set(self.data) - allowed
+        if extra_keys:
+            raise ValidationError("Se recibieron paradas o campos que no pertenecen al recorrido de esta salida.")
+        if hasattr(self.data, "getlist") and any(len(self.data.getlist(key)) != 1 for key in self.fields):
+            raise ValidationError("Indicá exactamente un horario por parada, sin faltantes ni duplicados.")
+        if not self.trip_stops:
+            raise ValidationError("La salida no tiene paradas configuradas.")
+        previous = None
+        for index, item in enumerate(self.trip_stops, start=1):
+            if item.sequence != index:
+                raise ValidationError("La secuencia de paradas de la salida no es consecutiva.")
+            key = f"stop_{item.stop_id}"
+            value = cleaned.get(key)
+            if value is None:
+                continue
+            validate_aware_datetime(value)
+            if previous is not None and value <= previous:
+                self.add_error(
+                    key,
+                    "El horario estimado debe ser posterior al de la parada anterior (verificá la fecha si el viaje cruza medianoche).",
+                )
+            previous = value
+        return cleaned
+
+    def schedules(self):
+        return {item.stop_id: self.cleaned_data[f"stop_{item.stop_id}"] for item in self.trip_stops}
 
 
 class TripFareForm(OperationalForm):

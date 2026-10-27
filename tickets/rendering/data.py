@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+PENDING_SANDRO_VALUE = "Pendiente de confirmación con Sandro"
+
 
 @dataclass(frozen=True)
 class TicketData:
@@ -20,5 +22,52 @@ class TicketData:
     price_display: str
     issued_at: str
     qr_payload_url: str
-    provisional_notice: str = "Plantilla provisional reemplazable sin cambiar dominio"
+    # Compatibilidad con llamadores antiguos; las notas técnicas no se
+    # imprimen en el documento del pasajero.
+    provisional_notice: str = ""
     id_requirement_notice: str = "Presentarse con documento de identidad para abordar"
+    arrival_date: str = ""
+    route_name: str = ""
+    origin_address: str = ""
+    destination_address: str = ""
+    seller_display: str = ""
+    payment_method_display: str = "Sin pago registrado"
+    fare_detail_display: str = ""
+    total_amount_display: str = ""
+    is_lap_infant: bool = False
+    companion_name: str = ""
+    agency_name: str = "SC VIAJES"
+    carrier_name: str = PENDING_SANDRO_VALUE
+    carrier_legal_name: str = PENDING_SANDRO_VALUE
+    carrier_cuit: str = PENDING_SANDRO_VALUE
+    carrier_vat_condition: str = PENDING_SANDRO_VALUE
+    carrier_activity_start: str = PENDING_SANDRO_VALUE
+    carrier_iibb: str = PENDING_SANDRO_VALUE
+    insurer_name: str = PENDING_SANDRO_VALUE
+    insurance_policy_ref: str = PENDING_SANDRO_VALUE
+    service_quality_display: str = PENDING_SANDRO_VALUE
+    platform_announcement: str = PENDING_SANDRO_VALUE
+    contact_whatsapp: str = "+5493513954420"
+    conditions_notice: str = ""
+    is_blank_template: bool = False
+
+    @classmethod
+    def blank_template(cls) -> "TicketData":
+        return cls(
+            ticket_code="AAA-000000000",
+            booking_code="",
+            passenger_name="",
+            masked_document="",
+            origin_stop_name="",
+            destination_stop_name="",
+            travel_date="",
+            departure_time="",
+            boarding_place="",
+            arrival_time="",
+            seat_number="",
+            category_display="",
+            price_display="",
+            issued_at="",
+            qr_payload_url="",
+            is_blank_template=True,
+        )
