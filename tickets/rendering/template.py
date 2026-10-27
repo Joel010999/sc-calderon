@@ -73,6 +73,65 @@ def _draw_logo(c: canvas.Canvas, x: float, y: float, size: float = 13.0) -> None
         c.drawImage(ImageReader(str(path)), x, y, width=size, height=size, preserveAspectRatio=True, mask="auto")
 
 
+def _display_text(value: object) -> str:
+    """Normaliza separadores que algunas fuentes PDF muestran como cuadrados."""
+    return str(value or "").replace("→", " - ").replace("â†’", " - ").strip()
+
+
+def _draw_text_box(
+    c: canvas.Canvas,
+    text: object,
+    x: float,
+    y_top: float,
+    max_width: float,
+    max_height: float,
+    font_name: str = FONT_REGULAR,
+    font_size: float = 7.2,
+    leading: float | None = None,
+    align: str = "left",
+    bold: bool = False,
+    color=None,
+) -> None:
+    """Dibuja texto envuelto sin ellipsis ni desborde del casillero."""
+    clean_text = _display_text(text)
+    if not clean_text or max_width <= 0 or max_height <= 0:
+        return
+    actual_font = FONT_BOLD if bold else font_name
+    size = font_size
+    min_size = 4.4
+    while True:
+        words = clean_text.split()
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            candidate = word if not current else f"{current} {word}"
+            if pdfmetrics.stringWidth(candidate, actual_font, size) <= max_width:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        line_leading = leading or size * 1.12
+        if len(lines) * line_leading <= max_height or size <= min_size:
+            break
+        size = max(min_size, size - 0.25)
+
+    c.saveState()
+    c.setFont(actual_font, size)
+    c.setFillColor(color or colors.HexColor("#111111"))
+    for index, line in enumerate(lines):
+        y = y_top - (index + 1) * line_leading + (line_leading - size) * 0.35
+        if align == "center":
+            c.drawCentredString(x, y, line)
+        elif align == "right":
+            c.drawRightString(x, y, line)
+        else:
+            c.drawString(x, y, line)
+    c.restoreState()
+
+
 def _draw_text_auto(
     c: canvas.Canvas,
     text: str,
@@ -87,7 +146,7 @@ def _draw_text_auto(
 ) -> None:
     if not text:
         return
-    clean_text = str(text).replace("→", " - ").strip()
+    clean_text = _display_text(text)
     if not clean_text:
         return
 
@@ -95,7 +154,7 @@ def _draw_text_auto(
     current_size = font_size
     text_w = c.stringWidth(clean_text, actual_font, current_size)
     if text_w > max_width and max_width > 0:
-        current_size = max(4.5, font_size * (max_width / text_w))
+        current_size = max(4.4, font_size * (max_width / text_w))
     c.setFont(actual_font, current_size)
     if color:
         c.setFillColor(color)
@@ -141,13 +200,13 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
     # 1. TALÓN SUPERIOR
     # ========================================================
     # Header: Logo, Agencia, Vendedor
-    _draw_logo(c, 28.5, 800.5, size=13.0)
+    _draw_logo(c, 28.5, 795.0, size=23.0)
 
     c.setFillColor(colors.HexColor("#111111"))
     c.setFont(FONT_REGULAR, 7.2)
-    c.drawString(45.0, 806.0, "Agencia:")
+    c.drawString(57.0, 806.0, "Agencia:")
     c.setFont(FONT_BOLD, 7.2)
-    c.drawString(77.0, 806.0, "SC VIAJES")
+    c.drawString(89.0, 806.0, "SC VIAJES")
     c.setFont(FONT_REGULAR, 7.2)
     c.drawString(304.0, 806.0, "Vendedor:")
     if not is_blank and data.seller_display:
@@ -172,7 +231,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
     c.drawString(311.2, 753.0, "Categoría - Calidad y tipo de servicio")
 
     if not is_blank:
-        _draw_text_auto(c, data.passenger_name, 75.0, 753.0, max_width=215, font_size=7.2, bold=True)
+        _draw_text_box(c, data.passenger_name, 106.0, 762.0, 184, 10, font_size=7.2, bold=True)
         doc_text = data.masked_document
         if data.is_lap_infant and data.companion_name:
             doc_text = f"{doc_text} (Acomp: {data.companion_name})"
@@ -181,7 +240,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         cat_text = data.category_display
         if data.service_quality_display and data.service_quality_display != PENDING_SANDRO_VALUE:
             cat_text = f"{cat_text} - {data.service_quality_display}"
-        _draw_text_auto(c, cat_text, 311.2, 741.0, max_width=245, font_size=7.2)
+        _draw_text_box(c, cat_text, 311.2, 750.0, 245, 10, font_size=7.2)
 
     # Box 3: Origen | Destino | Asiento
     c.roundRect(28.5, 701.27, 268.88, 28.81, 5, stroke=1, fill=0)
@@ -196,7 +255,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         dep_dt = f"{data.travel_date} {data.departure_time}".strip()
         _draw_text_auto(c, dep_dt, 35.7, 708.0, max_width=250, font_size=7.0)
 
-        _draw_text_auto(c, data.destination_stop_name, 345.0, 719.0, max_width=130, font_size=7.2, bold=True)
+        _draw_text_box(c, data.destination_stop_name, 345.0, 727.0, 130, 10, font_size=7.2, bold=True)
         arr_date = data.arrival_date or data.travel_date
         arr_dt = f"{arr_date} {data.arrival_time}".strip()
         _draw_text_auto(c, arr_dt, 311.2, 708.0, max_width=160, font_size=7.0)
@@ -236,12 +295,12 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
     # ========================================================
     # 3. TALÓN PARA EL PASAJERO (INFERIOR)
     # ========================================================
-    _draw_logo(c, 28.5, 614.5, size=13.0)
+    _draw_logo(c, 28.5, 609.0, size=23.0)
 
     c.setFont(FONT_REGULAR, 7.2)
-    c.drawString(45.0, 619.0, "Agencia:")
+    c.drawString(57.0, 619.0, "Agencia:")
     c.setFont(FONT_BOLD, 7.2)
-    c.drawString(77.0, 619.0, "SC VIAJES")
+    c.drawString(89.0, 619.0, "SC VIAJES")
     c.setFont(FONT_REGULAR, 7.2)
     c.drawString(304.0, 619.0, "Vendedor:")
     if not is_blank and data.seller_display:
@@ -285,7 +344,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
     c.drawString(311.2, 534.0, "Categoría - Calidad y tipo de servicio")
 
     if not is_blank:
-        _draw_text_auto(c, data.passenger_name, 75.0, 534.0, max_width=215, font_size=7.2, bold=True)
+        _draw_text_box(c, data.passenger_name, 106.0, 543.0, 184, 11, font_size=7.2, bold=True)
         doc_text = data.masked_document
         if data.is_lap_infant and data.companion_name:
             doc_text = f"{doc_text} (Acomp: {data.companion_name})"
@@ -294,7 +353,7 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         cat_text = data.category_display
         if data.service_quality_display and data.service_quality_display != PENDING_SANDRO_VALUE:
             cat_text = f"{cat_text} - {data.service_quality_display}"
-        _draw_text_auto(c, cat_text, 311.2, 519.0, max_width=245, font_size=7.2)
+        _draw_text_box(c, cat_text, 311.2, 530.0, 245, 11, font_size=7.2)
 
     # Box 7: Origen | Destino
     c.roundRect(28.5, 467.8, 268.88, 26.2, 5, stroke=1, fill=0)
@@ -304,10 +363,10 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
 
     if not is_blank:
         _draw_text_auto(c, data.origin_stop_name, 68.0, 485.0, max_width=220, font_size=7.2, bold=True)
-        _draw_text_auto(c, data.origin_address, 35.7, 473.0, max_width=255, font_size=6.5)
+        _draw_text_box(c, data.origin_address, 35.7, 480.0, 255, 11, font_size=6.5, leading=5.6)
 
         _draw_text_auto(c, data.destination_stop_name, 345.0, 485.0, max_width=215, font_size=7.2, bold=True)
-        _draw_text_auto(c, data.destination_address, 311.2, 473.0, max_width=250, font_size=6.5)
+        _draw_text_box(c, data.destination_address, 311.2, 480.0, 250, 11, font_size=6.5, leading=5.6)
 
     # Box 8: Asiento | Salida | Se anuncia a | Arribo estimado | Plataforma
     c.roundRect(28.5, 415.59, 537.75, 45.01, 5, stroke=1, fill=0)
@@ -332,14 +391,14 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         _draw_text_auto(c, data.travel_date, (135.0 + 240.0) / 2, 423.0, max_width=100, font_size=7.2, align="center")
 
         announcement = data.destination_stop_name or data.route_name
-        _draw_text_auto(c, announcement, (240.0 + 350.0) / 2, 432.0, max_width=105, font_size=8.0, align="center", bold=True)
+        _draw_text_box(c, announcement, (240.0 + 350.0) / 2, 445.0, 105, 18, font_size=8.0, align="center", bold=True)
 
         arr_date = data.arrival_date or data.travel_date
         _draw_text_auto(c, data.arrival_time, (350.0 + 460.0) / 2, 436.0, max_width=100, font_size=12.0, align="center", bold=True)
         _draw_text_auto(c, arr_date, (350.0 + 460.0) / 2, 423.0, max_width=100, font_size=7.2, align="center")
 
         platform_val = data.platform_announcement if data.platform_announcement != PENDING_SANDRO_VALUE else "A confirmar"
-        _draw_text_auto(c, platform_val, (460.0 + 566.25) / 2, 432.0, max_width=100, font_size=8.0, align="center", bold=True)
+        _draw_text_box(c, platform_val, (460.0 + 566.25) / 2, 445.0, 100, 18, font_size=8.0, align="center", bold=True)
 
     # Box 9: Formas de pago | Detalle | Importe total
     c.roundRect(28.5, 373.58, 268.88, 38.42, 5, stroke=1, fill=0)
