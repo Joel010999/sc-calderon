@@ -75,7 +75,7 @@ def _draw_logo(c: canvas.Canvas, x: float, y: float, size: float = 13.0) -> None
 
 def _display_text(value: object) -> str:
     """Normaliza separadores que algunas fuentes PDF muestran como cuadrados."""
-    return str(value or "").replace("→", " - ").replace("â†’", " - ").strip()
+    return str(value or "").replace("→", " - ").replace("\u00e2\u2020\u2019", " - ").strip()
 
 
 def _document_value(masked_document: object) -> str:

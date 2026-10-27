@@ -1447,7 +1447,7 @@ class TicketApprovedNumberingAndTemplateAcceptanceTests(TicketBaseMixin, Transac
         self.assertIn("María de las Mercedes", text)
         self.assertIn("+5493513954420", text)
         # Sin glifos de reemplazo ni caracteres de corte
-        self.assertNotIn("�", text)
+        self.assertNotIn("\ufffd", text)
 
     def test_concurrent_issuance_allocates_unique_sequential_numbers(self):
         import threading
