@@ -1,5 +1,15 @@
 # Estado de SC Viajes
 
+## Pasaje PDF aprobado y numeración secuencial persistente (2026-10-26)
+
+Implementado en rama de trabajo sobre `feature/sandro-menores-horarios-pasaje-integrados`:
+- **Plantilla PDF oficial**: Adaptación fiel y estricta a la referencia aprobada (`Plantilla_pasaje_SC_Viajes_limpia.pdf`), respetando 1 sola página (596 x 842 pt), dos talones ("Talón empresa/agencia" superior y "Talón para el pasajero" inferior), línea de corte punteada, logo SC Viajes incrustado en ambos talones (`static/assets/scviajes-logo.png`), márgenes, distribución y bordes redondeados.
+- **Códigos visibles**: Eliminación total de QR y códigos de barras visuales en ambos talones y en la página, preservando internamente los tokens seguros de verificación, hashes criptográficos y validación de embarque atómica (compatible con prefijos `AAA-` y `TK-`).
+- **Contacto**: Contacto WhatsApp centralizado en `+5493513954420`.
+- **Numeración persistente**: Modelo `TicketSequence` con bloqueo exclusivo de concurrencia (`select_for_update`) seguro para PostgreSQL y con reintento ante locks transaccionales. Formato `AAA-000000000` para plantilla en blanco (sin asignación a emisiones) y `AAA-000000001` en adelante para emisiones reales. El mismo número se replica exactamente en ambos talones del documento. Múltiples tramos/pasajeros generan números correlativos independientes. Idempotente ante reintentos, reenvíos y descargas. Los pasajes históricos conservan su código sin renumeración; las anulaciones y saltos no reutilizan números.
+- **Datos productivos**: Pasajero, DNI, vendedor, viaje, categoría, butaca, horarios, paradas, direcciones, pagos e importes se extraen del sistema productivo. Datos fiscales/transportista configurables con marcadores pendientes de Sandro. Menores de 5 años sin butaca conservados como gratuitos con mención de acompañante. Condiciones generales reproducidas textualmente en 2 columnas sin invención ni rediseño.
+- **Validaciones**: Ruff limpio, `python manage.py check` limpio, `makemigrations --check --dry-run` sin cambios pendientes, `git diff --check` limpio y 71 pruebas de `tickets` aprobadas al 100%. Muestras sintéticas generadas y renderizadas fuera de Git en `D:\renderbyte\scviajes-pdf-samples\pasaje-aprobado-20261026`.
+
 ## Configuración productiva y contenido (2026-10-09)
 
 Implementado en `feature/production-config-content-hardening-20261009`: URL

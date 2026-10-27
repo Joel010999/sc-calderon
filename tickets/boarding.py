@@ -86,7 +86,9 @@ def _scan_kind(value: str):
         token = parse_qs(parsed.query).get("token", [""])[0].strip()
         return ("token", token) if token else (None, None)
 
-    if value.upper().startswith("TK-"):
+    upper = value.upper()
+    if upper.startswith("TK-") or upper.startswith("AAA-"):
+        return "code", upper
         return "code", value.upper()
     return "token", value
 

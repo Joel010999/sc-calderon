@@ -1,12 +1,8 @@
-"""Renderizado legible y estable del pasaje electrónico de SC Viajes."""
+"""Renderizado fiel de la plantilla oficial aprobada del pasaje de SC Viajes."""
 
-import io
 from pathlib import Path
-from xml.sax.saxutils import escape
 
-import qrcode
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
@@ -16,47 +12,48 @@ from reportlab.platypus import Paragraph
 
 from .data import PENDING_SANDRO_VALUE, TicketData
 
+PAGESIZE = (596.0, 842.0)
 LOGO_ASSET_REL_PATH = Path("static/assets/scviajes-logo.png")
 
 
 def _register_fonts() -> tuple[str, str]:
-    """Usa Vera, distribuida con ReportLab, para embebido Unicode estable."""
+    """Usa Vera si está disponible para soporte tipográfico completo, o Helvetica estándar."""
     try:
         import reportlab
 
         font_dir = Path(reportlab.__file__).resolve().parent / "fonts"
-        pdfmetrics.registerFont(TTFont("SCVera", str(font_dir / "Vera.ttf")))
-        pdfmetrics.registerFont(TTFont("SCVera-Bold", str(font_dir / "VeraBd.ttf")))
-        pdfmetrics.registerFontFamily("SCVera", normal="SCVera", bold="SCVera-Bold")
-        return "SCVera", "SCVera-Bold"
+        vera_regular = font_dir / "Vera.ttf"
+        vera_bold = font_dir / "VeraBd.ttf"
+        if vera_regular.is_file() and vera_bold.is_file():
+            pdfmetrics.registerFont(TTFont("SCVera", str(vera_regular)))
+            pdfmetrics.registerFont(TTFont("SCVera-Bold", str(vera_bold)))
+            pdfmetrics.registerFontFamily("SCVera", normal="SCVera", bold="SCVera-Bold")
+            return "SCVera", "SCVera-Bold"
     except Exception:
-        return "Helvetica", "Helvetica-Bold"
+        pass
+    return "Helvetica", "Helvetica-Bold"
 
 
 FONT_REGULAR, FONT_BOLD = _register_fonts()
 
-BODY = ParagraphStyle("TicketBody", fontName=FONT_REGULAR, fontSize=8.2, leading=10.4, textColor=colors.HexColor("#0f172a"))
-SMALL = ParagraphStyle("TicketSmall", parent=BODY, fontSize=7.2, leading=9.0, textColor=colors.HexColor("#334155"))
-CONDITION = ParagraphStyle("TicketCondition", parent=BODY, fontSize=8.4, leading=11.3, spaceAfter=7)
+CONDITIONS_LEFT = (
+    ("VALIDEZ: ", "El pasaje es válido solo para el día, hora y servicios seleccionados. Se aceptarán devoluciones conforme a las deducciones y retenciones que se indican según la empresa transportista."),
+    ("DEVOLUCIONES EN SERVICIOS NACIONALES: ", "Retenciones del ejemplo (Res. Nro. 1317/53 del Ministerio de Transporte de la Nación): a) Desde las 24 horas anteriores y hasta una hora antes de la salida del servicio: 30%. b) Desde las 48 horas y hasta las 24 horas anteriores a la salida del servicio: 20%. c) Más de 48 horas antes de la salida del servicio: 10%."),
+    ("DEVOLUCIONES EN SERVICIOS PROVINCIALES: ", "a) Antes de las 24 horas: 20%. b) Dentro de las 24 horas de iniciación del servicio, no hay reintegros."),
+    ("REAJUSTE Y CONSERVACIÓN: ", "Resolución SETOP 03/90: pasaje sujeto a reajuste al momento del viaje. El presente pasaje deberá conservarlo el pasajero y será intransferible."),
+    ("EQUIPAJE: ", "Este pasaje da derecho a transportar hasta 15 kilos de equipaje sin cargo (Res. 47/95 de la ST, modificada por Res. 212/2002). La empresa no se responsabiliza por los equipajes transportados y no despachados."),
+    ("MENORES Y ACOMPAÑAMIENTO: ", "Los menores de DOCE (12) años, inclusive, no podrán viajar solos; podrán viajar acompañados por al menos UN (1) representante legal o por un tercero autorizado por al menos UN (1) representante legal. Los menores de entre TRECE (13) y DIECISIETE (17) años podrán viajar solos si contaren con autorización legal. Todos los pasajeros menores de DIECIOCHO (18) años, viajen solos o no, deberán cumplimentar en un todo con la Resolución 43 E/2016. Caso contrario, no podrán viajar, perdiendo todo derecho a reclamo."),
+)
 
-# Texto de condiciones del Word editado. Las preguntas, notas y datos a
-# completar no se imprimen. La leyenda de validación evita presentar normas
-# como verificadas por el sistema.
-PASSENGER_CONDITIONS = (
-    ("VALIDEZ", "El pasaje es válido solo para el día, hora y servicios seleccionados. Se aceptarán devoluciones conforme a las deducciones y retenciones que se indican según la empresa transportista."),
-    ("DEVOLUCIONES EN SERVICIOS NACIONALES", "Retenciones del texto de referencia: a) desde las 24 horas anteriores y hasta una hora antes de la salida del servicio: 30%; b) desde las 48 horas y hasta las 24 horas anteriores a la salida del servicio: 20%; c) más de 48 horas antes de la salida del servicio: 10%."),
-    ("DEVOLUCIONES EN SERVICIOS PROVINCIALES", "a) antes de las 24 horas: 20%; b) dentro de las 24 horas de iniciación del servicio, no hay reintegros."),
-    ("REAJUSTE Y CONSERVACIÓN", "Texto de referencia: pasaje sujeto a reajuste al momento del viaje. El presente pasaje deberá conservarlo el pasajero y será intransferible."),
-    ("EQUIPAJE", "Este pasaje da derecho a transportar hasta 15 kilos de equipaje sin cargo. La empresa no se responsabiliza por los equipajes transportados y no despachados."),
-    ("MENORES Y ACOMPAÑAMIENTO", "Los menores de DOCE (12) años, inclusive, no podrán viajar solos; podrán viajar acompañados por al menos UN (1) representante legal o por un tercero autorizado por al menos UN (1) representante legal. Los menores de entre TRECE (13) y DIECISIETE (17) años podrán viajar solos si contaren con autorización legal. Todos los pasajeros menores de DIECIOCHO (18) años deberán cumplir la documentación aplicable para viajar."),
-    ("NIÑOS SIN ASIENTO", "Los pasajeros que no hayan cumplido los 5 años de edad no pagarán pasaje, pero no tendrán derecho a asiento. Únicamente podrá viajar un menor sin asiento por cada mayor que lo acompañe."),
-    ("SEGURO", "La cobertura, el importe y las condiciones del seguro de responsabilidad obligatorio quedan pendientes de confirmación comercial. Esta versión no calcula ni cobra un seguro adicional."),
-    ("CANJE", "No se admitirá el canje de pasajes por cambio de fecha u hora de viaje; solo se aceptará la devolución en las condiciones establecidas."),
-    ("EXTRAVÍO", "La pérdida o extravío del pasaje no genera derecho a reclamación, devolución o reintegro alguno."),
-    ("DOCUMENTACIÓN", "En los servicios internacionales, el pasajero deberá satisfacer las exigencias gubernamentales en materia de documentos personales exigidos para viajar, tanto en la salida como en la entrada de ambos países."),
-    ("NORMAS VIGENTES", "La compra del pasaje y su utilización implican la aceptación de las condiciones aplicables y de las normas vigentes en materia de transporte de pasajeros."),
-    ("RESPONSABILIDAD", "La responsabilidad frente al pasajero corresponde a la transportista que efectúa el traslado, conforme a las condiciones que se confirmen."),
-    ("AVISOS", "Prohibido fumar. La explotación sexual de niños, niñas y adolescentes y la trata de personas en la Argentina es un delito severamente penado."),
+CONDITIONS_RIGHT = (
+    ("NIÑOS SIN ASIENTO: ", "Los pasajeros que no hayan cumplido los 5 años de edad no pagarán pasaje, pero no tendrán derecho a asiento. Únicamente podrá viajar un menor con seguro por cada mayor que lo acompañe. Salvo servicios provinciales en Mendoza, es hasta los 3 años."),
+    ("SEGURO: ", "Este pasaje incluye un seguro de responsabilidad hacia pasajeros transportados de acuerdo a disposiciones legales vigentes. El seguro no es canjeable ni puede ser devuelto. Los niños menores de 5 años deben abonar el seguro de responsabilidad obligatorio."),
+    ("CANJE: ", "No se admitirá en ningún caso el canje de pasajes por cambio de fecha y/u hora de viaje; solo se aceptará la devolución en las condiciones establecidas precedentemente."),
+    ("EXTRAVÍO: ", "La pérdida o extravío del pasaje no genera derecho a reclamación, devolución o reintegro alguno."),
+    ("DOCUMENTACIÓN: ", "En los servicios internacionales, el pasajero deberá satisfacer las exigencias gubernamentales en materia de documentos personales exigidos para viajar, tanto en la salida como en la entrada de ambos países. La empresa no se responsabiliza por los gastos o inconvenientes ocasionados por el incumplimiento por parte del pasajero."),
+    ("NORMAS VIGENTES: ", "La compra del pasaje y su utilización implican la aceptación de todas las condiciones antes expuestas y de las normas vigentes en materia de transporte de pasajeros."),
+    ("RESPONSABILIDAD: ", "El único responsable frente al pasajero es la transportista que efectúa el traslado, careciendo quien expide el pasaje de toda responsabilidad frente al mismo."),
+    ("AVISOS: ", "Prohibido fumar. Ley 10.600. La explotación sexual de niños, niñas y adolescentes, y la trata de personas en la Argentina es un delito severamente penado. Denuncialo al 145. Línea GRATUITA, ANÓNIMA Y NACIONAL."),
 )
 
 
@@ -70,189 +67,323 @@ def _logo_path() -> Path:
     return base_dir / LOGO_ASSET_REL_PATH
 
 
-def _resolve_seat_label(data: TicketData) -> str:
+def _draw_logo(c: canvas.Canvas, x: float, y: float, size: float = 13.0) -> None:
+    path = _logo_path()
+    if path.is_file():
+        c.drawImage(ImageReader(str(path)), x, y, width=size, height=size, preserveAspectRatio=True, mask="auto")
+
+
+def _draw_text_auto(
+    c: canvas.Canvas,
+    text: str,
+    x: float,
+    y: float,
+    max_width: float,
+    font_name: str = FONT_REGULAR,
+    font_size: float = 7.2,
+    align: str = "left",
+    bold: bool = False,
+    color=None,
+) -> None:
+    if not text:
+        return
+    clean_text = str(text).replace("→", " - ").strip()
+    if not clean_text:
+        return
+
+    actual_font = FONT_BOLD if bold else font_name
+    current_size = font_size
+    text_w = c.stringWidth(clean_text, actual_font, current_size)
+    if text_w > max_width and max_width > 0:
+        current_size = max(4.5, font_size * (max_width / text_w))
+    c.setFont(actual_font, current_size)
+    if color:
+        c.setFillColor(color)
+    else:
+        c.setFillColor(colors.HexColor("#111111"))
+
+    if align == "center":
+        c.drawCentredString(x, y, clean_text)
+    elif align == "right":
+        c.drawRightString(x, y, clean_text)
+    else:
+        c.drawString(x, y, clean_text)
+
+
+def _resolve_seat_display(data: TicketData) -> str:
+    if data.is_lap_infant:
+        return "Sin butaca"
     raw = str(data.seat_number or "").strip()
-    if data.is_lap_infant or not raw or raw.lower() == "none" or raw == "Sin butaca":
+    if not raw or raw.lower() == "none":
         return "Sin butaca"
     return raw
 
 
-def _value(value: str, fallback: str = PENDING_SANDRO_VALUE) -> str:
-    clean = str(value or "").strip()
-    return clean or fallback
+def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
+    """Renderiza el pasaje de SC Viajes según la plantilla aprobada.
 
+    - Una sola página.
+    - Dos talones: Talón de la empresa / agencia (superior) y Talón para el pasajero (inferior).
+    - Mismo número de pasaje en ambos talones.
+    - Plantilla vacía: 'AAA-000000000' con campos en blanco.
+    - Primera emisión real: 'AAA-000000001' (secuencia de 9 dígitos).
+    - Sin códigos QR ni códigos de barras visibles.
+    - WhatsApp exacto: +5493513954420.
+    """
+    stroke_color = colors.HexColor("#cccccc")
+    c.setStrokeColor(stroke_color)
+    c.setLineWidth(0.6)
 
-def _draw_paragraph(c: canvas.Canvas, text: str, x: float, y: float, width: float, style=BODY) -> float:
-    paragraph = Paragraph(text, style)
-    _, height = paragraph.wrap(width, 1000)
-    paragraph.drawOn(c, x, y - height)
-    return height
+    is_blank = getattr(data, "is_blank_template", False) or data.ticket_code == "AAA-000000000"
+    ticket_number = "AAA-000000000" if is_blank else data.ticket_code
 
+    # ========================================================
+    # 1. TALÓN SUPERIOR
+    # ========================================================
+    # Header: Logo, Agencia, Vendedor
+    _draw_logo(c, 28.5, 800.5, size=13.0)
 
-def _draw_field(c: canvas.Canvas, y: float, label: str, value: str, width: float, style=BODY) -> float:
-    content = f"<b>{escape(label)}</b> {escape(_value(value))}"
-    return y - _draw_paragraph(c, content, 48, y, width, style) - 3
-
-
-def _draw_logo(c: canvas.Canvas, x: float, y: float, size: float) -> None:
-    path = _logo_path()
-    if path.is_file():
-        c.drawImage(ImageReader(str(path)), x, y, width=size, height=size, preserveAspectRatio=True, anchor="c", mask="auto")
-
-
-def _draw_header(c: canvas.Canvas, width: float, height: float, title: str) -> None:
-    c.setFillColor(colors.HexColor("#0f172a"))
-    c.rect(36, height - 74, width - 72, 42, fill=1, stroke=0)
-    _draw_logo(c, 45, height - 68, 30)
-    c.setFillColor(colors.white)
-    c.setFont(FONT_BOLD, 16)
-    c.drawString(82, height - 58, "SC VIAJES")
-    c.setFont(FONT_BOLD, 10)
-    c.drawRightString(width - 48, height - 58, title)
-
-
-def _draw_box_title(c: canvas.Canvas, top: float, width: float, title: str, right: str = "") -> None:
-    c.setFillColor(colors.HexColor("#f1f5f9"))
-    c.rect(37, top - 24, width - 74, 23, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#0f172a"))
-    c.setFont(FONT_BOLD, 9.5)
-    c.drawString(48, top - 16, title)
-    if right:
-        c.setFont(FONT_REGULAR, 8)
-        c.drawRightString(width - 48, top - 16, right)
-
-
-def _draw_qr(c: canvas.Canvas, data: TicketData, x: float, y: float, size: float) -> None:
-    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=1)
-    qr.add_data(data.qr_payload_url)
-    qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    buffer = io.BytesIO()
-    pil_img = qr_img._img if hasattr(qr_img, "_img") else qr_img
-    pil_img.save(buffer, format="PNG")
-    buffer.seek(0)
-    c.drawImage(ImageReader(buffer), x, y, width=size, height=size)
-    c.setFillColor(colors.HexColor("#64748b"))
-    c.setFont(FONT_REGULAR, 7.3)
-    c.drawCentredString(x + size / 2, y - 11, "Escanear para verificar validez")
-
-
-def _draw_conditions_page(c: canvas.Canvas, data: TicketData, width: float, height: float) -> None:
-    c.showPage()
-    _draw_header(c, width, height, "CONDICIONES DEL PASAJE")
-    y = height - 96
-    c.setFillColor(colors.HexColor("#7f1d1d"))
-    y -= _draw_paragraph(c, "<b>Texto pendiente de validación comercial y legal.</b> Las referencias normativas del material de trabajo no fueron verificadas por el sistema.", 48, y, width - 96, SMALL) + 10
-    for heading, body in PASSENGER_CONDITIONS:
-        if y < 74:
-            c.showPage()
-            _draw_header(c, width, height, "CONDICIONES DEL PASAJE")
-            y = height - 96
-        c.setFillColor(colors.HexColor("#0f172a"))
-        y -= _draw_paragraph(c, f"<b>{escape(heading)}</b>", 48, y, width - 96, BODY) + 2
-        y -= _draw_paragraph(c, escape(body), 48, y, width - 96, CONDITION)
-    c.setFillColor(colors.HexColor("#64748b"))
+    c.setFillColor(colors.HexColor("#111111"))
     c.setFont(FONT_REGULAR, 7.2)
-    c.drawString(48, 42, f"Pasaje {data.ticket_code} - conservar junto con el talón del pasajero")
+    c.drawString(45.0, 806.0, "Agencia:")
+    c.setFont(FONT_BOLD, 7.2)
+    c.drawString(77.0, 806.0, "SC VIAJES")
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(304.0, 806.0, "Vendedor:")
+    if not is_blank and data.seller_display:
+        _draw_text_auto(c, data.seller_display, 343.0, 806.0, max_width=200, font_size=7.2)
 
+    # Box 1: Empresa transportista | Pasaje
+    c.roundRect(28.5, 766.69, 537.75, 30.61, 5, stroke=1, fill=0)
+    c.line(429.41, 766.69, 429.41, 797.3)
+    c.drawString(35.7, 785.0, "Empresa transportista")
+    if not is_blank and data.carrier_name:
+        _draw_text_auto(c, data.carrier_name, 35.7, 774.0, max_width=380, font_size=8.4, bold=True)
+    c.drawString(436.0, 785.0, "Pasaje")
+    _draw_text_auto(c, ticket_number, 479.0, 774.0, max_width=80, font_size=9.0, bold=True)
 
-def draw_provisional_ticket(c: canvas.Canvas, data: TicketData) -> None:
-    """Dibuja dos talones legibles y las condiciones completas en páginas extra."""
-    width, height = A4
-    arrival_date = _value(data.arrival_date or data.travel_date)
-    # ReportLab's fallback glyphs do not consistently contain the arrow; use
-    # an ASCII separator so the route is never rendered as a square glyph.
-    route_name = _value(
-        (data.route_name or f"{data.origin_stop_name} - {data.destination_stop_name}").replace("→", " - ")
-    )
-    origin_addr = _value(data.origin_address, f"Dirección pendiente ({PENDING_SANDRO_VALUE})")
-    destination_addr = _value(data.destination_address, f"Dirección pendiente ({PENDING_SANDRO_VALUE})")
-    seat_label = _resolve_seat_label(data)
-    seller = data.seller_display.strip()
-    companion = data.companion_name.strip()
-    booking_short = str(data.booking_code)[:8].upper()
-    payment = "Pasaje gratuito — sin butaca" if data.is_lap_infant else _value(data.payment_method_display)
-    price = _value(data.price_display, "$ 0,00")
-    total = _value(data.total_amount_display, price)
-    fare = _value(data.fare_detail_display, f"Tarifa {price}")
+    # Box 2: Pasajero | Categoría
+    c.roundRect(28.5, 733.08, 268.88, 30.61, 5, stroke=1, fill=0)
+    c.roundRect(303.98, 733.08, 262.27, 30.61, 5, stroke=1, fill=0)
+    c.drawString(35.7, 753.0, "Pasajero")
+    c.setFont(FONT_REGULAR, 7.0)
+    c.drawString(35.7, 741.0, "DNI:")
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(311.2, 753.0, "Categoría - Calidad y tipo de servicio")
 
-    _draw_header(c, width, height, "PASAJE ELECTRÓNICO")
+    if not is_blank:
+        _draw_text_auto(c, data.passenger_name, 75.0, 753.0, max_width=215, font_size=7.2, bold=True)
+        doc_text = data.masked_document
+        if data.is_lap_infant and data.companion_name:
+            doc_text = f"{doc_text} (Acomp: {data.companion_name})"
+        _draw_text_auto(c, doc_text, 58.0, 741.0, max_width=230, font_size=7.0)
 
-    top = height - 82
-    bottom = height - 372
-    c.setStrokeColor(colors.HexColor("#cbd5e1"))
-    c.rect(36, bottom, width - 72, top - bottom, fill=0, stroke=1)
-    _draw_box_title(c, top, width, "TALÓN SUPERIOR", f"Reserva: {booking_short} | Emisión: {data.issued_at}")
-    y = top - 40
-    y = _draw_field(c, y, "Agencia:", data.agency_name, width - 96)
-    y = _draw_field(c, y, "Empresa transportista:", data.carrier_name, width - 96)
-    y = _draw_field(c, y, "Pasajero/a:", data.passenger_name, width - 96)
-    y = _draw_field(c, y, "Documento:", data.masked_document, width - 96)
-    y = _draw_field(c, y, "Boleto / Identificador:", data.ticket_code, width - 96)
-    if seller:
-        y = _draw_field(c, y, "Vendedor:", seller, width - 96)
-    y = _draw_field(c, y, "Categoría / Butaca:", f"{data.category_display} - Butaca: {seat_label}", width - 96)
-    if companion:
-        y = _draw_field(c, y, "Adulto acompañante:", companion, width - 96)
-    y = _draw_field(c, y, "Sale de / Sube en:", f"{data.origin_stop_name} - {origin_addr}", width - 96, SMALL)
-    y = _draw_field(c, y, "A / Baja en:", f"{data.destination_stop_name} - {destination_addr}", width - 96, SMALL)
-    y = _draw_field(c, y, "Salida:", f"{data.travel_date} - {data.departure_time}", width - 96)
-    y = _draw_field(c, y, "Arribo estimado:", f"{arrival_date} - {data.arrival_time}", width - 96)
-    y = _draw_field(c, y, "Plataforma / Aviso:", data.platform_announcement, width - 96, SMALL)
-    _draw_field(c, y, "Importe total:", total, width - 96)
+        cat_text = data.category_display
+        if data.service_quality_display and data.service_quality_display != PENDING_SANDRO_VALUE:
+            cat_text = f"{cat_text} - {data.service_quality_display}"
+        _draw_text_auto(c, cat_text, 311.2, 741.0, max_width=245, font_size=7.2)
 
-    cut_y = height - 386
+    # Box 3: Origen | Destino | Asiento
+    c.roundRect(28.5, 701.27, 268.88, 28.81, 5, stroke=1, fill=0)
+    c.roundRect(303.98, 701.27, 174.05, 28.81, 5, stroke=1, fill=0)
+    c.roundRect(484.63, 701.27, 81.62, 28.81, 5, stroke=1, fill=0)
+    c.drawString(35.7, 719.0, "Origen")
+    c.drawString(311.2, 719.0, "Destino")
+    c.drawString(491.8, 719.0, "Asiento")
+
+    if not is_blank:
+        _draw_text_auto(c, data.origin_stop_name, 68.0, 719.0, max_width=220, font_size=7.2, bold=True)
+        dep_dt = f"{data.travel_date} {data.departure_time}".strip()
+        _draw_text_auto(c, dep_dt, 35.7, 708.0, max_width=250, font_size=7.0)
+
+        _draw_text_auto(c, data.destination_stop_name, 345.0, 719.0, max_width=130, font_size=7.2, bold=True)
+        arr_date = data.arrival_date or data.travel_date
+        arr_dt = f"{arr_date} {data.arrival_time}".strip()
+        _draw_text_auto(c, arr_dt, 311.2, 708.0, max_width=160, font_size=7.0)
+
+        seat_str = _resolve_seat_display(data)
+        _draw_text_auto(c, seat_str, 525.4, 708.0, max_width=75, font_size=8.5, align="center", bold=True)
+
+    # Box 4: Formas de pago | Detalle | Importe total
+    c.roundRect(28.5, 659.26, 268.88, 39.01, 5, stroke=1, fill=0)
+    c.roundRect(303.98, 659.26, 160.24, 39.01, 5, stroke=1, fill=0)
+    c.roundRect(470.82, 659.26, 95.43, 39.01, 5, stroke=1, fill=0)
+    c.drawString(35.7, 687.0, "Formas de pago")
+    c.drawString(311.2, 687.0, "Detalle")
+    c.drawString(311.2, 676.0, "Tarifa:")
+    c.drawString(311.2, 666.0, "Descuento:")
+    c.drawString(477.0, 687.0, "Importe total")
+
+    if not is_blank:
+        p_method = "Pasaje gratuito — sin butaca" if data.is_lap_infant else data.payment_method_display
+        _draw_text_auto(c, p_method, 35.7, 673.0, max_width=255, font_size=7.2)
+        _draw_text_auto(c, data.price_display, 348.0, 676.0, max_width=110, font_size=7.2)
+        _draw_text_auto(c, "$ 0,00", 360.0, 666.0, max_width=100, font_size=7.2)
+        _draw_text_auto(c, data.total_amount_display, 518.5, 673.0, max_width=85, font_size=10.0, align="center", bold=True)
+
+    # ========================================================
+    # 2. LÍNEA DE CORTE INTERMEDIA
+    # ========================================================
     c.saveState()
-    c.setDash(4, 4)
-    c.setStrokeColor(colors.HexColor("#94a3b8"))
-    c.line(36, cut_y, width - 36, cut_y)
+    c.setDash(3, 3)
+    c.setStrokeColor(stroke_color)
+    c.line(34.5, 649.65, 560.25, 649.65)
     c.restoreState()
 
-    pax_top = height - 398
-    pax_bottom = 36
-    c.setStrokeColor(colors.HexColor("#cbd5e1"))
-    c.rect(36, pax_bottom, width - 72, pax_top - pax_bottom, fill=0, stroke=1)
-    _draw_box_title(c, pax_top, width, "TALÓN PARA EL PASAJERO", f"Boleto: {data.ticket_code}")
-    left_width = 326
-    py = pax_top - 40
-    py = _draw_field(c, py, "Agencia:", data.agency_name, left_width)
-    py = _draw_field(c, py, "Empresa transportista:", data.carrier_name, left_width, SMALL)
-    py = _draw_field(c, py, "Razón social:", data.carrier_legal_name, left_width, SMALL)
-    py = _draw_field(c, py, "CUIT:", data.carrier_cuit, left_width, SMALL)
-    py = _draw_field(c, py, "IVA:", data.carrier_vat_condition, left_width, SMALL)
-    py = _draw_field(c, py, "Inicio de actividades:", data.carrier_activity_start, left_width, SMALL)
-    py = _draw_field(c, py, "IIBB:", data.carrier_iibb, left_width, SMALL)
-    py = _draw_field(c, py, "Usted viaja asegurado por:", data.insurer_name, left_width, SMALL)
-    py = _draw_field(c, py, "Póliza/Ref.:", data.insurance_policy_ref, left_width, SMALL)
-    py = _draw_field(c, py, "Pasajero/a:", data.passenger_name, left_width)
-    py = _draw_field(c, py, "Documento:", data.masked_document, left_width)
-    if seller:
-        py = _draw_field(c, py, "Vendedor:", seller, left_width, SMALL)
-    if companion:
-        py = _draw_field(c, py, "Adulto acompañante:", companion, left_width, SMALL)
-    py = _draw_field(c, py, "Recorrido:", route_name, left_width, SMALL)
-    py = _draw_field(c, py, "Categoría / Butaca:", f"{data.category_display} - Butaca: {seat_label}", left_width, SMALL)
-    py = _draw_field(c, py, "Sale de / Sube en:", f"{data.origin_stop_name} - {origin_addr}", left_width, SMALL)
-    py = _draw_field(c, py, "A / Baja en:", f"{data.destination_stop_name} - {destination_addr}", left_width, SMALL)
-    py = _draw_field(c, py, "Salida:", f"{data.travel_date} - {data.departure_time}", left_width, SMALL)
-    py = _draw_field(c, py, "Arribo estimado:", f"{arrival_date} - {data.arrival_time}", left_width, SMALL)
-    py = _draw_field(c, py, "Formas de pago:", payment, left_width, SMALL)
-    py = _draw_field(c, py, "Detalle:", fare, left_width, SMALL)
-    _draw_field(c, py, "Importe total:", total, left_width)
+    c.setFont(FONT_BOLD, 8.4)
+    c.drawCentredString(297.0, 637.0, "Talón para el pasajero")
 
-    _draw_qr(c, data, width - 174, pax_bottom + 94, 116)
-    c.setFillColor(colors.HexColor("#f8fafc"))
-    c.rect(37, pax_bottom + 1, width - 74, 52, fill=1, stroke=0)
-    c.setStrokeColor(colors.HexColor("#e2e8f0"))
-    c.line(37, pax_bottom + 53, width - 37, pax_bottom + 53)
-    c.setFillColor(colors.HexColor("#b91c1c"))
-    c.setFont(FONT_BOLD, 8)
-    c.drawString(48, pax_bottom + 38, _value(data.id_requirement_notice))
-    c.setFillColor(colors.HexColor("#475569"))
-    c.setFont(FONT_REGULAR, 7.4)
-    c.drawString(48, pax_bottom + 24, "Las condiciones generales y devoluciones se encuentran en la página siguiente.")
-    c.setFillColor(colors.HexColor("#64748b"))
+    # ========================================================
+    # 3. TALÓN PARA EL PASAJERO (INFERIOR)
+    # ========================================================
+    _draw_logo(c, 28.5, 614.5, size=13.0)
+
     c.setFont(FONT_REGULAR, 7.2)
-    c.drawString(48, pax_bottom + 10, "Transportista, datos fiscales, seguro y contacto: pendientes de confirmación.")
+    c.drawString(45.0, 619.0, "Agencia:")
+    c.setFont(FONT_BOLD, 7.2)
+    c.drawString(77.0, 619.0, "SC VIAJES")
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(304.0, 619.0, "Vendedor:")
+    if not is_blank and data.seller_display:
+        _draw_text_auto(c, data.seller_display, 343.0, 619.0, max_width=200, font_size=7.2)
 
-    _draw_conditions_page(c, data, width, height)
+    # Box 5: Empresa transportista | Datos fiscales | Pasaje
+    c.roundRect(28.5, 548.83, 537.75, 58.21, 5, stroke=1, fill=0)
+    c.line(293.0, 548.83, 293.0, 607.04)
+    c.line(480.43, 548.83, 480.43, 607.04)
+    c.drawString(35.7, 600.0, "Empresa transportista")
+    if not is_blank and data.carrier_name:
+        _draw_text_auto(c, data.carrier_name, 35.7, 586.0, max_width=250, font_size=8.4, bold=True)
+
+    c.setFont(FONT_REGULAR, 6.4)
+    c.drawString(297.4, 602.0, "Razón social:")
+    c.drawString(297.4, 593.0, "CUIT:")
+    c.drawString(297.4, 584.0, "Inicio de actividades:                     IIBB:")
+    c.drawString(297.4, 575.0, "Usted viaja asegurado por:")
+    c.drawString(297.4, 566.0, "Póliza o referencia:")
+
+    if not is_blank:
+        _draw_text_auto(c, data.carrier_legal_name, 345.0, 602.0, max_width=130, font_size=6.4)
+        cuit_iva = f"{data.carrier_cuit} · IVA: {data.carrier_vat_condition}"
+        _draw_text_auto(c, cuit_iva, 322.0, 593.0, max_width=155, font_size=6.4)
+        _draw_text_auto(c, data.carrier_activity_start, 372.0, 584.0, max_width=60, font_size=6.4)
+        _draw_text_auto(c, data.carrier_iibb, 445.0, 584.0, max_width=32, font_size=6.4)
+        _draw_text_auto(c, data.insurer_name, 388.0, 575.0, max_width=90, font_size=6.4)
+        _draw_text_auto(c, data.insurance_policy_ref, 365.0, 566.0, max_width=112, font_size=6.4)
+
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(487.0, 600.0, "Pasaje")
+    _draw_text_auto(c, ticket_number, 482.0, 586.0, max_width=80, font_size=9.0, bold=True)
+
+    # Box 6: Pasajero | Categoría
+    c.roundRect(28.5, 499.61, 268.88, 39.39, 5, stroke=1, fill=0)
+    c.roundRect(303.98, 499.61, 262.27, 39.39, 5, stroke=1, fill=0)
+    c.drawString(35.7, 534.0, "Pasajero")
+    c.setFont(FONT_REGULAR, 7.0)
+    c.drawString(35.7, 519.0, "DNI:")
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(311.2, 534.0, "Categoría - Calidad y tipo de servicio")
+
+    if not is_blank:
+        _draw_text_auto(c, data.passenger_name, 75.0, 534.0, max_width=215, font_size=7.2, bold=True)
+        doc_text = data.masked_document
+        if data.is_lap_infant and data.companion_name:
+            doc_text = f"{doc_text} (Acomp: {data.companion_name})"
+        _draw_text_auto(c, doc_text, 58.0, 519.0, max_width=230, font_size=7.0)
+
+        cat_text = data.category_display
+        if data.service_quality_display and data.service_quality_display != PENDING_SANDRO_VALUE:
+            cat_text = f"{cat_text} - {data.service_quality_display}"
+        _draw_text_auto(c, cat_text, 311.2, 519.0, max_width=245, font_size=7.2)
+
+    # Box 7: Origen | Destino
+    c.roundRect(28.5, 467.8, 268.88, 26.2, 5, stroke=1, fill=0)
+    c.roundRect(303.98, 467.8, 262.27, 26.2, 5, stroke=1, fill=0)
+    c.drawString(35.7, 485.0, "Origen")
+    c.drawString(311.2, 485.0, "Destino")
+
+    if not is_blank:
+        _draw_text_auto(c, data.origin_stop_name, 68.0, 485.0, max_width=220, font_size=7.2, bold=True)
+        _draw_text_auto(c, data.origin_address, 35.7, 473.0, max_width=255, font_size=6.5)
+
+        _draw_text_auto(c, data.destination_stop_name, 345.0, 485.0, max_width=215, font_size=7.2, bold=True)
+        _draw_text_auto(c, data.destination_address, 311.2, 473.0, max_width=250, font_size=6.5)
+
+    # Box 8: Asiento | Salida | Se anuncia a | Arribo estimado | Plataforma
+    c.roundRect(28.5, 415.59, 537.75, 45.01, 5, stroke=1, fill=0)
+    c.line(135.0, 415.59, 135.0, 460.6)
+    c.line(240.0, 415.59, 240.0, 460.6)
+    c.line(350.0, 415.59, 350.0, 460.6)
+    c.line(460.0, 415.59, 460.0, 460.6)
+
+    c.setFont(FONT_BOLD, 7.2)
+    c.drawCentredString((28.5 + 135.0) / 2, 454.0, "Asiento")
+    c.drawCentredString((135.0 + 240.0) / 2, 454.0, "Salida")
+    c.drawCentredString((240.0 + 350.0) / 2, 454.0, "Se anuncia a")
+    c.drawCentredString((350.0 + 460.0) / 2, 454.0, "Arribo estimado")
+    c.drawCentredString((460.0 + 566.25) / 2, 454.0, "Plataforma")
+
+    if not is_blank:
+        seat_str = _resolve_seat_display(data)
+        seat_fsize = 9.0 if seat_str == "Sin butaca" else 12.0
+        _draw_text_auto(c, seat_str, (28.5 + 135.0) / 2, 432.0, max_width=100, font_size=seat_fsize, align="center", bold=True)
+
+        _draw_text_auto(c, data.departure_time, (135.0 + 240.0) / 2, 436.0, max_width=100, font_size=12.0, align="center", bold=True)
+        _draw_text_auto(c, data.travel_date, (135.0 + 240.0) / 2, 423.0, max_width=100, font_size=7.2, align="center")
+
+        announcement = data.destination_stop_name or data.route_name
+        _draw_text_auto(c, announcement, (240.0 + 350.0) / 2, 432.0, max_width=105, font_size=8.0, align="center", bold=True)
+
+        arr_date = data.arrival_date or data.travel_date
+        _draw_text_auto(c, data.arrival_time, (350.0 + 460.0) / 2, 436.0, max_width=100, font_size=12.0, align="center", bold=True)
+        _draw_text_auto(c, arr_date, (350.0 + 460.0) / 2, 423.0, max_width=100, font_size=7.2, align="center")
+
+        platform_val = data.platform_announcement if data.platform_announcement != PENDING_SANDRO_VALUE else "A confirmar"
+        _draw_text_auto(c, platform_val, (460.0 + 566.25) / 2, 432.0, max_width=100, font_size=8.0, align="center", bold=True)
+
+    # Box 9: Formas de pago | Detalle | Importe total
+    c.roundRect(28.5, 373.58, 268.88, 38.42, 5, stroke=1, fill=0)
+    c.roundRect(303.98, 373.58, 160.24, 38.42, 5, stroke=1, fill=0)
+    c.roundRect(470.82, 373.58, 95.43, 38.42, 5, stroke=1, fill=0)
+    c.setFont(FONT_REGULAR, 7.2)
+    c.drawString(35.7, 402.0, "Formas de pago")
+    c.drawString(311.2, 402.0, "Detalle")
+    c.drawString(311.2, 391.0, "Tarifa:")
+    c.drawString(311.2, 381.0, "Tasa y cargos:")
+    c.drawString(477.0, 402.0, "Importe total")
+
+    if not is_blank:
+        p_method = "Pasaje gratuito — sin butaca" if data.is_lap_infant else data.payment_method_display
+        _draw_text_auto(c, p_method, 35.7, 388.0, max_width=255, font_size=7.2)
+        _draw_text_auto(c, data.price_display, 348.0, 391.0, max_width=110, font_size=7.2)
+        fee_label = "(Menor sin butaca)" if data.is_lap_infant else "$ 0,00"
+        _draw_text_auto(c, fee_label, 380.0, 381.0, max_width=80, font_size=7.2)
+        _draw_text_auto(c, data.total_amount_display, 518.5, 388.0, max_width=85, font_size=10.0, align="center", bold=True)
+
+    # WhatsApp banner
+    whatsapp_str = f"Contacto WhatsApp: {data.contact_whatsapp}"
+    c.setFont(FONT_BOLD, 9.0)
+    c.drawCentredString(297.0, 358.37, whatsapp_str)
+
+    # Conditions Header
+    c.setFont(FONT_BOLD, 5.4)
+    c.drawString(34.5, 304.5, "Condiciones generales del pasaje")
+
+    # Conditions in 2 columns
+    style_l = ParagraphStyle("CondL", fontName=FONT_REGULAR, fontSize=5.2, leading=6.45, textColor=colors.HexColor("#111111"))
+    y_l = 299.0
+    for title, body in CONDITIONS_LEFT:
+        p = Paragraph(f"<b>{title}</b>{body}", style_l)
+        w, h = p.wrap(255, 200)
+        p.drawOn(c, 34.5, y_l - h)
+        y_l -= (h + 2.5)
+
+    y_r = 299.0
+    for title, body in CONDITIONS_RIGHT:
+        p = Paragraph(f"<b>{title}</b>{body}", style_l)
+        w, h = p.wrap(255, 200)
+        p.drawOn(c, 303.4, y_r - h)
+        y_r -= (h + 2.5)
+
+
+draw_provisional_ticket = draw_ticket_page

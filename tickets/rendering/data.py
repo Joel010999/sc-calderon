@@ -47,5 +47,27 @@ class TicketData:
     insurance_policy_ref: str = PENDING_SANDRO_VALUE
     service_quality_display: str = PENDING_SANDRO_VALUE
     platform_announcement: str = PENDING_SANDRO_VALUE
-    contact_whatsapp: str = PENDING_SANDRO_VALUE
+    contact_whatsapp: str = "+5493513954420"
     conditions_notice: str = ""
+    is_blank_template: bool = False
+
+    @classmethod
+    def blank_template(cls) -> "TicketData":
+        return cls(
+            ticket_code="AAA-000000000",
+            booking_code="",
+            passenger_name="",
+            masked_document="",
+            origin_stop_name="",
+            destination_stop_name="",
+            travel_date="",
+            departure_time="",
+            boarding_place="",
+            arrival_time="",
+            seat_number="",
+            category_display="",
+            price_display="",
+            issued_at="",
+            qr_payload_url="",
+            is_blank_template=True,
+        )

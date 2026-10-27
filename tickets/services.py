@@ -30,6 +30,7 @@ from .models import (
     TicketAuditEvent,
     TicketEmailAttempt,
     TicketFulfillment,
+    TicketSequence,
     TicketStatus,
     mask_document,
 )
@@ -102,18 +103,18 @@ def _fixed_carrier_config() -> dict[str, str]:
         "insurance_policy_ref": str(getattr(settings, "TICKETS_INSURANCE_POLICY_REF", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
         "service_quality_display": str(getattr(settings, "TICKETS_SERVICE_QUALITY_DISPLAY", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
         "platform_announcement": str(getattr(settings, "TICKETS_PLATFORM_ANNOUNCEMENT", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
-        "contact_whatsapp": str(getattr(settings, "TICKETS_CONTACT_WHATSAPP", PENDING_SANDRO_VALUE)).strip() or PENDING_SANDRO_VALUE,
+        "contact_whatsapp": str(getattr(settings, "TICKETS_CONTACT_WHATSAPP", "+5493513954420")).strip() or "+5493513954420",
     }
 
 
-def generate_ticket_code(booking: Booking, leg, passenger) -> str:
-    """Genera un código único y legible para el pasaje.
+def generate_ticket_code(booking=None, leg=None, passenger=None) -> str:
+    """Retorna un código de pasaje de la secuencia persistente oficial AAA-00000000X."""
+    return TicketSequence.allocate_ticket_numbers(1)[0]
 
-    Formato: TK-<BOOKING_SHORT>-L<LEG_SEQ>-P<PAX_POS>
-    Ejemplo: TK-3F4A1B2C-L1-P1
-    """
-    short_uuid = str(booking.public_id).replace("-", "")[:8].upper()
-    return f"TK-{short_uuid}-L{leg.sequence}-P{passenger.position}"
+
+def build_blank_ticket_template_pdf() -> bytes:
+    """Construye la plantilla vacía oficial del pasaje con código AAA-000000000 y campos en blanco."""
+    return build_ticket_pdf(TicketData.blank_template())
 
 
 def build_verification_url(raw_verification_token: str) -> str:
@@ -225,6 +226,9 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
             fixed_config = _fixed_carrier_config()
             local_issued_at = timezone.localtime(effective_now)
 
+            allocated_codes = TicketSequence.allocate_ticket_numbers(expected_count)
+            code_idx = 0
+
             for leg in legs:
                 local_departure = timezone.localtime(leg.departure_at)
                 local_arrival = timezone.localtime(leg.arrival_at)
@@ -255,7 +259,8 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                     v_hash = hashlib.sha256(raw_verification_token.encode("utf-8")).hexdigest()
                     d_hash = hashlib.sha256(raw_download_token.encode("utf-8")).hexdigest()
 
-                    ticket_code = generate_ticket_code(booking, leg, passenger)
+                    ticket_code = allocated_codes[code_idx]
+                    code_idx += 1
                     qr_url = build_verification_url(raw_verification_token)
 
                     masked_doc = mask_document(passenger.document_type, passenger.document_number)
