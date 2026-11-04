@@ -12,7 +12,7 @@ from operations.models import Trip, TripStop
 from sales.models import AssignmentStatus, BookingLeg, BookingPassenger, BookingStatus, SeatAssignment
 from tickets.models import BoardingRecord, BoardingStatus
 
-from .permissions import can_manage_operations, reservations_access
+from .permissions import can_manage_operations, operations_access
 
 
 @dataclass(frozen=True)
@@ -187,7 +187,7 @@ def _csv_response(trip, rows):
     return response
 
 
-@reservations_access()
+@operations_access(write=True)
 @require_GET
 def trip_manifest(request, trip_pk, print_mode=False):
     trip, rows, summaries, boarded_count, pending_count = _manifest_data(trip_pk)
@@ -204,13 +204,13 @@ def trip_manifest(request, trip_pk, print_mode=False):
     })
 
 
-@reservations_access()
+@operations_access(write=True)
 @require_GET
 def trip_manifest_print(request, trip_pk):
     return trip_manifest(request, trip_pk, print_mode=True)
 
 
-@reservations_access()
+@operations_access(write=True)
 @require_GET
 def trip_manifest_csv(request, trip_pk):
     trip, rows, _, _, _ = _manifest_data(trip_pk)

@@ -17,7 +17,7 @@ from .test_reservations import ReservationPanelBaseTestCase
 class TripPassengerManifestTests(ReservationPanelBaseTestCase):
     def setUp(self):
         self.client = Client()
-        self.client.force_login(self.user_seller)
+        self.client.force_login(self.user_admin)
         self.confirmed = self._booking(
             name="Cecilia",
             last_name="Ramos",
@@ -187,16 +187,22 @@ class TripPassengerManifestTests(ReservationPanelBaseTestCase):
         self.assertIn(b"'=SUM(1,1)", response.content)
 
     def test_roles_and_idor(self):
-        for user in (self.user_admin, self.user_seller, self.user_super):
+        for user in (self.user_admin, self.user_super):
             self.client.force_login(user)
             self.assertEqual(self.client.get(self.url("trip_manifest", self.trip_outbound), secure=True).status_code, 200)
-        for user in (self.user_common, self.user_staff):
+        for user in (self.user_seller, self.user_common, self.user_staff):
             self.client.force_login(user)
             self.assertEqual(self.client.get(self.url("trip_manifest", self.trip_outbound), secure=True).status_code, 403)
         self.client.logout()
         self.assertEqual(self.client.get(self.url("trip_manifest", self.trip_outbound), secure=True).status_code, 302)
-        self.client.force_login(self.user_seller)
+        self.client.force_login(self.user_admin)
         self.assertEqual(self.client.get(reverse("panel:trip_manifest", kwargs={"trip_pk": 999999}), secure=True).status_code, 404)
+
+    def test_seller_blocked_from_manifest_views_and_exports(self):
+        self.client.force_login(self.user_seller)
+        self.assertEqual(self.client.get(self.url("trip_manifest", self.trip_outbound), secure=True).status_code, 403)
+        self.assertEqual(self.client.get(self.url("trip_manifest_print", self.trip_outbound), secure=True).status_code, 403)
+        self.assertEqual(self.client.get(self.url("trip_manifest_csv", self.trip_outbound), secure=True).status_code, 403)
 
     def test_manifest_is_read_only_and_rejects_non_get(self):
         before = list(SeatAssignment.objects.values_list("pk", "status"))

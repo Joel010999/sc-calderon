@@ -1,12 +1,12 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.utils import timezone
 
-from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Trip
+from operations.models import Bus, Route, Seat, SeatCategory, Trip
 from .forms import BusForm, SeatForm
 from .permissions import can_manage_operations, operations_access
 from .services import WRITE_ERROR, save_configuration, set_configuration_active
@@ -47,10 +47,8 @@ def overview(request):
 @operations_access()
 @require_GET
 def routes(request):
-    queryset = Route.objects.order_by("code").prefetch_related(Prefetch(
-        "route_stops", queryset=RouteStop.objects.select_related("stop").order_by("sequence")
-    ))
-    return render_operations(request, "routes", title="Recorridos", routes=queryset)
+    from .route_views import route_list
+    return route_list(request)
 
 
 @operations_access()

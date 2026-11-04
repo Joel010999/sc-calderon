@@ -1,6 +1,6 @@
 {% extends 'panel/operations/base.html' %}
 {% block operations_content %}
-<p class="ops-intro">Los recorridos y sus paradas son de solo lectura en esta etapa.</p>
+<p class="ops-intro">Gestión de recorridos y paradas. Las modificaciones en recorridos con viajes asociados crean una nueva versión para futuras salidas.</p>
 {% for route in routes %}
 <article class="ops-card route-card">
     <header class="ops-header"><h2>{{ route.code }} · {{ route.name }}</h2><span class="badge {% if not route.is_active %}inactive{% endif %}">{{ route.is_active|yesno:'Activo,Inactivo' }}</span></header>

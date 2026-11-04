@@ -10,7 +10,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from operations.models import Bus, Route, Trip, TripFare, TripStop
 from .operations_views import render_operations
-from .permissions import can_manage_reservations, operations_access, reservations_access
+from .permissions import can_manage_operations, operations_access
 from .trip_forms import TripFareForm, TripScheduleForm, TripSelectionForm, TripStopScheduleForm
 from .trip_services import (
     FARE_ERROR,
@@ -59,7 +59,7 @@ def trip_detail(request, pk):
     pending = trip_pending_summary(trip.pk)
     return render_operations(request, "trip_detail", title=f"Viaje {trip.pk}",
                              trip=trip, display_timezone=settings.TIME_ZONE,
-                             can_access_manifest=can_manage_reservations(request.user),
+                             can_access_manifest=can_manage_operations(request.user),
                              can_modify_fares=can_modify_trip_fares(trip),
                              can_modify_schedules=can_modify_trip_schedules(trip),
                              pending_summary=pending)
@@ -92,7 +92,7 @@ def trip_stops_schedule(request, trip_pk):
 
 
 @require_POST
-@reservations_access()
+@operations_access(write=True)
 def trip_start(request, trip_pk):
     try:
         _, changed = start_trip(actor=request.user, trip_pk=trip_pk)
@@ -104,7 +104,7 @@ def trip_start(request, trip_pk):
 
 
 @require_GET
-@reservations_access()
+@operations_access(write=True)
 def trip_start_confirm(request, trip_pk):
     trip = get_object_or_404(Trip.objects.select_related("route", "bus"), pk=trip_pk)
     pending = trip_pending_summary(trip.pk)
@@ -116,7 +116,7 @@ def trip_start_confirm(request, trip_pk):
 
 
 @require_POST
-@reservations_access()
+@operations_access(write=True)
 def trip_complete(request, trip_pk):
     try:
         _, changed = complete_trip(actor=request.user, trip_pk=trip_pk)
