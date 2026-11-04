@@ -347,6 +347,57 @@ class PanelPaymentsTestCase(TestCase):
         resp = self.client.get(list_url, {"q": "28.123.456"})
         self.assertContains(resp, str(p1.public_id)[:8])
 
+    def test_payment_list_all_sellers_scoped_by_role(self):
+        """Verifica que all_sellers en el contexto del listado de pagos se restrinja
+        exclusivamente al vendedor actual para no administradores, sin exponer usuarios ajenos
+        mediante opciones ni filtros, manteniendo el listado global solo para administradores y superusuarios."""
+        other_seller = User.objects.create_user(username="other_seller_p", password="password123")
+        other_seller.groups.add(self.seller_group)
+
+        list_url = reverse("panel:payment_list")
+
+        # 1. Como Vendedor: all_sellers debe contener únicamente su propio usuario
+        self.client.force_login(self.seller_user)
+        resp = self.client.get(list_url)
+        self.assertEqual(resp.status_code, 200)
+        seller_context_sellers = list(resp.context["all_sellers"])
+        self.assertEqual(seller_context_sellers, [self.seller_user])
+        self.assertNotIn(other_seller, seller_context_sellers)
+        self.assertNotIn(self.admin_user, seller_context_sellers)
+        self.assertContains(resp, f'<option value="{self.seller_user.username}"')
+        self.assertNotContains(resp, f'<option value="{other_seller.username}"')
+        self.assertNotContains(resp, f'<option value="{self.admin_user.username}"')
+
+        # 2. Vendedor no puede filtrar por vendedor ajeno (se limpia el filtro)
+        resp_tampered = self.client.get(list_url, {"seller": other_seller.username})
+        self.assertEqual(resp_tampered.status_code, 200)
+        self.assertEqual(resp_tampered.context["selected_seller"], "")
+
+        # 3. Como Administrador: all_sellers contiene todos los vendedores y administradores
+        self.client.force_login(self.admin_user)
+        resp_admin = self.client.get(list_url)
+        self.assertEqual(resp_admin.status_code, 200)
+        admin_context_sellers = list(resp_admin.context["all_sellers"])
+        self.assertIn(self.seller_user, admin_context_sellers)
+        self.assertIn(other_seller, admin_context_sellers)
+        self.assertIn(self.admin_user, admin_context_sellers)
+        self.assertContains(resp_admin, f'<option value="{self.seller_user.username}"')
+        self.assertContains(resp_admin, f'<option value="{other_seller.username}"')
+        self.assertContains(resp_admin, f'<option value="{self.admin_user.username}"')
+
+        # Administrador puede filtrar legítimamente por cualquier vendedor
+        resp_admin_filter = self.client.get(list_url, {"seller": other_seller.username})
+        self.assertEqual(resp_admin_filter.status_code, 200)
+        self.assertEqual(resp_admin_filter.context["selected_seller"], other_seller.username)
+
+        # 4. Como Superusuario: all_sellers contiene lista global
+        self.client.force_login(self.superuser)
+        resp_super = self.client.get(list_url)
+        self.assertEqual(resp_super.status_code, 200)
+        super_context_sellers = list(resp_super.context["all_sellers"])
+        self.assertIn(self.seller_user, super_context_sellers)
+        self.assertIn(other_seller, super_context_sellers)
+
     # --- Transferencias Pendientes, Aprobación y Rechazo ---
 
     def test_pending_transfers_approve_flow(self):

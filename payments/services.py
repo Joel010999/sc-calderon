@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from operations.models import Trip
 from panel.models import AuditEvent
-from sales.exceptions import BookingExpiredError, InvalidBookingError
+from sales.exceptions import BookingExpiredError, InvalidBookingError, SeatUnavailableError
 from sales.models import (
     AssignmentStatus,
     Booking,
@@ -66,13 +66,22 @@ def validate_payment_agent(user):
     raise ValidationError("No tenés permiso para operar con pagos.")
 
 
-def validate_payment_reviewer(user):
-    """La revisión de transferencias es exclusiva de Administrador activo."""
+def validate_payment_reviewer(user, payment=None):
+    """Regla (5): Pago requiere comprobante PDF/imagen válido; vendedor verifica externamente y
+    aprueba solo sus ventas; admin/superuser global.
+    """
     if not user or not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
         raise ValidationError("El usuario debe estar autenticado y activo.")
     if user.is_superuser or user.groups.filter(name="Administrador").exists():
         return True
-    raise ValidationError("Solo un Administrador activo puede revisar transferencias.")
+    if user.groups.filter(name="Vendedor").exists():
+        if payment is not None:
+            seller_id = getattr(payment.booking, "seller_id", None)
+            registered_by_id = getattr(payment, "registered_by_id", None)
+            if user.pk not in (seller_id, registered_by_id):
+                raise ValidationError("Los vendedores solo pueden revisar y aprobar sus propias ventas.")
+        return True
+    raise ValidationError("No tenés permiso para operar o revisar transferencias.")
 
 
 def _enqueue_ticket_fulfillment(booking):
@@ -127,6 +136,11 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
     validate_booking_for_payment(booking)
 
     _lock_manual_booking_trips(booking)
+
+    # Regla (10): Desde salida inicial no nuevas ventas
+    trips = list(Trip.objects.filter(booking_legs__booking=booking).distinct())
+    if any(effective_now >= trip.departure_at for trip in trips):
+        raise InvalidBookingError("No se pueden registrar ventas manuales para un viaje iniciado o finalizado.")
 
     if booking.status == BookingStatus.CONFIRMED:
         raise InvalidBookingError("La reserva ya se encuentra confirmada.")
@@ -421,8 +435,6 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
         validate_aware_datetime(now)
     effective_now = now or timezone.now()
 
-    validate_payment_reviewer(reviewer)
-
     if isinstance(payment_or_id, Payment):
         payment_id = payment_or_id.pk
         booking_id = payment_or_id.booking_id
@@ -435,6 +447,14 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
     # 1. Bloquear Booking primero, Payment después
     booking = Booking.objects.select_for_update().get(pk=booking_id)
     payment = Payment.objects.select_for_update().get(pk=payment_id)
+    payment.booking = booking
+
+    # Regla (5): Validación de revisor pasando el pago correspondiente antes de cualquier salida idempotente
+    validate_payment_reviewer(reviewer, payment=payment)
+
+    # Regla (11): Idempotencia si ya está aprobado y confirmado
+    if payment.status == PaymentStatus.APPROVED and booking.status == BookingStatus.CONFIRMED:
+        return payment, None
 
     if payment.method != PaymentMethod.BANK_TRANSFER:
         raise InvalidPaymentStatusError("Solo las transferencias bancarias están sujetas a revisión.")
@@ -469,6 +489,24 @@ def _review_transfer_payment_atomic(*, payment_or_id, reviewer, approved, reject
             raise InvalidBookingError(
                 f"La reserva no se encuentra en estado retenida (estado actual: {booking.get_status_display()})."
             )
+
+        # Regla (9): Confirmar comprueba y asigna butaca transaccionalmente y rechaza conflicto
+        assignments = list(
+            SeatAssignment.objects.select_for_update().filter(
+                leg__booking=booking,
+                status=AssignmentStatus.HELD,
+            ).select_related("seat", "trip")
+        )
+        for sa in assignments:
+            conflicts = SeatAssignment.objects.filter(
+                trip=sa.trip,
+                seat=sa.seat,
+                status=AssignmentStatus.CONFIRMED,
+            ).exclude(leg__booking=booking).exists()
+            if conflicts:
+                raise SeatUnavailableError(
+                    f"Conflicto de butaca: la butaca {sa.seat_number} ya fue confirmada por otra reserva."
+                )
 
         # Transicionar Payment a APPROVED
         payment.status = PaymentStatus.APPROVED

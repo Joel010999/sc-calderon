@@ -5,7 +5,7 @@ from pathlib import Path
 import uuid
 
 from django.contrib import messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db.models import Q
 from django.http import FileResponse, Http404
@@ -34,14 +34,14 @@ def _payment_admin(user):
 
 
 def _visible_payments(user):
-    queryset = Payment.objects
+    queryset = Payment.objects.all()
     if not _payment_admin(user):
         queryset = queryset.filter(booking__seller=user)
     return queryset
 
 
 def _visible_bookings(user):
-    queryset = Booking.objects
+    queryset = Booking.objects.all()
     if not _payment_admin(user):
         queryset = queryset.filter(seller=user)
     return queryset
@@ -76,10 +76,16 @@ def payment_list(request):
 
     # Filtro por vendedor / registrador
     seller_filter = request.GET.get("seller", "").strip()
+    if not _payment_admin(request.user):
+        if seller_filter and seller_filter not in (request.user.username, str(request.user.pk)):
+            seller_filter = ""
     if seller_filter:
-        queryset = queryset.filter(
-            Q(registered_by__username=seller_filter) | Q(registered_by_id=seller_filter)
-        )
+        if seller_filter.isdigit():
+            queryset = queryset.filter(
+                Q(registered_by__username=seller_filter) | Q(registered_by_id=int(seller_filter))
+            )
+        else:
+            queryset = queryset.filter(registered_by__username=seller_filter)
 
     # Búsqueda unificada: payment public_id, booking public_id, email, documento
     q = request.GET.get("q", "").strip()
@@ -113,9 +119,12 @@ def payment_list(request):
 
     from django.contrib.auth import get_user_model
     User = get_user_model()
-    all_sellers = User.objects.filter(
-        groups__name__in=["Vendedor", "Administrador"]
-    ).distinct().order_by("username")
+    if _payment_admin(request.user):
+        all_sellers = User.objects.filter(
+            groups__name__in=["Vendedor", "Administrador"]
+        ).distinct().order_by("username")
+    else:
+        all_sellers = User.objects.filter(pk=request.user.pk)
 
     return render(request, "panel/payments/list.html", {
         "page_obj": page_obj,
@@ -144,9 +153,10 @@ def pending_transfers(request):
         "booking__legs", "booking__passengers"
     ).order_by("created_at", "pk")
 
+    can_review = _payment_admin(request.user) or request.user.groups.filter(name="Vendedor").exists()
     return render(request, "panel/payments/pending_transfers.html", {
         "transfers": transfers,
-        "can_review": _payment_admin(request.user),
+        "can_review": can_review,
     })
 
 
@@ -171,10 +181,14 @@ def payment_detail(request, public_id):
         entity_id=str(payment.pk),
     ).select_related("actor").order_by("-created_at", "-pk")
 
+    can_review = _payment_admin(request.user) or (
+        request.user.groups.filter(name="Vendedor").exists()
+        and payment.booking.seller_id == request.user.pk
+    )
     return render(request, "panel/payments/detail.html", {
         "payment": payment,
         "audit_events": audit_events,
-        "can_review": _payment_admin(request.user),
+        "can_review": can_review,
     })
 
 
@@ -183,6 +197,8 @@ def payment_detail(request, public_id):
 def transfer_review(request, public_id):
     """Revisa una transferencia bancaria en revisión: aprueba o rechaza."""
     payment = get_object_or_404(_visible_payments(request.user).select_related("booking"), public_id=public_id)
+    if not _payment_admin(request.user) and payment.booking.seller_id != request.user.pk:
+        raise PermissionDenied("Los vendedores solo pueden revisar y aprobar sus propias ventas.")
     action = request.POST.get("action", "").strip().lower()
 
     if action == "approve":
@@ -295,6 +311,18 @@ def booking_pay_transfer(request, public_id):
         return redirect("panel:booking_detail", public_id=booking.public_id)
 
     reference = request.POST.get("reference", "").strip()
+    payment_verified = request.POST.get("payment_verified") in ("1", "true", "on", "yes")
+
+    from sales.internal_transfer import validate_internal_sale_timing
+    trips = [leg.trip for leg in booking.legs.all()]
+    _, is_last_hour = validate_internal_sale_timing(trips)
+
+    if is_last_hour and not payment_verified:
+        messages.error(
+            request,
+            "Dentro de la última hora previa a la salida inicial, solo se admiten operaciones confirmadas con comprobante y pago verificado.",
+        )
+        return redirect("panel:booking_detail", public_id=booking.public_id)
 
     try:
         payment = register_transfer_payment(
@@ -303,10 +331,21 @@ def booking_pay_transfer(request, public_id):
             voucher=voucher_file,
             reference=reference,
         )
-        messages.success(
-            request,
-            f"Transferencia registrada por $ {payment.amount}. El comprobante quedó en estado de revisión.",
-        )
+        if payment_verified:
+            review_transfer_payment(
+                payment_or_id=payment,
+                reviewer=request.user,
+                approved=True,
+            )
+            messages.success(
+                request,
+                f"Venta por transferencia confirmada por $ {payment.amount}. La reserva ha sido confirmada.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Transferencia registrada por $ {payment.amount}. El comprobante quedó en estado de revisión.",
+            )
         return redirect("panel:booking_detail", public_id=booking.public_id)
     except BookingExpiredError as exc:
         messages.error(request, f"No se pudo registrar la transferencia: {exc}")

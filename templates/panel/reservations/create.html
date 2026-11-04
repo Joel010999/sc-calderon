@@ -14,7 +14,7 @@
     </header>
 
     <!-- Formulario principal -->
-    <form method="post" action="{% url 'panel:booking_create' %}" class="ops-form-full" id="manual-booking-form">
+    <form method="post" action="{% url 'panel:booking_create' %}" enctype="multipart/form-data" class="ops-form-full" id="manual-booking-form">
         {% csrf_token %}
 
         <!-- Paso 1: Configuración del viaje y pasajeros -->
@@ -347,6 +347,37 @@
             <h2>Comentario interno</h2>
             <p class="muted">Solo visible en el panel. No se incluye en comunicaciones públicas.</p>
             <textarea name="internal_note" id="id_internal_note" class="form-input" rows="3">{{ internal_note }}</textarea>
+        </section>
+
+        <section class="ops-card">
+            <h2>Pago por transferencia / Venta interna</h2>
+            <p class="muted">
+                {% if is_seller %}
+                Como vendedor, las ventas por transferencia quedan registradas con retención temporal (hasta la medianoche del día de compra o 1 hora antes de la salida inicial). En la última hora previa a la salida, solo se admiten operaciones confirmadas con comprobante y pago verificado.
+                {% else %}
+                Podés adjuntar el comprobante de transferencia y declarar el pago verificado para confirmar la venta inmediatamente, o registrar la reserva para cobro posterior.
+                {% endif %}
+            </p>
+            <div class="form-row-grid">
+                <div class="form-group">
+                    <label class="form-label" for="id_voucher">Comprobante de transferencia (PDF o imagen)</label>
+                    <input type="file" name="voucher" id="id_voucher" class="form-input" accept=".pdf,.jpg,.jpeg,.png">
+                    <small class="muted" style="display: block; margin-top: 0.25rem;">Formatos admitidos: PDF, JPG, JPEG, PNG (máx. 10 MB).</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="id_transfer_reference">Referencia / Número de operación</label>
+                    <input type="text" name="transfer_reference" id="id_transfer_reference" class="form-input" placeholder="Ej: Operación bancaria 987654">
+                </div>
+            </div>
+            <div class="form-group mt-3" style="margin-top: 1rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500; cursor: pointer;">
+                    <input type="checkbox" name="payment_verified" id="id_payment_verified" value="1">
+                    <span>Declaro haber verificado externamente la acreditación de la transferencia (Venta inmediata)</span>
+                </label>
+                <small class="muted" style="display: block; margin-top: 0.25rem;">
+                    Al adjuntar comprobante y tildar esta declaración, la venta se confirma y emite de forma inmediata sin retención pendiente.
+                </small>
+            </div>
         </section>
 
         <!-- Confirmación y Botón Final -->

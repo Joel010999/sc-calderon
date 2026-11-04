@@ -88,9 +88,16 @@ def record_booking_event(*, actor, booking, action, before, description=None):
 
 
 @transaction.atomic
-def create_panel_manual_booking(*, actor, email="", phone="", internal_note="", legs, passengers_data=None, now=None):
-    """Crea una reserva manual y registra su auditoría en la misma transacción."""
+def create_panel_manual_booking(*, actor, email="", phone="", internal_note="", legs, passengers_data=None, expires_at=None, now=None):
+    """Crea una reserva manual y registra su auditoría en la misma transacción.
+
+    Regla (1): Si expires_at es None, solo administradores/superusuarios pueden crearla.
+    """
     require_reservations_access(actor)
+    if expires_at is None:
+        from panel.internal_sales_permissions import require_can_create_manual_unexpired_reservation
+        require_can_create_manual_unexpired_reservation(actor)
+
     booking = create_manual_booking(
         seller=actor,
         email=email,
@@ -98,6 +105,7 @@ def create_panel_manual_booking(*, actor, email="", phone="", internal_note="", 
         internal_note=internal_note,
         legs=legs,
         passengers_data=passengers_data,
+        expires_at=expires_at,
         now=now,
     )
     record_booking_event(

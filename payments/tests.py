@@ -546,18 +546,32 @@ class PaymentServicesTests(PaymentsBaseTestCase):
             )
 
     def test_review_transfer_approval_by_seller_and_admin(self):
-        # Vendedor aprueba transferencia (decisión confirmada: Vendedor y Administrador pueden)
+        # Vendedor aprueba transferencia de su propia venta (Regla 5)
         booking1 = self.create_held_manual_booking(email="b1@correo.com")
         p1 = register_transfer_payment(booking_or_id=booking1, seller=self.seller_user, voucher=self.sample_pdf_voucher())
 
+        other_seller = User.objects.create_user(username="other_seller", password="password123")
+        other_seller.groups.add(self.seller_group)
+
+        # Otro vendedor no puede aprobar venta ajena
         with self.assertRaises(ValidationError):
-            review_transfer_payment(payment_or_id=p1, reviewer=self.seller_user, approved=True)
-        review_transfer_payment(payment_or_id=p1, reviewer=self.admin_user, approved=True)
+            review_transfer_payment(payment_or_id=p1, reviewer=other_seller, approved=True)
+
+        # El vendedor dueño de la venta sí puede aprobar su propia venta
+        review_transfer_payment(payment_or_id=p1, reviewer=self.seller_user, approved=True)
         p1.refresh_from_db()
         self.assertEqual(p1.status, PaymentStatus.APPROVED)
-        self.assertEqual(p1.reviewed_by, self.admin_user)
+        self.assertEqual(p1.reviewed_by, self.seller_user)
         booking1.refresh_from_db()
         self.assertEqual(booking1.status, BookingStatus.CONFIRMED)
+
+        # Seguridad: Otro vendedor intentando revisar p1 YA aprobado/confirmado es rechazado antes de la salida idempotente
+        with self.assertRaises(ValidationError):
+            review_transfer_payment(payment_or_id=p1, reviewer=other_seller, approved=True)
+
+        # Idempotencia propia preservada para el dueño
+        p1_re = review_transfer_payment(payment_or_id=p1, reviewer=self.seller_user, approved=True)
+        self.assertEqual(p1_re.pk, p1.pk)
 
         # Administrador aprueba transferencia
         booking2 = self.create_held_manual_booking(email="b2@correo.com", seats=[self.seat_semi_2])
