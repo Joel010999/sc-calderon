@@ -89,6 +89,5 @@ urlpatterns = [
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/editar/', operations.seat_form, name='seat_edit'),
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/activar/', operations.seat_state, {'active': True}, name='seat_activate'),
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/desactivar/', operations.seat_state, {'active': False}, name='seat_deactivate'),
-    path('', include('panel.route_urls')),
     path('', include(route_urls.urlpatterns)),
 ]

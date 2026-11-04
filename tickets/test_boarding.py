@@ -203,7 +203,13 @@ class BoardingPanelTests(TicketBaseMixin, TransactionTestCase):
     def test_manifest_shows_boarding_totals_without_writes(self):
         manifest_url = reverse("panel:trip_manifest", kwargs={"trip_pk": self.trip_ida.pk})
         before = (BoardingRecord.objects.count(), TicketAuditEvent.objects.count())
+
         self.client.force_login(self.seller_user)
+        seller_response = self.client.get(manifest_url, secure=True)
+        self.assertEqual(seller_response.status_code, 403)
+        self.assertEqual(before, (BoardingRecord.objects.count(), TicketAuditEvent.objects.count()))
+
+        self.client.force_login(self.admin_user)
         response = self.client.get(manifest_url, secure=True)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Embarcados:</strong> 0")
@@ -211,9 +217,18 @@ class BoardingPanelTests(TicketBaseMixin, TransactionTestCase):
         self.assertEqual(before, (BoardingRecord.objects.count(), TicketAuditEvent.objects.count()))
 
         validate_boarding(self.raw_token, self.trip_ida.pk, self.seller_user)
+        after_boarding = (BoardingRecord.objects.count(), TicketAuditEvent.objects.count())
+
+        self.client.force_login(self.seller_user)
+        self.assertEqual(self.client.get(manifest_url, secure=True).status_code, 403)
+        self.assertEqual(after_boarding, (BoardingRecord.objects.count(), TicketAuditEvent.objects.count()))
+
+        self.client.force_login(self.admin_user)
         response = self.client.get(manifest_url, secure=True)
+        self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Embarcados:</strong> 1")
         self.assertContains(response, "Embarcado")
+        self.assertEqual(after_boarding, (BoardingRecord.objects.count(), TicketAuditEvent.objects.count()))
 
     def test_public_qr_verification_never_registers_boarding(self):
         response = self.client.get(

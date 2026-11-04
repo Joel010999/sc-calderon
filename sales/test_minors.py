@@ -457,8 +457,16 @@ class MinorPassengerPolicyTests(SalesBaseTestCase):
         panel_booking = Booking.objects.get(email="panel-menor4@correo.com")
         confirm_booking(panel_booking)
 
+        manifest_url = reverse("panel:trip_manifest", kwargs={"trip_pk": self.trip_outbound.pk})
+        manifest_seller_resp = panel_client.get(
+            manifest_url,
+            secure=True,
+        )
+        self.assertEqual(manifest_seller_resp.status_code, 403)
+
+        panel_client.force_login(self.admin_user)
         manifest_resp = panel_client.get(
-            reverse("panel:trip_manifest", kwargs={"trip_pk": self.trip_outbound.pk}),
+            manifest_url,
             secure=True,
         )
         self.assertEqual(manifest_resp.status_code, 200)
