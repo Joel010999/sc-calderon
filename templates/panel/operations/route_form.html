@@ -49,7 +49,7 @@
         <div style="margin-top: 2rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h3 style="margin: 0;">Paradas del recorrido (orden secuencial)</h3>
-                <a href="/panel/operaciones/paradas/nueva/" target="_blank" class="ops-button small" style="text-decoration: none;">+ Crear nueva parada</a>
+                <a href="{% url 'panel:stop_create' %}" target="_blank" class="ops-button small" style="text-decoration: none;">+ Crear nueva parada</a>
             </div>
             <p class="ops-intro" style="margin-bottom: 1rem;">
                 Requisitos obligatorios: mínimo 2 paradas, orden correlativo 1..N, la primera parada debe permitir subir, la última parada debe permitir bajar, y debe existir al menos un tramo entre provincias diferentes.

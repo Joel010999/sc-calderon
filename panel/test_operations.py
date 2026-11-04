@@ -174,7 +174,11 @@ class OperationsPanelTests(TestCase):
 
     def test_routes_and_stops_have_no_write_endpoints(self):
         before = (Route.objects.count(), Stop.objects.count())
+        self.client.force_login(self.common)
         for path in ("recorridos/nuevo/", "recorridos/1/editar/", "paradas/nueva/", "paradas/1/editar/"):
+            self.assertEqual(self.client.post(f"/panel/operaciones/{path}", secure=True).status_code, 403)
+        self.client.force_login(self.admin)
+        for path in ("recorridos/1/eliminar/", "paradas/1/eliminar/"):
             self.assertEqual(self.client.post(f"/panel/operaciones/{path}", secure=True).status_code, 404)
         self.assertEqual(self.client.post(self.url("routes"), secure=True).status_code, 405)
         self.assertEqual((Route.objects.count(), Stop.objects.count()), before)

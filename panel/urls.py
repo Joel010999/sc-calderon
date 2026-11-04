@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 from . import views
 from . import operations_views as operations
 from . import trip_views as trips
@@ -15,6 +15,7 @@ from . import audit_views as audit
 from . import cash_views as cash
 from . import cash_report_views as cash_reports
 from . import staff_views as staff
+from . import route_urls
 
 app_name = 'panel'
 
@@ -88,4 +89,6 @@ urlpatterns = [
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/editar/', operations.seat_form, name='seat_edit'),
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/activar/', operations.seat_state, {'active': True}, name='seat_activate'),
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/desactivar/', operations.seat_state, {'active': False}, name='seat_deactivate'),
+    path('', include('panel.route_urls')),
+    path('', include(route_urls.urlpatterns)),
 ]

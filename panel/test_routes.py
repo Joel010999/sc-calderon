@@ -371,61 +371,253 @@ class RouteViewsTests(TestCase):
         cls.seller = User.objects.create_user(username="seller_view", password="password123")
         cls.seller.groups.add(cls.group_seller)
 
+        cls.superuser = User.objects.create_superuser(username="super_view", password="password123", email="super_view@test.com")
         cls.common = User.objects.create_user(username="common_view", password="password123")
 
         cls.stop_cba = Stop.objects.create(code="CBA", name="Córdoba", city="Córdoba", province="Córdoba")
+        cls.stop_jma = Stop.objects.create(code="JMA", name="Jesús María", city="Jesús María", province="Córdoba")
+        cls.stop_gue = Stop.objects.create(code="GUE", name="Güemes", city="Güemes", province="Salta")
         cls.stop_ssj = Stop.objects.create(code="SSJ", name="Jujuy", city="Jujuy", province="Jujuy")
 
+        cls.bus = Bus.objects.create(code="BUS-VW", display_name="Colectivo View", license_plate="VW123AA")
+        Seat.objects.create(bus=cls.bus, number=1, deck=Seat.Deck.LOWER, category=SeatCategory.CAMA, position_x=0, position_y=0)
+
     def setUp(self):
-        self.rf = RequestFactory()
+        self.client = Client()
 
-    def test_seller_cannot_access_write_views(self):
-        for view_fn, args in [
-            (route_create, []),
-            (stop_create, []),
-        ]:
-            request = self.rf.get("/dummy/")
-            request.user = self.seller
-            with self.assertRaises(PermissionDenied):
-                view_fn(request, *args)
+    def test_anonymous_user_redirected_to_login(self):
+        protected_urls = [
+            reverse("panel:trips"),
+            reverse("panel:routes"),
+            reverse("panel:route_create"),
+            reverse("panel:stop_create"),
+        ]
+        for url in protected_urls:
+            response = self.client.get(url, secure=True)
+            self.assertEqual(response.status_code, 302)
+            self.assertIn("/panel/login/", response.headers["Location"])
 
-            request = self.rf.post("/dummy/", {})
-            request.user = self.seller
-            with self.assertRaises(PermissionDenied):
-                view_fn(request, *args)
+    def test_seller_role_access_visibility_and_restrictions(self):
+        self.client.force_login(self.seller)
 
-    def test_admin_can_create_stop_via_view(self):
-        request = self.rf.post(
-            "/operaciones/paradas/nueva/",
+        # 1. Acceso de consulta a Viajes
+        response = self.client.get(reverse("panel:trips"), secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context.get("can_manage", True))
+        self.assertNotContains(response, "Gestionar recorridos")
+        self.assertNotContains(response, "Nuevo viaje")
+
+        # 2. Acceso de consulta a Recorridos
+        route = Route.objects.create(code="VIEW-TEST", name="Ruta Consulta", is_active=True)
+        RouteStop.objects.create(route=route, stop=self.stop_cba, sequence=1, allows_boarding=True, allows_alighting=False)
+        RouteStop.objects.create(route=route, stop=self.stop_ssj, sequence=2, allows_boarding=False, allows_alighting=True)
+
+        response = self.client.get(reverse("panel:routes"), secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context.get("can_manage", True))
+        self.assertNotContains(response, "Nuevo recorrido")
+        self.assertNotContains(response, "Nueva parada")
+        self.assertNotContains(response, reverse("panel:route_create"))
+        self.assertNotContains(response, reverse("panel:stop_create"))
+        self.assertNotContains(response, reverse("panel:route_edit", args=[route.pk]))
+        self.assertNotContains(response, reverse("panel:stop_edit", args=[self.stop_cba.pk]))
+
+        # 3. Bloqueo 403 Forbidden a vistas de escritura de recorridos y paradas
+        forbidden_calls = [
+            ("get", reverse("panel:route_create"), {}),
+            ("post", reverse("panel:route_create"), {"code": "FAIL"}),
+            ("get", reverse("panel:route_edit", args=[route.pk]), {}),
+            ("post", reverse("panel:route_edit", args=[route.pk]), {"code": "FAIL"}),
+            ("get", reverse("panel:route_new_version", args=[route.pk]), {}),
+            ("post", reverse("panel:route_new_version", args=[route.pk]), {"code": "FAIL"}),
+            ("post", reverse("panel:route_activate", args=[route.pk]), {}),
+            ("post", reverse("panel:route_deactivate", args=[route.pk]), {}),
+            ("get", reverse("panel:stop_create"), {}),
+            ("post", reverse("panel:stop_create"), {"code": "FAIL"}),
+            ("get", reverse("panel:stop_edit", args=[self.stop_cba.pk]), {}),
+            ("post", reverse("panel:stop_edit", args=[self.stop_cba.pk]), {"code": "FAIL"}),
+        ]
+        for method, url, data in forbidden_calls:
+            with self.subTest(method=method, url=url):
+                res = getattr(self.client, method)(url, data, secure=True)
+                self.assertEqual(res.status_code, 403)
+
+    def test_admin_role_access_visibility_and_crud_navigation(self):
+        self.client.force_login(self.admin)
+
+        # 1. Acceso a Viajes y visibilidad de 'Gestionar recorridos'
+        response = self.client.get(reverse("panel:trips"), secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context.get("can_manage", False))
+        self.assertContains(response, "Gestionar recorridos")
+        self.assertContains(response, reverse("panel:routes"))
+
+        # 2. Acceso a Recorridos y enlaces de gestión
+        response = self.client.get(reverse("panel:routes"), secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context.get("can_manage", False))
+        self.assertContains(response, "Nuevo recorrido")
+        self.assertContains(response, reverse("panel:route_create"))
+        self.assertContains(response, "Nueva parada")
+        self.assertContains(response, reverse("panel:stop_create"))
+
+        # 3. Navegación y creación de parada vía HTTP
+        res_get_stop = self.client.get(reverse("panel:stop_create"), secure=True)
+        self.assertEqual(res_get_stop.status_code, 200)
+        self.assertContains(res_get_stop, "Nueva parada")
+
+        res_post_stop = self.client.post(
+            reverse("panel:stop_create"),
             {"code": "SLT", "name": "Salta Capital", "city": "Salta", "province": "Salta"},
+            secure=True,
         )
-        request.user = self.admin
-        from django.contrib.messages.storage.fallback import FallbackStorage
-        setattr(request, "session", {})
-        setattr(request, "_messages", FallbackStorage(request))
+        self.assertEqual(res_post_stop.status_code, 302)
+        self.assertRedirects(res_post_stop, reverse("panel:routes"))
+        stop_slt = Stop.objects.get(code="SLT")
+        self.assertEqual(stop_slt.province, "Salta")
 
-        response = stop_create(request)
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(Stop.objects.filter(code="SLT").exists())
+        # 4. Navegación y edición de parada vía HTTP
+        res_get_stop_edit = self.client.get(reverse("panel:stop_edit", args=[stop_slt.pk]), secure=True)
+        self.assertEqual(res_get_stop_edit.status_code, 200)
+        self.assertContains(res_get_stop_edit, "Editar parada SLT")
 
-    def test_admin_can_create_route_via_view(self):
-        request = self.rf.post(
-            "/operaciones/recorridos/nuevo/",
+        res_post_stop_edit = self.client.post(
+            reverse("panel:stop_edit", args=[stop_slt.pk]),
+            {"code": "SLT", "name": "Terminal de Salta", "city": "Salta", "province": "Salta"},
+            secure=True,
+        )
+        self.assertEqual(res_post_stop_edit.status_code, 302)
+        self.assertRedirects(res_post_stop_edit, reverse("panel:routes"))
+        stop_slt.refresh_from_db()
+        self.assertEqual(stop_slt.name, "Terminal de Salta")
+
+        # 5. Navegación y creación de recorrido vía HTTP
+        res_get_route = self.client.get(reverse("panel:route_create"), secure=True)
+        self.assertEqual(res_get_route.status_code, 200)
+        self.assertContains(res_get_route, "Nuevo recorrido")
+
+        res_post_route = self.client.post(
+            reverse("panel:route_create"),
             {
-                "code": "CBA-SSJ-V1",
-                "name": "Córdoba a Jujuy Directo",
+                "code": "CBA-SLT-V1",
+                "name": "Córdoba a Salta",
+                "is_active": True,
+                "sequence_1": 1, "stop_id_1": self.stop_cba.pk, "allows_boarding_1": True,
+                "sequence_2": 2, "stop_id_2": stop_slt.pk, "allows_alighting_2": True,
+            },
+            secure=True,
+        )
+        self.assertEqual(res_post_route.status_code, 302)
+        self.assertRedirects(res_post_route, reverse("panel:routes"))
+        route = Route.objects.get(code="CBA-SLT-V1")
+        self.assertEqual(route.version, 1)
+        self.assertEqual(route.route_stops.count(), 2)
+
+        # 6. Edición in-place de recorrido sin salidas asociadas
+        res_get_route_edit = self.client.get(reverse("panel:route_edit", args=[route.pk]), secure=True)
+        self.assertEqual(res_get_route_edit.status_code, 200)
+        self.assertFalse(res_get_route_edit.context.get("is_versioning", True))
+        self.assertContains(res_get_route_edit, f"Editar recorrido {route.code}")
+
+        res_post_route_edit = self.client.post(
+            reverse("panel:route_edit", args=[route.pk]),
+            {
+                "code": "CBA-SLT-V1",
+                "name": "Córdoba a Salta con parada intermedia",
+                "is_active": True,
+                "sequence_1": 1, "stop_id_1": self.stop_cba.pk, "allows_boarding_1": True,
+                "sequence_2": 2, "stop_id_2": self.stop_jma.pk, "allows_boarding_2": True,
+                "sequence_3": 3, "stop_id_3": stop_slt.pk, "allows_alighting_3": True,
+            },
+            secure=True,
+        )
+        self.assertEqual(res_post_route_edit.status_code, 302)
+        self.assertRedirects(res_post_route_edit, reverse("panel:routes"))
+        route.refresh_from_db()
+        self.assertEqual(route.version, 1)
+        self.assertEqual(route.route_stops.count(), 3)
+        self.assertEqual(route.name, "Córdoba a Salta con parada intermedia")
+
+        # 7. Activar y desactivar recorrido vía HTTP
+        res_deact = self.client.post(reverse("panel:route_deactivate", args=[route.pk]), secure=True)
+        self.assertEqual(res_deact.status_code, 302)
+        route.refresh_from_db()
+        self.assertFalse(route.is_active)
+
+        res_act = self.client.post(reverse("panel:route_activate", args=[route.pk]), secure=True)
+        self.assertEqual(res_act.status_code, 302)
+        route.refresh_from_db()
+        self.assertTrue(route.is_active)
+
+        # 8. Recorrido con viajes asociados genera automáticamente NUEVA VERSIÓN
+        start = timezone.now() + timedelta(days=4)
+        trip = schedule_trip(
+            route=route,
+            bus=self.bus,
+            schedules={
+                self.stop_cba.pk: start,
+                self.stop_jma.pk: start + timedelta(hours=1),
+                stop_slt.pk: start + timedelta(hours=10),
+            },
+        )
+        self.assertEqual(trip.route_id, route.pk)
+
+        # En el listado debe ofrecer 'Nueva versión'
+        res_list = self.client.get(reverse("panel:routes"), secure=True)
+        self.assertContains(res_list, reverse("panel:route_new_version", args=[route.pk]))
+        self.assertContains(res_list, "Nueva versión")
+
+        # GET a nueva versión informa el versionado automático
+        res_get_ver = self.client.get(reverse("panel:route_new_version", args=[route.pk]), secure=True)
+        self.assertEqual(res_get_ver.status_code, 200)
+        self.assertTrue(res_get_ver.context.get("is_versioning", False))
+        self.assertContains(res_get_ver, "Versionado automático de recorrido en uso")
+
+        # POST a nueva versión crea versión 2 y preserva histórico
+        res_post_ver = self.client.post(
+            reverse("panel:route_new_version", args=[route.pk]),
+            {
+                "code": "CBA-SLT-V1",
+                "name": route.name,
                 "is_active": True,
                 "sequence_1": 1, "stop_id_1": self.stop_cba.pk, "allows_boarding_1": True,
                 "sequence_2": 2, "stop_id_2": self.stop_ssj.pk, "allows_alighting_2": True,
             },
+            secure=True,
         )
-        request.user = self.admin
-        from django.contrib.messages.storage.fallback import FallbackStorage
-        setattr(request, "session", {})
-        setattr(request, "_messages", FallbackStorage(request))
+        self.assertEqual(res_post_ver.status_code, 302)
+        self.assertRedirects(res_post_ver, reverse("panel:routes"))
 
-        response = route_create(request)
-        self.assertEqual(response.status_code, 302)
-        route = Route.objects.get(code="CBA-SSJ-V1")
+        route_v2 = Route.objects.get(code="CBA-SLT-V1", version=2)
+        self.assertEqual(route_v2.parent_route_id, route.pk)
+        self.assertTrue(route_v2.is_active)
+        self.assertEqual(route_v2.route_stops.count(), 2)
+
+        # La versión original queda desactivada para nuevas salidas pero el viaje conserva versión 1
+        route.refresh_from_db()
+        self.assertFalse(route.is_active)
         self.assertEqual(route.version, 1)
-        self.assertEqual(route.route_stops.count(), 2)
+        trip.refresh_from_db()
+        self.assertEqual(trip.route_id, route.pk)
+
+    def test_superuser_role_full_navigation_and_permissions(self):
+        self.client.force_login(self.superuser)
+
+        res_trips = self.client.get(reverse("panel:trips"), secure=True)
+        self.assertEqual(res_trips.status_code, 200)
+        self.assertTrue(res_trips.context.get("can_manage", False))
+        self.assertContains(res_trips, "Gestionar recorridos")
+
+        res_routes = self.client.get(reverse("panel:routes"), secure=True)
+        self.assertEqual(res_routes.status_code, 200)
+        self.assertTrue(res_routes.context.get("can_manage", False))
+        self.assertContains(res_routes, "Nuevo recorrido")
+        self.assertContains(res_routes, "Nueva parada")
+
+        res_post_stop = self.client.post(
+            reverse("panel:stop_create"),
+            {"code": "SUP", "name": "Parada Super", "city": "Super", "province": "Salta"},
+            secure=True,
+        )
+        self.assertEqual(res_post_stop.status_code, 302)
+        self.assertTrue(Stop.objects.filter(code="SUP").exists())
