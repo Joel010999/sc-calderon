@@ -6,10 +6,17 @@
     <header class="ops-header">
         <div>
             <p class="ops-eyebrow"><a href="{% url 'panel:booking_list' %}">← Volver a Reservas</a></p>
+            {% if is_seller or sale_type == 'transfer' %}
+            <h1>Nueva venta interna</h1>
+            <p class="ops-intro">
+                Venta interna por transferencia bancaria con retención temporal o confirmación inmediata con comprobante y pago verificado.
+            </p>
+            {% else %}
             <h1>Nueva reserva manual</h1>
             <p class="ops-intro">
                 Las reservas rápidas manuales retienen la butaca sin vencimiento automático. Completá los datos de venta antes de cobrar.
             </p>
+            {% endif %}
         </div>
     </header>
 
@@ -386,8 +393,13 @@
                 El precio por pasajero, subtotales y total final son calculados estrictamente por el servidor a partir de las tarifas vigentes cargadas en el sistema.
             </p>
             <input type="hidden" name="action" value="create_booking">
+            <input type="hidden" name="sale_type" value="{{ sale_type }}">
             <div class="form-actions">
+                {% if is_seller or sale_type == 'transfer' %}
+                <button type="submit" class="ops-button">Confirmar venta interna</button>
+                {% else %}
                 <button type="submit" class="ops-button">Confirmar y crear reserva manual</button>
+                {% endif %}
                 <a href="{% url 'panel:booking_list' %}" class="ops-button secondary">Cancelar</a>
             </div>
         </section>

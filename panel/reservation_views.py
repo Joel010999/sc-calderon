@@ -325,6 +325,9 @@ def booking_create(request):
     # Parámetros básicos
     trip_type = request.POST.get("trip_type") if request.method == "POST" else request.GET.get("trip_type", "oneway")
     is_roundtrip = (trip_type == "roundtrip")
+    sale_type = request.POST.get("sale_type") if request.method == "POST" else request.GET.get("sale_type", "")
+    if not sale_type and request.GET.get("type") in ("transfer", "internal", "internal_sale"):
+        sale_type = "transfer"
 
     passenger_count_raw = request.POST.get("passengers_count") if request.method == "POST" else request.GET.get("passengers_count", "1")
     try:
@@ -605,7 +608,7 @@ def booking_create(request):
                             request,
                             f"Venta confirmada exitosamente (Reserva {booking.public_id})."
                         )
-                    elif voucher_file or is_last_hour:
+                    elif sale_type == "transfer" or voucher_file or is_last_hour:
                         if is_last_hour and not payment_verified:
                             raise ValidationError(
                                 "Dentro de la última hora previa a la salida inicial, solo se admiten "
@@ -682,4 +685,5 @@ def booking_create(request):
         "contact_phone": contact_phone,
         "internal_note": internal_note,
         "is_seller": not _reservation_admin(request.user),
+        "sale_type": sale_type,
     })

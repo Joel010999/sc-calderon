@@ -3,6 +3,8 @@ def panel_permissions(request):
     if not user or not user.is_authenticated:
         return {
             "can_access_reservations": False,
+            "can_create_manual_unexpired": False,
+            "can_access_internal_sales": False,
             "can_manage_operations": False,
             "can_manage_payments": False,
             "can_access_operational_inbox": False,
@@ -13,8 +15,11 @@ def panel_permissions(request):
     # vuelven a validar el permiso; esto sólo evita N+1 en el contexto común.
     group_names = set(user.groups.values_list("name", flat=True))
     can_access_reservations = user.is_superuser or bool(group_names & {"Administrador", "Vendedor"})
+    can_create_manual_unexpired = user.is_superuser or "Administrador" in group_names
     return {
         "can_access_reservations": can_access_reservations,
+        "can_create_manual_unexpired": can_create_manual_unexpired,
+        "can_access_internal_sales": can_access_reservations,
         "can_manage_operations": user.is_superuser or "Administrador" in group_names,
         "can_manage_payments": user.is_superuser or bool(group_names & {"Administrador", "Vendedor"}),
         "can_access_operational_inbox": can_access_reservations,

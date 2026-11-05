@@ -90,4 +90,5 @@ urlpatterns = [
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/activar/', operations.seat_state, {'active': True}, name='seat_activate'),
     path('operaciones/colectivos/<int:bus_pk>/butacas/<int:pk>/desactivar/', operations.seat_state, {'active': False}, name='seat_deactivate'),
     path('', include(route_urls.urlpatterns)),
+    path('internal-sales/', include('panel.internal_sales_urls')),
 ]

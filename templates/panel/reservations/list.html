@@ -8,7 +8,14 @@
             <p class="ops-eyebrow">Gestión comercial</p>
             <h1>Reservas</h1>
         </div>
-        <a class="ops-button" href="{% url 'panel:booking_create' %}">Nueva reserva manual</a>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            {% if can_create_manual_unexpired %}
+            <a class="ops-button" href="{% url 'panel:booking_create' %}">Nueva reserva manual</a>
+            <a class="ops-button secondary" href="{% url 'panel:booking_create' %}?sale_type=transfer">Venta interna</a>
+            {% else %}
+            <a class="ops-button" href="{% url 'panel:booking_create' %}">Nueva venta interna</a>
+            {% endif %}
+        </div>
     </header>
 
     <!-- Filtros y Búsqueda -->

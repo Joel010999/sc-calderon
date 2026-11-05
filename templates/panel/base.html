@@ -44,7 +44,12 @@
                 <div class="sidebar-section">
                     <span class="sidebar-heading">Reservas</span>
                     <a href="{% url 'panel:booking_list' %}" class="sidebar-link">Reservas</a>
+                    {% if can_create_manual_unexpired %}
                     <a href="{% url 'panel:booking_create' %}" class="sidebar-link">Nueva reserva</a>
+                    <a href="{% url 'panel:booking_create' %}?sale_type=transfer" class="sidebar-link">Venta interna</a>
+                    {% else %}
+                    <a href="{% url 'panel:booking_create' %}" class="sidebar-link">Venta interna</a>
+                    {% endif %}
                 </div>
                 {% endif %}
                 {% if can_manage_payments %}
