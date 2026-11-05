@@ -841,15 +841,8 @@ class TripReadTests(TripDataMixin, TestCase):
         self.assertEqual(len(expanded), len(initial))
 
     def test_overview_counts_scheduled_future_and_boarding(self):
-        self.make_trip()
-        self.make_trip(self.start + timedelta(days=1), status=Trip.Status.BOARDING)
-        self.make_trip(self.start - timedelta(days=5))
-        self.make_trip(self.start + timedelta(days=2), status=Trip.Status.CANCELLED)
         response = self.client.get(self.url("operations"), secure=True)
-        metrics = dict(response.context["metrics"])
-        self.assertEqual(metrics["Viajes programados futuros"], 1)
-        self.assertEqual(metrics["Viajes en embarque"], 1)
-        self.assertContains(response, self.url("trips"))
+        self.assertRedirects(response, self.url("trips"), status_code=302)
 
     def test_admin_and_remote_frontend_regression(self):
         trip = self.make_trip()

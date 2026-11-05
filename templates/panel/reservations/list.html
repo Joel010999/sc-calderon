@@ -9,12 +9,11 @@
             <h1>Reservas</h1>
         </div>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <a class="ops-button secondary" href="{% url 'panel:fulfillment_list' %}">Entrega de pasajes</a>
             {% if can_create_manual_unexpired %}
             <a class="ops-button" href="{% url 'panel:booking_create' %}">Nueva reserva manual</a>
-            <a class="ops-button secondary" href="{% url 'panel:booking_create' %}?sale_type=transfer">Venta interna</a>
-            {% else %}
-            <a class="ops-button" href="{% url 'panel:booking_create' %}">Nueva venta interna</a>
             {% endif %}
+            <a class="ops-button secondary" href="{% url 'panel:booking_create' %}?sale_type=transfer">Venta interna</a>
         </div>
     </header>
 

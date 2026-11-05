@@ -30,7 +30,9 @@ from .permissions import payments_access
 
 
 def _payment_admin(user):
-    return user.is_superuser or user.groups.filter(name="Administrador").exists()
+    return user.is_authenticated and user.is_active and (
+        user.is_superuser or user.groups.filter(name="Administrador").exists()
+    )
 
 
 def _visible_payments(user):

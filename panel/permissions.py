@@ -3,38 +3,40 @@ from functools import wraps
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 
-from .models import StaffProfile
-
 
 def is_panel_user(user):
     return user.is_authenticated and user.is_active and (
         user.is_superuser or user.groups.filter(name__in=["Administrador", "Vendedor"]).exists()
     )
 
+
 def can_manage_staff(user):
-    return user.is_authenticated and user.is_active and (user.is_superuser or user.groups.filter(name="Administrador").exists())
-
-
-def is_staff_owner(user):
-    return (
-        user.is_authenticated
-        and user.is_active
-        and StaffProfile.objects.filter(user=user, is_owner=True).exists()
+    return user.is_authenticated and user.is_active and (
+        user.is_superuser or user.groups.filter(name="Administrador").exists()
     )
 
 
+def is_staff_owner(user):
+    """Reemplazado por superusuario conforme a la regla de autoridad canónica."""
+    return user.is_authenticated and user.is_active and user.is_superuser
+
+
 def can_create_administrator(user):
-    return is_staff_owner(user)
+    """Solo un superusuario activo puede crear o promover Administradores."""
+    return user.is_authenticated and user.is_active and user.is_superuser
+
 
 def staff_management_access():
     def decorate(view):
         @login_required(login_url="panel:login")
         @wraps(view)
         def wrapped(request, *args, **kwargs):
-            if not can_manage_staff(request.user): raise PermissionDenied("No tenés permiso para administrar usuarios internos.")
+            if not can_manage_staff(request.user):
+                raise PermissionDenied("No tenés permiso para administrar usuarios internos.")
             return view(request, *args, **kwargs)
         return wrapped
     return decorate
+
 
 def can_manage_operations(user):
     return user.is_authenticated and user.is_active and (
@@ -91,8 +93,9 @@ def can_manage_payments(user):
 
 
 def can_manage_customers(user):
+    """Clientes globales es exclusivo de Administrador y Superusuario."""
     return user.is_authenticated and user.is_active and (
-        user.is_superuser or user.groups.filter(name__in=["Administrador", "Vendedor"]).exists()
+        user.is_superuser or user.groups.filter(name="Administrador").exists()
     )
 
 

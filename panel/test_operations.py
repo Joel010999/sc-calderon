@@ -91,11 +91,19 @@ class OperationsPanelTests(TestCase):
         self.assertEqual(self.state(), before)
 
     def test_seller_admin_and_superuser_can_read_all_screens(self):
-        for user in (self.seller, self.admin, self.superuser):
+        for user in (self.admin, self.superuser):
             self.client.force_login(user)
-            for url in self.read_urls():
+            self.assertEqual(self.client.get(self.url("operations"), secure=True).status_code, 302)
+            for url in (self.url("routes"), self.url("buses"), self.url("bus_detail", pk=self.bus.pk)):
                 with self.subTest(user=user.username, url=url):
                     self.assertEqual(self.client.get(url, secure=True).status_code, 200)
+
+        self.client.force_login(self.seller)
+        self.assertEqual(self.client.get(self.url("operations"), secure=True).status_code, 302)
+        self.assertEqual(self.client.get(self.url("routes"), secure=True).status_code, 200)
+        for url in (self.url("buses"), self.url("bus_detail", pk=self.bus.pk)):
+            with self.subTest(user=self.seller.username, url=url):
+                self.assertEqual(self.client.get(url, secure=True).status_code, 403)
 
     def test_staff_without_role_cannot_read_all_screens(self):
         self.client.force_login(self.staff)
@@ -121,8 +129,7 @@ class OperationsPanelTests(TestCase):
                 self.assertEqual(self.client.get(self.url(name, **kwargs), secure=True).status_code, 403)
             for url in (self.url("buses"), self.url("bus_detail", pk=self.bus.pk)):
                 response = self.client.get(url, secure=True)
-                for write_url, _ in self.mutations():
-                    self.assertNotContains(response, write_url)
+                self.assertEqual(response.status_code, 403)
 
     def test_administrators_can_open_editing_forms(self):
         for name, kwargs in (("bus_create", {}), ("bus_edit", {"pk": self.bus.pk}),
@@ -190,11 +197,7 @@ class OperationsPanelTests(TestCase):
         Seat.objects.create(bus=self.bus, **self.seat_data())
         Seat.objects.create(bus=self.bus, **self.seat_data(number=9, position_x=1), is_active=False)
         response = self.client.get(self.url("operations"), secure=True)
-        self.assertEqual(dict(response.context["metrics"]), {
-            "Recorridos activos": 1, "Colectivos activos": 1, "Butacas activas": 2,
-            "Butacas cama activas": 1, "Butacas semicama activas": 1,
-            "Viajes programados futuros": 0, "Viajes en embarque": 0,
-        })
+        self.assertRedirects(response, self.url("trips"), status_code=302)
         response = self.client.get(self.url("buses"), secure=True)
         bus = next(bus for bus in response.context["buses"] if bus.pk == self.bus.pk)
         self.assertEqual((bus.active_seats, bus.cama_seats, bus.semicama_seats), (2, 1, 1))
@@ -461,7 +464,7 @@ class OperationsPanelTests(TestCase):
         self.assertNotIn("django.contrib.admin", settings.INSTALLED_APPS)
         self.assertEqual(self.client.get("/admin/", secure=True).status_code, 404)
         for url in self.read_urls() + [self.url("bus_create")]:
-            response = self.client.get(url, secure=True)
+            response = self.client.get(url, secure=True, follow=True)
             self.assertContains(response, "panel/css/operations")
             for remote in ('src="http', 'href="https://cdn', 'cdn.tailwindcss', 'cdn.jsdelivr', 'unpkg.com'):
                 self.assertNotContains(response, remote)

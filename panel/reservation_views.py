@@ -328,6 +328,8 @@ def booking_create(request):
     sale_type = request.POST.get("sale_type") if request.method == "POST" else request.GET.get("sale_type", "")
     if not sale_type and request.GET.get("type") in ("transfer", "internal", "internal_sale"):
         sale_type = "transfer"
+    if not _reservation_admin(request.user):
+        sale_type = "transfer"
 
     passenger_count_raw = request.POST.get("passengers_count") if request.method == "POST" else request.GET.get("passengers_count", "1")
     try:

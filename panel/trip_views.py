@@ -56,10 +56,11 @@ def trip_detail(request, pk):
         Prefetch("fares", queryset=TripFare.objects.order_by("seat_category", "pk")),
     )
     trip = get_object_or_404(queryset, pk=pk)
-    pending = trip_pending_summary(trip.pk)
+    is_ops_admin = can_manage_operations(request.user)
+    pending = trip_pending_summary(trip.pk) if is_ops_admin else {"held_bookings": 0, "pending_payments": 0}
     return render_operations(request, "trip_detail", title=f"Viaje {trip.pk}",
                              trip=trip, display_timezone=settings.TIME_ZONE,
-                             can_access_manifest=can_manage_operations(request.user),
+                             can_access_manifest=is_ops_admin,
                              can_modify_fares=can_modify_trip_fares(trip),
                              can_modify_schedules=can_modify_trip_schedules(trip),
                              pending_summary=pending)

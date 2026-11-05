@@ -93,7 +93,7 @@ def download_ticket_view(request, public_id=None):
     """Descarga adjunta del pasaje en PDF con control de acceso estricto.
 
     Reglas de autorización:
-    - Usuarios autenticados con rol (Administrador, Vendedor, superusuario): acceso permitido.
+    - Usuarios autenticados con rol (Administrador, Vendedor, superusuario): acceso permitido para pasajes propios (global para administradores/superusuarios).
     - Usuarios comunes autenticados o staff sin rol: HTTP 403 Forbidden.
     - Descarga pública mediante Bearer token en Authorization header o parámetro ?token=:
       se compara el hash del token de descarga. Tokens inválidos o no coincidentes dan HTTP 404 genérico.
@@ -107,10 +107,14 @@ def download_ticket_view(request, public_id=None):
         if not is_authorized_internal_user(user):
             return HttpResponseForbidden("No tenés permiso para acceder a este pasaje.")
 
-        if public_id:
+        if not public_id:
+            raise Http404("Pasaje no encontrado.")
+
+        is_admin = getattr(user, "is_superuser", False) or user.groups.filter(name="Administrador").exists()
+        if is_admin:
             ticket = Ticket.objects.filter(public_id=public_id).first()
         else:
-            raise Http404("Pasaje no encontrado.")
+            ticket = Ticket.objects.filter(public_id=public_id, booking__seller=user).first()
 
         if not ticket:
             raise Http404("Pasaje no encontrado.")
