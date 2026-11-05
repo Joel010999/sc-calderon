@@ -73,11 +73,16 @@ Ambas funcionalidades quedaron plenamente operativas y armonizadas, resolviendo 
    - `python manage.py test panel.test_integration_ventas_recorridos panel.test_routes panel.test_reservations panel.test_payments sales.test_internal_transfer panel.test_manifest panel.test_trips panel.test_operations`
    - **Resultado**: 206/206 pruebas exitosas en 94.275s (código de salida 0).
 3. **Suite Completa del Proyecto**:
-   - **Validación reproducible (SHA `f9b809442c61097d4a3c0e85795050f490ff5f2f`)**:
+   - **Validación sobre el SHA base `f9b809442c61097d4a3c0e85795050f490ff5f2f` (antes de corregir la prueba de vencimiento)**:
      - Ejecución: `python -u manage.py test --verbosity 2` con SQLite temporal en memoria, `EMAIL_BACKEND` locmem y storage externo temporal.
-     - Resultado: 674 descubiertas, 0 fallas, 8 skips, OK (código de salida 0).
+     - Log: `C:\Users\JOEL\AppData\Local\Temp\scviajes-suite-20261104-215910.log`.
+     - El runner informó `Ran 674 tests`, `failures=1`, `skipped=8`: total 674, 665 aprobadas, 1 fallida y 8 omitidas. Estado: **falló** por `test_expiration_calculation_rules`.
+   - **Validación posterior a la corrección, commit `7399cf169ec4765672826a3fea90fd7d7faf16cf`**:
+     - Ejecución: `python -u manage.py test --verbosity 2` con SQLite temporal en memoria, `EMAIL_BACKEND` locmem y storage externo temporal.
+     - Log: `C:\Users\JOEL\AppData\Local\Temp\scviajes-fix-full-20261104-222159.log`.
+     - El runner informó `Ran 674 tests`, `OK (skipped=8)`: total 674, 666 aprobadas, 0 fallas y 8 omitidas. Estado: **verde** sobre el código que ya contiene el fixture fijo y la regresión nocturna.
    - **Corrección de reporte previo (662 pruebas)**:
-     - El informe inicial de 662 pruebas queda marcado como **no verificable** por falta de log bruto/configuración.
+     - El informe inicial de 662 pruebas queda marcado como **no verificable** por falta de log bruto y configuración; no se atribuye a ninguno de los dos resultados reproducibles anteriores.
 4. **Linter Ruff**:
    - `python -m ruff check`
    - **Resultado**: `All checks passed!` (0 errores).
