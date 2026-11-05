@@ -3,14 +3,12 @@ import csv
 from dataclasses import dataclass
 
 from django.conf import settings
-from django.db.models import Exists, OuterRef
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
 
 from operations.models import Trip, TripStop
 from sales.models import AssignmentStatus, BookingLeg, BookingPassenger, BookingStatus, SeatAssignment
-from tickets.models import BoardingRecord, BoardingStatus
 
 from .permissions import can_manage_operations, operations_access
 
@@ -28,7 +26,7 @@ class ManifestRow:
     booking_public_id: str
     origin_sequence: int
     destination_sequence: int
-    boarded: bool
+    boarded: bool = False
 
 
 @dataclass(frozen=True)
@@ -50,10 +48,6 @@ def _manifest_data(trip_pk):
         .select_related("stop")
         .order_by("sequence")
     )
-    active_boarding = BoardingRecord.objects.filter(
-        ticket__seat_assignment_id=OuterRef("pk"),
-        status=BoardingStatus.ACTIVE,
-    )
     assignments = (
         SeatAssignment.objects.filter(
             trip_id=trip.pk,
@@ -67,7 +61,6 @@ def _manifest_data(trip_pk):
             "leg__origin_stop__stop",
             "leg__destination_stop__stop",
         )
-        .annotate(boarding_exists=Exists(active_boarding))
         .order_by("leg__origin_stop__sequence", "category", "seat_number", "pk")
     )
 
@@ -84,7 +77,7 @@ def _manifest_data(trip_pk):
             booking_public_id=str(assignment.leg.booking.public_id),
             origin_sequence=assignment.leg.origin_stop.sequence,
             destination_sequence=assignment.leg.destination_stop.sequence,
-            boarded=assignment.boarding_exists,
+            boarded=False,
         )
         for assignment in assignments
     ]
@@ -102,13 +95,7 @@ def _manifest_data(trip_pk):
             booking_id__in={p.booking_id for p in minor_passengers}, trip_id=trip.pk
         ).select_related("booking", "origin_stop__stop", "destination_stop__stop")
     }
-    minor_keys = set(
-        BoardingRecord.objects.filter(
-            trip_id=trip.pk,
-            status=BoardingStatus.ACTIVE,
-            passenger_id__in=[p.pk for p in minor_passengers],
-        ).values_list("passenger_id", "ticket__leg_id")
-    )
+
     for passenger in minor_passengers:
         leg = legs_by_booking.get(passenger.booking_id)
         if not leg:
@@ -125,7 +112,7 @@ def _manifest_data(trip_pk):
             booking_public_id=str(passenger.booking.public_id),
             origin_sequence=leg.origin_stop.sequence,
             destination_sequence=leg.destination_stop.sequence,
-            boarded=(passenger.pk, leg.pk) in minor_keys,
+            boarded=False,
         ))
     rows.sort(key=lambda row: (row.origin_sequence, row.category, row.seat_number, row.passenger_name))
 
@@ -142,8 +129,7 @@ def _manifest_data(trip_pk):
         )
         for stop in stops
     ]
-    boarded_count = sum(row.boarded for row in rows)
-    return trip, rows, summaries, boarded_count, len(rows) - boarded_count
+    return trip, rows, summaries
 
 
 def _csv_safe(value):
@@ -169,7 +155,6 @@ def _csv_response(trip, rows):
         "Categoría",
         "Parada de subida",
         "Parada de bajada",
-        "Estado de embarque",
         "Referencia pública de reserva",
     ])
     for row in rows:
@@ -181,7 +166,6 @@ def _csv_response(trip, rows):
             _csv_safe(row.category_display),
             _csv_safe(row.origin_stop),
             _csv_safe(row.destination_stop),
-            _csv_safe("Embarcado" if row.boarded else "Pendiente"),
             _csv_safe(row.booking_public_id),
         ])
     return response
@@ -190,15 +174,13 @@ def _csv_response(trip, rows):
 @operations_access(write=True)
 @require_GET
 def trip_manifest(request, trip_pk, print_mode=False):
-    trip, rows, summaries, boarded_count, pending_count = _manifest_data(trip_pk)
+    trip, rows, summaries = _manifest_data(trip_pk)
     return render(request, "panel/manifest.html", {
         "title": f"Manifiesto de pasajeros · Viaje {trip.pk}",
         "can_manage": can_manage_operations(request.user),
         "trip": trip,
         "rows": rows,
         "summaries": summaries,
-        "boarded_count": boarded_count,
-        "pending_count": pending_count,
         "print_mode": print_mode,
         "display_timezone": settings.TIME_ZONE,
     })
@@ -213,5 +195,5 @@ def trip_manifest_print(request, trip_pk):
 @operations_access(write=True)
 @require_GET
 def trip_manifest_csv(request, trip_pk):
-    trip, rows, _, _, _ = _manifest_data(trip_pk)
+    trip, rows, _ = _manifest_data(trip_pk)
     return _csv_response(trip, rows)

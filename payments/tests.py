@@ -43,7 +43,7 @@ from payments.storage import (
     validate_voucher_file,
     voucher_upload_path,
 )
-from cash_register.services import open_cash
+from cash_register.models import CashSession
 from cash_register.models import CashMovement
 from sales.exceptions import BookingExpiredError, InvalidBookingError
 from sales.models import (
@@ -89,7 +89,7 @@ class PaymentsBaseTestCase(TestCase):
         self.staff_user = User.objects.create_user(username="staff_only", password="password123", is_staff=True)
         self.common_user = User.objects.create_user(username="common_user", password="password123")
         self.superuser = User.objects.create_superuser(username="super_user", password="password123")
-        open_cash(operator=self.seller_user, opening_amount=Decimal("0.00"))
+        CashSession.objects.create(opened_by=self.seller_user, opening_amount=Decimal("0.00"), status=CashSession.Status.OPEN)
 
         # Estructura operativa mínima
         self.stop_cba = Stop.objects.create(name="Córdoba Capital", code="CBA")
@@ -400,52 +400,16 @@ class PaymentModelAndStorageTests(PaymentsBaseTestCase):
 class PaymentServicesTests(PaymentsBaseTestCase):
     """Pruebas exhaustivas de register_cash_payment, register_transfer_payment y review_transfer_payment."""
 
-    def test_register_cash_payment_success(self):
+    def test_register_cash_payment_is_disabled(self):
         booking = self.create_held_manual_booking()
-        self.assertEqual(booking.status, BookingStatus.HELD)
-
-        payment = register_cash_payment(
-            booking_or_id=booking,
-            seller=self.seller_user,
-            reference="Cobro en ventanilla 1",
-        )
-
-        self.assertEqual(payment.status, PaymentStatus.APPROVED)
-        self.assertEqual(payment.method, PaymentMethod.CASH)
-        self.assertEqual(payment.amount, Decimal("15000.00"))
-        self.assertEqual(payment.registered_by, self.seller_user)
-        self.assertEqual(payment.reviewed_by, self.seller_user)
-        self.assertIsNotNone(payment.reviewed_at)
-        self.assertEqual(CashMovement.objects.filter(payment=payment).count(), 1)
-        self.assertEqual(CashMovement.objects.get(payment=payment).amount, payment.amount)
-
-        # Reserva y butacas confirmadas atómicamente
-        booking.refresh_from_db()
-        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
-        self.assertIsNotNone(booking.confirmed_at)
-        self.assertEqual(
-            booking.legs.first().seat_assignments.first().status,
-            AssignmentStatus.CONFIRMED,
-        )
-
-        # Auditoría registrada en panel.AuditEvent
-        audit_p = AuditEvent.objects.filter(entity_type=Payment._meta.label, entity_id=str(payment.pk))
-        self.assertEqual(audit_p.count(), 1)
-        self.assertEqual(audit_p.first().action, AuditEvent.Action.CREATE)
-
-        audit_b = AuditEvent.objects.filter(entity_type=booking._meta.label, entity_id=str(booking.pk), action=AuditEvent.Action.UPDATE)
-        self.assertTrue(audit_b.exists())
-
-    def test_register_cash_payment_server_side_amount_calculation(self):
-        # Reserva con dos butacas (cama 15000 + semicama 10000 = 25000)
-        booking = self.create_held_manual_booking(seats=[self.seat_cama_1, self.seat_semi_2])
-        self.assertEqual(calculate_booking_total(booking), Decimal("25000.00"))
-
-        payment = register_cash_payment(
-            booking_or_id=booking,
-            seller=self.seller_user,
-        )
-        self.assertEqual(payment.amount, Decimal("25000.00"))
+        with self.assertRaises(ValidationError) as ctx:
+            register_cash_payment(
+                booking_or_id=booking,
+                seller=self.seller_user,
+                reference="Cobro en ventanilla 1",
+            )
+        self.assertIn("deshabilitado", str(ctx.exception).lower())
+        self.assertEqual(Payment.objects.filter(booking=booking).count(), 0)
 
     def test_unpaid_held_booking_keeps_original_snapshot_when_departure_fare_changes(self):
         # Reserva manual impaga creada con CAMA=15000 y SEMI_CAMA=10000 (total 25000)
@@ -460,36 +424,8 @@ class PaymentServicesTests(PaymentsBaseTestCase):
 
         # La reserva existente pendiente de pago conserva su snapshot original de 25000.00
         self.assertEqual(calculate_booking_total(booking), Decimal("25000.00"))
-        payment = register_cash_payment(booking_or_id=booking, seller=self.seller_user)
+        payment = register_transfer_payment(booking_or_id=booking, seller=self.seller_user, voucher=self.sample_pdf_voucher())
         self.assertEqual(payment.amount, Decimal("25000.00"))
-
-    def test_register_cash_payment_rejects_expired_booking(self):
-        booking = self.create_held_manual_booking(hours_held=-1)  # ya vencida
-        with self.assertRaises(BookingExpiredError):
-            register_cash_payment(booking_or_id=booking, seller=self.seller_user)
-
-        booking.refresh_from_db()
-        self.assertEqual(booking.status, BookingStatus.EXPIRED)
-        self.assertEqual(booking.legs.first().seat_assignments.first().status, AssignmentStatus.RELEASED)
-        self.assertEqual(Payment.objects.filter(booking=booking).count(), 0)
-
-    def test_register_cash_payment_rejects_online_booking(self):
-        booking = Booking.objects.create(
-            channel=BookingChannel.ONLINE,
-            status=BookingStatus.HELD,
-            email="online@correo.com",
-            expires_at=timezone.now() + timedelta(minutes=15),
-        )
-        with self.assertRaises(InvalidBookingError):
-            register_cash_payment(booking_or_id=booking, seller=self.seller_user)
-
-    def test_register_cash_payment_rejects_already_confirmed_or_released(self):
-        booking = self.create_held_manual_booking()
-        register_cash_payment(booking_or_id=booking, seller=self.seller_user)
-
-        # Intento de segundo cobro sobre reserva ya confirmada
-        with self.assertRaises(InvalidBookingError):
-            register_cash_payment(booking_or_id=booking, seller=self.seller_user)
 
     def test_register_transfer_payment_success(self):
         booking = self.create_held_manual_booking()
@@ -539,7 +475,7 @@ class PaymentServicesTests(PaymentsBaseTestCase):
                 voucher=self.sample_image_voucher(),
             )
 
-        with self.assertRaises(PaymentDuplicateError):
+        with self.assertRaises(ValidationError):
             register_cash_payment(
                 booking_or_id=booking,
                 seller=self.seller_user,
@@ -672,7 +608,7 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
 
         self.seller = User.objects.create_user(username="pg_seller", password="password123")
         self.seller.groups.add(self.seller_group)
-        open_cash(operator=self.seller, opening_amount=Decimal("0.00"))
+        CashSession.objects.create(opened_by=self.seller, opening_amount=Decimal("0.00"), status=CashSession.Status.OPEN)
 
         self.admin = User.objects.create_user(username="pg_admin", password="password123")
         self.admin.groups.add(self.admin_group)
@@ -771,8 +707,7 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
 
     def test_postgres_concurrent_cash_payments_serialization(self):
         """Dos transacciones concurrentes intentan registrar pago en efectivo para la misma reserva.
-        Gracias al bloqueo select_for_update() en Booking, una se ejecuta primero y la segunda falla
-        con InvalidBookingError (o PaymentDuplicateError)."""
+        Ambas son rechazadas porque los nuevos pagos en efectivo se encuentran deshabilitados."""
         barrier = threading.Barrier(2)
         results = []
         errors = []
@@ -796,9 +731,9 @@ class PaymentsPostgresConcurrencyTests(TransactionTestCase):
 
         self.assertFalse(t1.is_alive())
         self.assertFalse(t2.is_alive())
-        self.assertEqual(len(results), 1, "Solo un pago en efectivo debe concretarse")
-        self.assertEqual(len(errors), 1, "El segundo hilo debe haber fallado")
-        self.assertEqual(Payment.objects.filter(booking=self.booking, status=PaymentStatus.APPROVED).count(), 1)
+        self.assertEqual(len(results), 0)
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(all(isinstance(e, ValidationError) for e in errors))
 
 
 class PublicTransferPaymentTests(PaymentsBaseTestCase):

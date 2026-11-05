@@ -4,6 +4,7 @@ from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import OuterRef, Prefetch, Subquery
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -206,3 +207,16 @@ def fare_state(request, trip_pk, pk, active):
     else:
         messages.success(request, "Estado de la tarifa actualizado." if changed else "La tarifa ya tenía ese estado.")
     return redirect("panel:trip_detail", pk=trip_pk)
+
+
+@operations_access(write=True)
+@require_GET
+def trip_passenger_list_pdf(request, trip_pk):
+    trip = get_object_or_404(Trip.objects.select_related("route", "bus"), pk=trip_pk)
+    from .passenger_list_pdf import generate_passenger_list_pdf
+
+    pdf_bytes = generate_passenger_list_pdf(trip)
+    filename = f"listado-pasajeros-viaje-{trip.pk}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response

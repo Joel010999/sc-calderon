@@ -7,13 +7,10 @@ from . import payment_views as payments
 from . import fulfillment_views as fulfillment
 from . import report_views as reports
 from . import manifest_views as manifests
-from . import boarding_views as boarding
 from . import inbox_views as inbox
 from . import notification_views as notifications
 from . import customer_views as customers
 from . import audit_views as audit
-from . import cash_views as cash
-from . import cash_report_views as cash_reports
 from . import staff_views as staff
 from . import route_urls
 
@@ -28,28 +25,16 @@ urlpatterns = [
     path('reservas/<uuid:public_id>/', reservations.booking_detail, name='booking_detail'),
     path('reservas/<uuid:public_id>/reintentar-pasajes/', reservations.booking_fulfillment_retry, name='booking_fulfillment_retry'),
     path('reservas/<uuid:public_id>/liberar/', reservations.booking_release, name='booking_release'),
-    path('reservas/<uuid:public_id>/pagar-efectivo/', payments.booking_pay_cash, name='booking_pay_cash'),
     path('reservas/<uuid:public_id>/pagar-transferencia/', payments.booking_pay_transfer, name='booking_pay_transfer'),
     path('pagos/', payments.payment_list, name='payment_list'),
     path('pagos/transferencias-pendientes/', payments.pending_transfers, name='pending_transfers'),
     path('pagos/<uuid:public_id>/', payments.payment_detail, name='payment_detail'),
     path('pagos/<uuid:public_id>/revisar/', payments.transfer_review, name='transfer_review'),
     path('pagos/<uuid:public_id>/comprobante/', payments.download_voucher, name='payment_voucher'),
-    path('caja/', cash.cash_detail, name='cash_detail'),
-    path('caja/<int:session_pk>/', cash.cash_session_detail, name='cash_session_detail'),
-    path('caja/abrir/', cash.cash_open, name='cash_open'),
-    path('caja/cerrar/', cash.cash_close, name='cash_close'),
-    path('caja/ajuste/', cash.cash_adjustment, name='cash_adjustment'),
-    path('reportes/caja/', cash_reports.cash_report, name='cash_report'),
-    path('reportes/caja.csv', cash_reports.cash_report_csv, name='cash_report_csv'),
-    path('reportes/caja/<int:session_pk>/', cash_reports.cash_report_detail, name='cash_report_detail'),
-    path('reportes/caja/<int:session_pk>/revisar/', cash_reports.cash_report_review, name='cash_report_review'),
     path('fulfillment/', fulfillment.fulfillment_list, name='fulfillment_list'),
     path('fulfillment/reconciliar/', fulfillment.fulfillment_reconcile, name='fulfillment_reconcile'),
     path('reportes/ventas/', reports.sales_report, name='sales_report'),
     path('reportes/ventas.csv', reports.sales_report_csv, name='sales_report_csv'),
-    path('embarques/', boarding.boarding_validate, name='boarding_validate'),
-    path('embarques/<int:record_pk>/revertir/', boarding.boarding_reverse, name='boarding_reverse'),
     path('bandeja-operativa/', inbox.operational_inbox, name='operational_inbox'),
     path('notificaciones/<int:notification_pk>/reintentar/', notifications.notification_retry, name='notification_retry'),
     path('clientes/', customers.customer_list, name='customer_list'),
@@ -71,6 +56,7 @@ urlpatterns = [
     path('operaciones/viajes/<int:trip_pk>/iniciar/confirmar/', trips.trip_start_confirm, name='trip_start_confirm'),
     path('operaciones/viajes/<int:trip_pk>/iniciar/', trips.trip_start, name='trip_start'),
     path('operaciones/viajes/<int:trip_pk>/finalizar/', trips.trip_complete, name='trip_complete'),
+    path('operaciones/viajes/<int:trip_pk>/listado-pasajeros.pdf', trips.trip_passenger_list_pdf, name='trip_passenger_list_pdf'),
     path('operaciones/viajes/<int:trip_pk>/manifiesto/', manifests.trip_manifest, name='trip_manifest'),
     path('operaciones/viajes/<int:trip_pk>/manifiesto/impresion/', manifests.trip_manifest_print, name='trip_manifest_print'),
     path('operaciones/viajes/<int:trip_pk>/manifiesto.csv', manifests.trip_manifest_csv, name='trip_manifest_csv'),

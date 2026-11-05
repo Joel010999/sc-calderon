@@ -255,41 +255,7 @@ def transfer_review(request, public_id):
 @payments_access()
 @require_POST
 def booking_pay_cash(request, public_id):
-    """Registra pago en efectivo para una reserva HELD y la confirma atómicamente.
-
-    No confía en importes del formulario; calcula server-side y revalida.
-    """
-    booking = get_object_or_404(_visible_bookings(request.user), public_id=public_id)
-
-    if booking.status != BookingStatus.HELD:
-        messages.error(
-            request,
-            f"No se puede registrar pago para una reserva en estado {booking.get_status_display()}.",
-        )
-        return redirect("panel:booking_detail", public_id=booking.public_id)
-
-    reference = request.POST.get("reference", "").strip()
-
-    try:
-        payment = register_cash_payment(
-            booking_or_id=booking,
-            seller=request.user,
-            reference=reference,
-        )
-        messages.success(
-            request,
-            f"Pago en efectivo registrado por $ {payment.amount}. La reserva ha sido confirmada exitosamente.",
-        )
-        return redirect("panel:booking_detail", public_id=booking.public_id)
-    except BookingExpiredError as exc:
-        messages.error(request, f"No se pudo registrar el pago: {exc}")
-    except (PaymentDuplicateError, InvalidBookingError, ValidationError, PaymentError) as exc:
-        messages.error(request, f"Error al registrar cobro: {exc}")
-    except Exception as exc:
-        messages.error(request, f"Ocurrió un error inesperado: {exc}")
-
-    return redirect("panel:booking_detail", public_id=booking.public_id)
-
+    raise ValidationError("El registro de nuevos pagos en efectivo ha sido deshabilitado.")
 
 @payments_access()
 @require_POST

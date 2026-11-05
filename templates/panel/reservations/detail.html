@@ -92,21 +92,7 @@
                 </div>
             {% else %}
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 1rem;">
-                    <!-- Cobro en Efectivo -->
-                    <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.25rem; background: #fafafa;">
-                        <h3 style="margin-top: 0; font-size: 1.1rem; color: #111827;">Cobro en Efectivo</h3>
-                        <p class="muted" style="font-size: 0.875rem; margin-bottom: 1rem;">Registra el cobro total en efectivo y confirma la reserva inmediatamente.</p>
-                        <form method="post" action="{% url 'panel:booking_pay_cash' booking.public_id %}" onsubmit="return confirm('¿Confirmás el cobro de ${{ total|unlocalize }} en efectivo y la confirmación inmediata de la reserva?');">
-                            {% csrf_token %}
-                            <div class="form-group" style="margin-bottom: 1rem;">
-                                <label for="cash_reference" class="form-label" style="display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem;">Referencia / Notas (opcional):</label>
-                                <input type="text" id="cash_reference" name="reference" class="form-input" placeholder="Ej. Cobro en boletería central" maxlength="255" style="width: 100%; box-sizing: border-box;">
-                            </div>
-                            <button type="submit" class="ops-button primary" style="width: 100%;">
-                                Confirmar cobro en efectivo ($ {{ total|unlocalize }})
-                            </button>
-                        </form>
-                    </div>
+
 
                     <!-- Transferencia Bancaria -->
                     <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.25rem; background: #fafafa;">

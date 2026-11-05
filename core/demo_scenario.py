@@ -16,9 +16,9 @@ from customers.services import register_customer
 from notifications.models import NotificationStatus, TransactionalNotification
 from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, Trip, TripFare
 from operations.services import schedule_trip
-from payments.models import PaymentStatus
-from payments.services import initiate_public_transfer_payment, register_cash_payment, register_transfer_payment, review_transfer_payment
-from cash_register.services import current_cash, open_cash
+from cash_register.models import CashMovement, CashSession
+from payments.models import Payment, PaymentMethod, PaymentStatus
+from payments.services import calculate_booking_total, initiate_public_transfer_payment, register_transfer_payment, review_transfer_payment
 from sales.models import AssignmentStatus, Booking, BookingChannel, BookingStatus, SeatAssignment
 from sales.services import create_manual_booking, create_online_booking
 from tickets.models import BoardingRecord, BoardingStatus, FulfillmentEmailStatus, FulfillmentIssueStatus, Ticket, TicketFulfillment
@@ -116,8 +116,13 @@ def seed_demo(*, dry_run=False):
     now = timezone.now()
     admin = _user("admin", f"admin@{DEMO_DOMAIN}", "Administrador")
     seller = _user("vendedor", f"vendedor@{DEMO_DOMAIN}", "Vendedor")
-    if not current_cash(operator=seller):
-        open_cash(operator=seller, opening_amount=Decimal("0.00"))
+    session = CashSession.objects.filter(opened_by=seller).first()
+    if not session:
+        session = CashSession.objects.create(
+            opened_by=seller,
+            opening_amount=Decimal("0.00"),
+            status=CashSession.Status.OPEN,
+        )
     customer = Customer.objects.filter(normalized_email=f"cliente@{DEMO_DOMAIN}").first()
     if not customer:
         customer = register_customer(f"cliente@{DEMO_DOMAIN}", os.getenv("DEMO_CUSTOMER_PASSWORD") or secrets.token_urlsafe(32), "Cliente Demo", "Sintetico", commercial_consent=True)
@@ -157,7 +162,35 @@ def seed_demo(*, dry_run=False):
     CustomerBooking.objects.get_or_create(customer=customer, booking=confirmed)
     manual = _booking(f"cash@{DEMO_DOMAIN}", trip_back, 2, channel=BookingChannel.MANUAL, seller=seller, now=now)
     if manual.status != BookingStatus.CONFIRMED:
-        register_cash_payment(booking_or_id=manual, seller=seller, reference="demo-cash", now=now)
+        manual.status = BookingStatus.CONFIRMED
+        manual.confirmed_at = now
+        manual.save(update_fields=["status", "confirmed_at", "updated_at"])
+        SeatAssignment.objects.filter(leg__booking=manual).update(status=AssignmentStatus.CONFIRMED, updated_at=now)
+        amount = calculate_booking_total(manual)
+        payment, _ = Payment.objects.get_or_create(
+            booking=manual,
+            defaults={
+                "method": PaymentMethod.CASH,
+                "status": PaymentStatus.APPROVED,
+                "amount": amount,
+                "currency": "ARS",
+                "reference": "demo-cash",
+                "registered_by": seller,
+                "reviewed_by": seller,
+                "reviewed_at": now,
+            },
+        )
+        CashMovement.objects.get_or_create(
+            session=session,
+            payment=payment,
+            defaults={
+                "kind": CashMovement.Kind.CASH_SALE,
+                "amount": amount,
+                "created_by": seller,
+                "reference": "demo-cash",
+                "idempotency_key": f"demo-cash:{manual.pk}",
+            },
+        )
     expired = _booking(f"expired@{DEMO_DOMAIN}", trip_out, 5, now=now - timedelta(days=1))
     if expired.status != BookingStatus.EXPIRED:
         expired.status, expired.expires_at = BookingStatus.EXPIRED, now - timedelta(minutes=1)
