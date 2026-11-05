@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import Client, TestCase
+from django.utils import timezone
 
 from cash_register.models import CashMovement, CashSession
 from cash_register.report_services import build_cash_report
@@ -26,6 +27,8 @@ class CashReportDisabledTests(TestCase):
             status=CashSession.Status.CLOSED,
             closing_amount=Decimal("112.00"),
             expected_amount=Decimal("115.00"),
+            closed_by=self.seller,
+            closed_at=timezone.now(),
         )
         self.movement = CashMovement.objects.create(
             session=self.seller_session,
@@ -52,6 +55,6 @@ class CashReportDisabledTests(TestCase):
 
     def test_historical_cash_data_queryable_via_services(self):
         report = build_cash_report({}, self.admin)
-        self.assertIn("page", report)
-        session_ids = [item.pk for item in report["page"].object_list]
+        self.assertIn("sessions", report)
+        session_ids = [item.pk for item in report["sessions"]]
         self.assertIn(self.seller_session.pk, session_ids)

@@ -119,7 +119,8 @@ class SalesReportTests(TestCase):
         cash_booking = self.booking(seller=self.seller, status=BookingStatus.HELD, passengers=2, legs=2,
                                     confirmed_at=self.local(2026, 9, 10))
         cash_booking.status = BookingStatus.CONFIRMED
-        cash_booking.save(update_fields=["status", "updated_at"])
+        cash_booking.confirmed_at = self.local(2026, 9, 10)
+        cash_booking.save(update_fields=["status", "confirmed_at", "updated_at"])
         SeatAssignment.objects.filter(leg__booking=cash_booking).update(status=AssignmentStatus.CONFIRMED, updated_at=cash_booking.confirmed_at)
         cash = self.approved_payment(cash_booking, PaymentMethod.CASH, Decimal("2000.00"))
         CashMovement.objects.create(
@@ -307,7 +308,8 @@ class SalesReportTests(TestCase):
             accompanied_by=adult,
         )
         booking.status = BookingStatus.CONFIRMED
-        booking.save(update_fields=["status", "updated_at"])
+        booking.confirmed_at = self.local(2026, 9, 10)
+        booking.save(update_fields=["status", "confirmed_at", "updated_at"])
         SeatAssignment.objects.filter(leg__booking=booking).update(status=AssignmentStatus.CONFIRMED, updated_at=booking.confirmed_at)
         cash = self.approved_payment(booking, PaymentMethod.CASH, Decimal("1000.00"))
         CashMovement.objects.create(

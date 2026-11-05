@@ -9,6 +9,7 @@ import tempfile
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -313,7 +314,8 @@ class PanelPaymentsTestCase(TestCase):
         # Crear dos pagos: uno en efectivo histórico y uno transferencia en revisión
         b1 = self.create_booking(email="carlos@correo.com")
         b1.status = BookingStatus.CONFIRMED
-        b1.save(update_fields=["status", "updated_at"])
+        b1.confirmed_at = timezone.now()
+        b1.save(update_fields=["status", "confirmed_at", "updated_at"])
         p1 = Payment.objects.create(
             booking=b1,
             method=PaymentMethod.CASH,
@@ -490,7 +492,8 @@ class PanelPaymentsTestCase(TestCase):
         # 1. Pago en efectivo aprobado histórico (12000)
         b1 = self.create_booking(email="cash@correo.com")
         b1.status = BookingStatus.CONFIRMED
-        b1.save(update_fields=["status", "updated_at"])
+        b1.confirmed_at = timezone.now()
+        b1.save(update_fields=["status", "confirmed_at", "updated_at"])
         Payment.objects.create(
             booking=b1,
             method=PaymentMethod.CASH,

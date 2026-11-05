@@ -1,12 +1,13 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.test import TransactionTestCase
 from django.utils import timezone
 
 from sales.models import AssignmentStatus
 from sales.services import confirm_booking, create_online_booking
-from tickets.boarding import BoardingCode, validate_boarding
+from tickets.boarding import validate_boarding
 from tickets.services import issue_tickets_for_booking
 from tickets.tests import TicketBaseMixin
 
@@ -80,11 +81,11 @@ class MinorTicketIssuanceTests(TicketBaseMixin, TransactionTestCase):
         )
 
         outbound_infant_ticket = next(t for t in infant_tickets if t.leg.trip_id == self.trip_ida.pk)
-        outcome = validate_boarding(
-            outbound_infant_ticket.ticket_code,
-            self.trip_ida.pk,
-            self.seller_user,
-            now=purchase_at + timedelta(days=2),
-        )
-        self.assertEqual(outcome.code, BoardingCode.VALID)
-        self.assertIsNone(outcome.record.seat_assignment)
+        with self.assertRaises(ValidationError) as ctx:
+            validate_boarding(
+                outbound_infant_ticket.ticket_code,
+                self.trip_ida.pk,
+                self.seller_user,
+                now=purchase_at + timedelta(days=2),
+            )
+        self.assertIn("deshabilitado", str(ctx.exception).lower())

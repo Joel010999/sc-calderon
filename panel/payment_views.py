@@ -19,7 +19,6 @@ from payments.exceptions import (
 )
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import (
-    register_cash_payment,
     register_transfer_payment,
     review_transfer_payment,
 )

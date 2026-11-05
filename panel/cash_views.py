@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET, require_POST
@@ -13,7 +11,6 @@ from .permissions import can_manage_operations, payments_access
 @require_GET
 def cash_detail(request):
     is_admin = can_manage_operations(request.user)
-    session = None
     if is_admin:
         sessions = CashSession.objects.select_related(
             "opened_by", "closed_by",

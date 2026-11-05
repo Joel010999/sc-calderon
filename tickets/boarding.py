@@ -1,22 +1,12 @@
 """Reglas transaccionales para validar y revertir embarques."""
 
-import hashlib
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlparse
 
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError, transaction
-from django.utils import timezone
-
-from operations.models import Trip
-from sales.models import AssignmentStatus, BookingStatus
+from django.core.exceptions import ValidationError
 
 from .models import (
     BoardingRecord,
-    BoardingStatus,
     Ticket,
-    TicketAuditEvent,
-    TicketStatus,
 )
 
 
@@ -51,68 +41,6 @@ class BoardingOutcome:
     @property
     def is_success(self):
         return self.code == BoardingCode.VALID
-
-
-def _require_validator(operator):
-    if not getattr(operator, "is_authenticated", False) or not getattr(operator, "is_active", False):
-        raise PermissionDenied("Solo un operador autorizado puede validar embarques.")
-    if not (
-        getattr(operator, "is_superuser", False)
-        or operator.groups.filter(name__in=["Administrador", "Vendedor"]).exists()
-    ):
-        raise PermissionDenied("Solo Administrador y Vendedor pueden validar embarques.")
-
-
-def _require_administrator(operator):
-    if not getattr(operator, "is_authenticated", False) or not getattr(operator, "is_active", False):
-        raise PermissionDenied("Solo un administrador puede revertir embarques.")
-    if not (
-        getattr(operator, "is_superuser", False)
-        or operator.groups.filter(name="Administrador").exists()
-    ):
-        raise PermissionDenied("Solo Administrador puede revertir embarques.")
-
-
-def _scan_kind(value: str):
-    """Devuelve ``("token", token)`` o ``("code", ticket_code)`` sin persistir el secreto."""
-    value = (value or "").strip()
-    if not value or len(value) > 2048:
-        return None, None
-
-    parsed = urlparse(value)
-    if parsed.scheme and parsed.netloc:
-        if parsed.path.rstrip("/") != "/tickets/verify":
-            return None, None
-        token = parse_qs(parsed.query).get("token", [""])[0].strip()
-        return ("token", token) if token else (None, None)
-
-    upper = value.upper()
-    if upper.startswith("TK-") or upper.startswith("AAA-"):
-        return "code", upper
-        return "code", value.upper()
-    return "token", value
-
-
-def _find_ticket(scan_value):
-    kind, value = _scan_kind(scan_value)
-    if not value:
-        return None
-    # `seat_assignment` es nullable para menores gratuitos. En PostgreSQL un
-    # FOR UPDATE implícito sobre todo el queryset no puede bloquear el lado
-    # nullable del LEFT JOIN; el ticket es la fila que debe serializarse.
-    queryset = Ticket.objects.select_for_update(of=("self",)).select_related(
-        "booking",
-        "leg",
-        "passenger",
-        "seat_assignment",
-        "seat_assignment__leg",
-        "seat_assignment__passenger",
-        "seat_assignment__trip",
-    )
-    if kind == "code":
-        return queryset.filter(ticket_code=value).first()
-    token_hash = hashlib.sha256(value.encode("utf-8")).hexdigest()
-    return queryset.filter(verification_token_hash=token_hash).first()
 
 
 def validate_boarding(scan_value, selected_trip_id, operator, now=None):

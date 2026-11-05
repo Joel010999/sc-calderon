@@ -60,6 +60,19 @@ Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base 
     - Preservación interna de tokens de verificación (`verification_token_hash`) y descarga (`download_token_hash`), manteniendo operativa la validación de embarque interna en `/panel/embarques/` (`tickets.BoardingRecord`).
     - Numeración persistente correlativa mediante el modelo `TicketSequence` con bloqueo `select_for_update()`, formato `AAA-000000001` en adelante para emisiones reales (`AAA-000000000` en plantilla vacía), replicada exactamente en ambos talones.
     - Snapshot inmutable de datos productivos, vendedor (omitido en web), medio de pago, horarios por parada y condiciones generales reproducidas en dos columnas.
+11. **Retiro operativo de Caja y Efectivo**:
+    - Endpoints operativos `/panel/caja/` y `/panel/caja/reporte-diario/` deshabilitados (404).
+    - Nuevas operaciones de apertura, cierre, arqueo y cobros en efectivo rechazadas con `ValidationError`. Opciones de efectivo removidas de ventas.
+    - Modelos históricos, registros contables previos y auditoría preservados para consultas autorizadas. Transferencias bancarias y emisión automática plenamente vigentes.
+12. **Retiro de Control de Embarque**:
+    - Acción "Validar embarque", rutas `/panel/embarques/` y servicios de validación/reversión deshabilitados (`ValidationError`).
+    - Contadores e insignias de estado de embarque removidos de pantallas operativas de viaje.
+    - Datos históricos preservados; inicio y finalización de viajes habilitados para administradores sin requerir embarque.
+13. **Listado Provisional de Pasajeros en PDF**:
+    - Descarga exclusiva para Administradores y Superusuarios desde el detalle del viaje (403 para vendedores).
+    - Generación A4 apaisada con ReportLab, paginación "Página X de Y", cabeceras de tabla repetidas por página (`repeatRows=1`), y encabezado superior desde la página 2.
+    - Inclusión estricta de reservas confirmadas (excluye retenidas, liberadas y vencidas), deduplicación de joins y vinculación de menores en falda con la butaca de la madre.
+    - Rotulado de uso interno provisional (no homologado, no CNRT, sin códigos visuales ni estados de embarque).
 
 ---
 

@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from cash_register.models import CashSession
 from panel.report_services import build_sales_report
-from payments.models import Payment, PaymentMethod
+from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import calculate_booking_total
 from sales.minors import MINOR_FREE_AGE_YEARS, is_free_lap_infant, required_seat_count
 from sales.models import AssignmentStatus, Booking, BookingStatus, SeatAssignment

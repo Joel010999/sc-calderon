@@ -66,7 +66,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFont("Helvetica", 7.5)
         footer_left = (
             "SC Viajes · Listado provisional de pasajeros de uso interno exclusivo · "
-            "No homologado / No CNRT · Prohibida su exhibición oficial"
+            "NO HOMOLOGADO / NO CNRT · Prohibida su exhibición oficial"
         )
         footer_right = f"Página {self._pageNumber} de {page_count}"
         self.drawString(36, 20, footer_left)
@@ -288,7 +288,7 @@ def generate_passenger_list_pdf(trip) -> bytes:
     story.append(Spacer(1, 3))
     story.append(
         Paragraph(
-            "DOCUMENTO DE CONTROL INTERNO — LISTADO PROVISIONAL NO HOMOLOGADO (NO VÁLIDO COMO MANIFIESTO CNRT)",
+            "DOCUMENTO DE CONTROL INTERNO — LISTADO PROVISIONAL NO HOMOLOGADO — NO CNRT (NO VÁLIDO COMO MANIFIESTO OFICIAL)",
             badge_style,
         )
     )

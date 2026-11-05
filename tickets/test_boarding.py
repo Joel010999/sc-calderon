@@ -47,7 +47,7 @@ class BoardingDisabledServiceTests(TicketBaseMixin, TransactionTestCase):
         self.assertEqual(record.status, BoardingStatus.ACTIVE)
 
     def test_historical_boarding_records_and_audit_preserved(self):
-        record = BoardingRecord.objects.create(
+        BoardingRecord.objects.create(
             ticket=self.ticket,
             passenger=self.ticket.passenger,
             trip=self.trip_ida,
