@@ -13,7 +13,7 @@ Valida:
 10. Navegación de recorridos dentro de Viajes.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
 import io
 import shutil
@@ -280,21 +280,45 @@ class IntegrationVentasRecorridosTests(TestCase):
     # 6. Cálculo de vencimiento: medianoche vs salida inicial menos una hora
     def test_expiration_calculation_rules(self):
         """Regla (3): expires_at = min(medianoche AR al final del día de compra, 1h antes de salida inicial)."""
-        now = timezone.now()
-        now_ar = now.astimezone(AR_TZ)
-        midnight_ar = datetime.combine(now_ar.date() + timedelta(days=1), time(0, 0, 0), tzinfo=AR_TZ)
+        # Fixture fijo a las 14:00 AR para desacoplar la prueba de la hora real de ejecución.
+        fixed_now = datetime(2026, 11, 4, 14, 0, 0, tzinfo=AR_TZ)
+        midnight_ar = datetime(2026, 11, 5, 0, 0, 0, tzinfo=AR_TZ)
 
         # Caso A: Viaje dentro de 3 días -> menor es medianoche AR
-        exp_a = calculate_internal_transfer_expiration([self.trip_future], reference_now=now)
+        dep_future = fixed_now + timedelta(days=3)
+        trip_future = Trip.objects.create(
+            route=self.route, bus=self.bus, departure_at=dep_future, status=Trip.Status.SCHEDULED
+        )
+        exp_a = calculate_internal_transfer_expiration([trip_future], reference_now=fixed_now)
         self.assertEqual(exp_a, midnight_ar)
 
-        # Caso B: Viaje hoy dentro de 3 horas -> menor es salida inicial menos 1h
-        dep_today = now + timedelta(hours=3)
+        # Caso B: Viaje hoy dentro de 3 horas (14:00 + 3h = 17:00, 1h antes = 16:00 < medianoche)
+        # -> menor es salida inicial menos 1h
+        dep_today = fixed_now + timedelta(hours=3)
         trip_today = Trip.objects.create(
             route=self.route, bus=self.bus, departure_at=dep_today, status=Trip.Status.SCHEDULED
         )
-        exp_b = calculate_internal_transfer_expiration([trip_today], reference_now=now)
+        exp_b = calculate_internal_transfer_expiration([trip_today], reference_now=fixed_now)
         self.assertEqual(exp_b, dep_today - timedelta(hours=1))
+        self.assertEqual(exp_b, datetime(2026, 11, 4, 16, 0, 0, tzinfo=AR_TZ))
+
+        # Caso C (Regresión límite nocturno): Compra cerca de las 22:00 AR (ej. 22:15 AR) con viaje en 3 horas (01:15 AR del día siguiente).
+        # 1h antes de salida inicial es 00:15 AR del día siguiente, por lo que la medianoche local exacta
+        # (00:00 AR) es menor y resulta ser el vencimiento correcto.
+        # Valida además equivalencia exacta de instantes entre UTC y Argentina.
+        late_now_ar = datetime(2026, 11, 4, 22, 15, 0, tzinfo=AR_TZ)
+        late_now_utc = late_now_ar.astimezone(dt_timezone.utc)  # 2026-11-05 01:15:00 UTC
+        dep_late = late_now_ar + timedelta(hours=3)          # 2026-11-05 01:15:00 AR_TZ
+        trip_late = Trip.objects.create(
+            route=self.route, bus=self.bus, departure_at=dep_late, status=Trip.Status.SCHEDULED
+        )
+        exp_c_ar = calculate_internal_transfer_expiration([trip_late], reference_now=late_now_ar)
+        exp_c_utc = calculate_internal_transfer_expiration([trip_late], reference_now=late_now_utc)
+
+        self.assertEqual(exp_c_ar, midnight_ar)
+        self.assertEqual(exp_c_utc, midnight_ar)
+        self.assertEqual(exp_c_ar.astimezone(dt_timezone.utc), datetime(2026, 11, 5, 3, 0, 0, tzinfo=dt_timezone.utc))
+        self.assertLess(exp_c_ar, dep_late - timedelta(hours=1))
 
     # 7. Venta en la última hora: comprobante obligatorio y pago verificado
     def test_last_hour_sales_enforcement_via_http(self):

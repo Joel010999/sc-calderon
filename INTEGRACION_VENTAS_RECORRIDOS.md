@@ -73,8 +73,11 @@ Ambas funcionalidades quedaron plenamente operativas y armonizadas, resolviendo 
    - `python manage.py test panel.test_integration_ventas_recorridos panel.test_routes panel.test_reservations panel.test_payments sales.test_internal_transfer panel.test_manifest panel.test_trips panel.test_operations`
    - **Resultado**: 206/206 pruebas exitosas en 94.275s (código de salida 0).
 3. **Suite Completa del Proyecto**:
-   - `python manage.py test`
-   - **Resultado**: 662 pruebas exitosas (8 skipped por aislamiento PostgreSQL) en 549.378s (código de salida 0).
+   - **Validación reproducible (SHA `f9b809442c61097d4a3c0e85795050f490ff5f2f`)**:
+     - Ejecución: `python -u manage.py test --verbosity 2` con SQLite temporal en memoria, `EMAIL_BACKEND` locmem y storage externo temporal.
+     - Resultado: 674 descubiertas, 0 fallas, 8 skips, OK (código de salida 0).
+   - **Corrección de reporte previo (662 pruebas)**:
+     - El informe inicial de 662 pruebas queda marcado como **no verificable** por falta de log bruto/configuración.
 4. **Linter Ruff**:
    - `python -m ruff check`
    - **Resultado**: `All checks passed!` (0 errores).
