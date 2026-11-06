@@ -179,6 +179,9 @@ def _draw_text_auto(
 
 def _resolve_seat_display(data: TicketData) -> str:
     if data.is_lap_infant:
+        companion_seat = getattr(data, "companion_seat_number", "").strip()
+        if companion_seat:
+            return f"Sin asiento propio. Butaca de referencia del acompañante: {companion_seat}"
         return "Sin butaca"
     raw = str(data.seat_number or "").strip()
     if not raw or raw.lower() == "none":
@@ -269,7 +272,10 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
         _draw_text_auto(c, arr_dt, 311.2, 708.0, max_width=160, font_size=7.0)
 
         seat_str = _resolve_seat_display(data)
-        _draw_text_auto(c, seat_str, 525.4, 708.0, max_width=75, font_size=8.5, align="center", bold=True)
+        if seat_str.startswith("Sin asiento propio"):
+            _draw_text_box(c, seat_str, 525.4, 717.0, max_width=76.0, max_height=16.0, font_size=5.4, leading=5.0, align="center", bold=True)
+        else:
+            _draw_text_auto(c, seat_str, 525.4, 708.0, max_width=75, font_size=8.5, align="center", bold=True)
 
     # Box 4: Formas de pago | Detalle | Importe total
     c.roundRect(28.5, 659.26, 268.88, 39.01, 5, stroke=1, fill=0)
@@ -394,8 +400,11 @@ def draw_ticket_page(c: canvas.Canvas, data: TicketData) -> None:
 
     if not is_blank:
         seat_str = _resolve_seat_display(data)
-        seat_fsize = 9.0 if seat_str == "Sin butaca" else 12.0
-        _draw_text_auto(c, seat_str, (28.5 + 135.0) / 2, 432.0, max_width=100, font_size=seat_fsize, align="center", bold=True)
+        if seat_str.startswith("Sin asiento propio"):
+            _draw_text_box(c, seat_str, (28.5 + 135.0) / 2, 444.0, max_width=100.0, max_height=26.0, font_size=6.2, leading=6.5, align="center", bold=True)
+        else:
+            seat_fsize = 9.0 if seat_str == "Sin butaca" else 12.0
+            _draw_text_auto(c, seat_str, (28.5 + 135.0) / 2, 432.0, max_width=100, font_size=seat_fsize, align="center", bold=True)
 
         _draw_text_auto(c, data.departure_time, (135.0 + 240.0) / 2, 436.0, max_width=100, font_size=12.0, align="center", bold=True)
         _draw_text_auto(c, data.travel_date, (135.0 + 240.0) / 2, 423.0, max_width=100, font_size=7.2, align="center")

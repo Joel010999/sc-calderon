@@ -6,6 +6,7 @@
 {% endif %}
 {% endblock %}
 {% block operations_content %}
+<p><a href="{% url 'panel:trips' %}">← Volver a viajes</a></p>
 <p class="ops-intro">Gestión de recorridos y paradas. Las modificaciones en recorridos con viajes asociados crean una nueva versión para futuras salidas.</p>
 {% for route in routes %}
 <article class="ops-card route-card">

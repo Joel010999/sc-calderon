@@ -80,6 +80,14 @@ Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base 
     - Cobertura completa de vistas: Dashboard, Inbox operativo, Reporte de ventas, Reconciliación de fulfillment, Transferencias pendientes, Clientes, Auditoría y Gestión de Staff.
     - Sin recursos externos (0 CDN), sin alteraciones de modelos, migraciones o lógica de negocio, con formularios y tokens CSRF preservados.
 
+15. **Consolidación de Navegación Operativa y Pasajes de Menores Gratuitos**:
+    - Retiro visual definitivo del acceso al resumen "Operaciones" en el menú lateral; la URL `/panel/operaciones/` redirige mediante HTTP 302 a `/panel/operaciones/viajes/`.
+    - El menú lateral presenta únicamente "Viajes" (accesible para administradores y en modo sólo lectura/consulta para vendedores) y "Colectivos" (restringido a administración con `can_manage_operations`).
+    - "Gestionar recorridos" vive integrado contextualmente dentro de "Viajes" con navegación de retorno ("← Volver a viajes"), sin enlace lateral independiente y preservando intactas sus rutas HTTP, formularios, creación, edición y versionado.
+    - Emisión de pasajes para menores de 5 años gratuitos (`is_lap_infant = True`): el snapshot captura por tramo la butaca de referencia del acompañante asociado (`accompanied_by`).
+    - Ambos talones del pasaje PDF ("Talón superior" e inferior) imprimen la leyenda exacta: `Sin asiento propio. Butaca de referencia del acompañante: N`.
+    - No se generan registros adicionales en `SeatAssignment` para el menor; se mantiene validación estricta y registro de advertencia en logs ante ausencia de butaca válida del acompañante; reemisiones idempotentes no alteran PDFs históricos.
+
 ---
 
 ## 2. Antecedentes históricos corregidos y superados
@@ -126,6 +134,7 @@ A continuación se detalla la evidencia técnica verificable de las entregas int
 | **Etapa Permisos y Navegación** | Rama `Joel010999/scviajes-permisos-navegacion-20261104` | Corrección y alineación de validación tras suite completa (13 fallos y 2 errores resueltos en pruebas y vistas de ventas internas/navegación). Migración `panel.0004`. | Verificación local: Ruff, Django check y makemigrations dry-run en verde. Tests afectados OK. | Pendiente: validación en base PostgreSQL real de staging sin aplicar migraciones destructivas. |
 | **Integración Panel Rojo (UI/UX)** | Rama `Joel010999/panel-rojo-integracion` | 692 tests OK, 6 skipped (PostgreSQL). Ruff (0 errores), Django check (0 problemas), makemigrations dry-run (sin cambios). 23/23 pruebas CDP en Chrome headless (móvil/desktop, contraste, teclado, overflow 0px). | 18 capturas PNG generadas fuera del repo. Cero dependencias externas (sin CDN). Formularios y tokens CSRF intactos. | Pendiente: despliegue e inspección visual en ambiente staging con PostgreSQL. |
 | **Gráficos de Ventas y Comisiones** | Rama `Joel010999/panel-graficos-comisiones-20261106` | Validación final: Found 707, Ran 702, OK (skipped=6): 696 pruebas aprobadas, 6 omitidas (PostgreSQL). Ruff (0 errores), Django check (0 problemas), makemigrations dry-run (sin cambios). Validación CDP en Chrome headless (móvil/desktop, 0 errores JS, overflow 0px, 6 gráficos con porcentajes). | 5 capturas PNG generadas fuera del repo. Importes retirados del reporte y preservados en Dashboard. | Pendiente: validación en base PostgreSQL real de staging. |
+| **Pendientes Navegación y Menores** | Rama `Joel010999/pendientes-nav-menor-20261107` | Found 710, Ran 705 tests OK, 6 skipped (PostgreSQL). Ruff (0 errores), Django check (0 problemas), makemigrations dry-run (sin cambios), git diff --check (0 errores). Logs guardados fuera del repo en `full_test_suite_output.log`. | Reporte técnico sobre `concurrent_cash_payments_serialization`: confirma que prueba operación retirada sin reactivar efectivo ni probar concurrencia útil de DB. | Pendiente: validación en base PostgreSQL real de staging. |
 
 ### Validaciones pendientes antes de producción
 1. **Ejecución de suite PostgreSQL completa**: correr los 6 tests de concurrencia y restricciones avanzadas omitidos en SQLite sobre una instancia real de PostgreSQL 16.
