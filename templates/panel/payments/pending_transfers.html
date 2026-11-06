@@ -6,7 +6,7 @@
     <header class="ops-header">
         <div>
             <p class="ops-eyebrow"><a href="{% url 'panel:payment_list' %}">← Volver a Pagos</a></p>
-            <h1>Transferencias Pendientes de Revisión</h1>
+            <h1 class="dashboard-title">Transferencias Pendientes de Revisión</h1>
         </div>
         <div>
             <span class="badge badge-status-held" style="font-size: 1rem; padding: 0.5rem 1rem;">
@@ -18,15 +18,15 @@
     {% if transfers %}
         <div style="display: flex; flex-direction: column; gap: 1.5rem;">
             {% for t in transfers %}
-            <section class="ops-card" aria-label="Transferencia {{ t.public_id }}">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem; margin-bottom: 1rem;">
+            <section class="ops-card transfer-review-card" style="border-left: 4px solid var(--amber-500);" aria-label="Transferencia {{ t.public_id }}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1rem;">
                     <div>
                         <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
                             <span class="badge badge-status-held">{{ t.get_status_display }}</span>
                             {% if t.booking.channel == 'ONLINE' %}
-                                <span class="badge badge-status-confirmed" style="background: #2563eb; color: #fff;">ONLINE</span>
+                                <span class="badge" style="background: var(--blue-100); color: var(--blue-800);">ONLINE</span>
                             {% else %}
-                                <span class="badge badge-status-held" style="background: #6b7280; color: #fff;">MANUAL</span>
+                                <span class="badge" style="background: var(--slate-100); color: var(--slate-800);">MANUAL</span>
                             {% endif %}
                         </div>
                         <h2 style="margin: 0.25rem 0; font-size: 1.25rem;">
@@ -37,8 +37,8 @@
                         </p>
                     </div>
                     <div style="text-align: right;">
-                        <span style="font-size: 0.875rem; color: #6b7280; display: block;">Importe a confirmar</span>
-                        <span class="text-xl font-bold font-mono" style="color: #047857; font-size: 1.5rem;">
+                        <span style="font-size: 0.875rem; color: var(--text-muted); display: block;">Importe a confirmar</span>
+                        <span class="text-xl font-bold font-mono" style="color: var(--green-600); font-size: 1.5rem;">
                             $ {{ t.amount|unlocalize }}
                         </span>
                     </div>
@@ -46,27 +46,27 @@
 
                 <div class="schedule-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
                     <div>
-                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Reserva vinculada:</span>
+                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Reserva vinculada:</span>
                         <a href="{% url 'panel:booking_detail' t.booking.public_id %}" class="font-mono font-bold" style="text-decoration: underline;">
                             {{ t.booking.public_id }}
                         </a>
-                        <span style="display: block; font-size: 0.875rem; color: #374151;">
+                        <span style="display: block; font-size: 0.875rem; color: var(--text-secondary);">
                             Contacto: {{ t.booking.email }}
                         </span>
                     </div>
                     <div>
-                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Límite de revisión (24h):</span>
+                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Límite de revisión (24h):</span>
                         <strong>{{ t.review_deadline_at|date:"d/m/Y H:i"|default:t.booking.expires_at|date:"d/m/Y H:i" }}</strong>
                         {% if t.booking.is_expired %}
                             <span class="badge badge-status-expired" style="margin-left: 0.25rem;">Vencida</span>
                         {% endif %}
                     </div>
                     <div>
-                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Referencia / Notas:</span>
+                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Referencia / Notas:</span>
                         <span>{{ t.reference|default:"Sin notas" }}</span>
                     </div>
                     <div>
-                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Comprobante adjunto:</span>
+                        <span class="schedule-label" style="display: block; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Comprobante adjunto:</span>
                         {% if t.voucher %}
                             <a href="{% url 'panel:payment_voucher' t.public_id %}" class="ops-button secondary small" download style="margin-top: 0.25rem; display: inline-block;">
                                 📄 Descargar comprobante
@@ -79,8 +79,8 @@
 
                 <!-- Acciones de Aprobación y Rechazo -->
                 {% if can_review %}
-                <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 0.375rem; padding: 1rem;">
-                    <h3 style="margin-top: 0; margin-bottom: 0.75rem; font-size: 0.95rem; color: #374151;">Resolución de la transferencia</h3>
+                <div style="background: var(--bg-surface-secondary); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 1rem;">
+                    <h3 style="margin-top: 0; margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--text-secondary);">Resolución de la transferencia</h3>
 
                     <div style="display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start;">
                         <!-- Formulario de Aprobación -->
@@ -124,8 +124,8 @@
     {% else %}
         <section class="ops-card">
             <div style="text-align: center; padding: 3rem 1rem;">
-                <div style="font-size: 2.5rem; margin-bottom: 1rem;">✓</div>
-                <h2 style="margin-top: 0; color: #111827;">No hay transferencias pendientes</h2>
+                <div style="font-size: 2.5rem; margin-bottom: 1rem; color: var(--green-600);">✓</div>
+                <h2 style="margin-top: 0; color: var(--text-primary);">No hay transferencias pendientes</h2>
                 <p class="muted" style="margin-bottom: 1.5rem;">Todas las transferencias registradas han sido revisadas.</p>
                 <a href="{% url 'panel:payment_list' %}" class="ops-button secondary">Ir al listado de pagos</a>
             </div>

@@ -1,8 +1,143 @@
 {% extends 'panel/base.html' %}
+{% load l10n %}
+
 {% block content %}
-<div class="container customer-panel"><p><a href="{% url 'panel:customer_list' %}">← Volver a clientes</a></p><h1 class="dashboard-title">Detalle de cliente</h1>
-<section class="ops-card"><h2>Cuenta</h2><dl class="detail-list"><dt>Nombre</dt><dd>{{ customer.user.get_full_name|default:'Sin nombre' }}</dd><dt>Email normalizado</dt><dd>{{ customer.normalized_email }}</dd><dt>Estado de acceso</dt><dd>{{ customer.user.is_active|yesno:'Activa,Inactiva' }}</dd><dt>Alta</dt><dd>{{ customer.created_at|date:'d/m/Y H:i' }}</dd></dl></section>
-<section class="ops-card"><h2>Consentimiento comercial actual</h2>{% if current_consent %}<p><strong>{{ current_consent.granted|yesno:'Activo,Retirado' }}</strong> · versión {{ current_consent.version }} · origen {{ current_consent.origin }} · {{ current_consent.recorded_at|date:'d/m/Y H:i' }}</p>{% else %}<p>No hay consentimiento comercial registrado.</p>{% endif %}<h3>Historial auditable</h3><ul>{% for consent in consents %}<li>{{ consent.granted|yesno:'Otorgado,Retirado' }} · versión {{ consent.version }} · {{ consent.origin }} · {{ consent.recorded_at|date:'d/m/Y H:i' }}</li>{% empty %}<li>No hay registros.</li>{% endfor %}</ul></section>
-<section class="ops-card"><h2>Reservas online vinculadas</h2>{% for item in bookings %}<article class="customer-booking"><h3><a href="{% url 'panel:booking_detail' item.booking.public_id %}">{{ item.booking.public_id }}</a></h3><p>Estado: {{ item.booking.get_status_display }} · Creada: {{ item.booking.created_at|date:'d/m/Y H:i' }}</p>{% if item.claim %}<p>Reclamo: {% if item.claim.claimed_at %}Consumido el {{ item.claim.claimed_at|date:'d/m/Y H:i' }}{% else %}Pendiente{% endif %}</p>{% endif %}<h4>Viajes y pasajes</h4><ul>{% for leg in item.booking.legs.all %}<li>Tramo {{ leg.sequence }} · {{ leg.origin_stop_name }} → {{ leg.destination_stop_name }} · {{ leg.departure_at|date:'d/m/Y H:i' }}</li>{% endfor %}{% for ticket in item.tickets %}<li>Pasaje {{ ticket.ticket_code }} · {{ ticket.get_status_display }} · butaca {{ ticket.seat_number }} · <a href="{% url 'panel:booking_detail' item.booking.public_id %}">Ver reserva</a></li>{% empty %}<li>No hay pasajes emitidos.</li>{% endfor %}</ul><p>Fulfillment: {% if item.fulfillment %}{{ item.fulfillment.get_issue_status_display }} / {{ item.fulfillment.get_email_status_display }}{% else %}Sin trabajo registrado{% endif %}</p>{% if item.email_attempts %}<p>Correo: {% for attempt in item.email_attempts %}{{ attempt.get_status_display }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}<h4>Pagos</h4><ul>{% for payment in item.payments %}<li><a href="{% url 'panel:payment_detail' payment.public_id %}">{{ payment.public_id }}</a> · {{ payment.get_status_display }} · {{ payment.created_at|date:'d/m/Y H:i' }}</li>{% empty %}<li>No hay pagos asociados.</li>{% endfor %}</ul></article>{% empty %}<p class="empty-state">No hay reservas asociadas explícitamente a esta cuenta.</p>{% endfor %}</section>
+<div class="container operations">
+  <header class="ops-header">
+    <div>
+      <p class="ops-eyebrow"><a href="{% url 'panel:customer_list' %}">← Volver a clientes</a></p>
+      <h1 class="dashboard-title">Detalle de cliente</h1>
+    </div>
+  </header>
+
+  <!-- Datos de Cuenta -->
+  <section class="ops-card" aria-label="Datos de la cuenta">
+    <h2>Cuenta del cliente</h2>
+    <dl class="bus-data">
+      <div>
+        <dt>Nombre</dt>
+        <dd>{{ customer.user.get_full_name|default:'Sin nombre' }}</dd>
+      </div>
+      <div>
+        <dt>Email normalizado</dt>
+        <dd class="font-mono">{{ customer.normalized_email }}</dd>
+      </div>
+      <div>
+        <dt>Estado de acceso</dt>
+        <dd>
+          <span class="badge {% if not customer.user.is_active %}badge-status-cancelled{% else %}badge-status-confirmed{% endif %}">
+            {{ customer.user.is_active|yesno:'Activa,Inactiva' }}
+          </span>
+        </dd>
+      </div>
+      <div>
+        <dt>Fecha de alta</dt>
+        <dd>{{ customer.created_at|date:'d/m/Y H:i' }}</dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- Consentimiento Comercial -->
+  <section class="ops-card" aria-label="Consentimiento comercial">
+    <h2>Consentimiento comercial actual</h2>
+    {% if current_consent %}
+      <p>
+        <span class="badge {% if current_consent.granted %}badge-status-confirmed{% else %}badge-status-cancelled{% endif %}">
+          {{ current_consent.granted|yesno:'Activo,Retirado' }}
+        </span>
+        · Versión {{ current_consent.version }} · Origen: {{ current_consent.origin }} · Registrado el {{ current_consent.recorded_at|date:'d/m/Y H:i' }}
+      </p>
+    {% else %}
+      <p class="muted">No hay consentimiento comercial registrado.</p>
+    {% endif %}
+
+    <h3 style="margin-top: 1.5rem; font-size: 1rem;">Historial auditable de consentimiento</h3>
+    <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
+      {% for consent in consents %}
+        <li style="padding: 0.5rem; border-bottom: 1px solid var(--border-color); font-size: 0.875rem;">
+          <strong>{{ consent.granted|yesno:'Otorgado,Retirado' }}</strong> · Versión {{ consent.version }} · Origen: {{ consent.origin }} · {{ consent.recorded_at|date:'d/m/Y H:i' }}
+        </li>
+      {% empty %}
+        <li class="muted">No hay registros de cambios de consentimiento.</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <!-- Reservas Online Vinculadas -->
+  <section class="ops-card" aria-label="Reservas online vinculadas">
+    <h2>Reservas online vinculadas</h2>
+    {% for item in bookings %}
+    <article class="ops-card" style="margin-top: 1rem; border-left: 3px solid var(--red-600); background: #fdfcfc;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem;">
+        <div>
+          <h3 style="margin: 0;">
+            <a href="{% url 'panel:booking_detail' item.booking.public_id %}" class="font-mono">
+              {{ item.booking.public_id }}
+            </a>
+          </h3>
+          <p class="muted" style="margin: 0.25rem 0 0 0; font-size: 0.875rem;">
+            Estado: <span class="badge badge-status-{{ item.booking.status|lower }}">{{ item.booking.get_status_display }}</span> · Creada: {{ item.booking.created_at|date:'d/m/Y H:i' }}
+          </p>
+        </div>
+        {% if item.claim %}
+        <div>
+          <span class="badge {% if item.claim.claimed_at %}badge-status-confirmed{% else %}badge-status-held{% endif %}">
+            Reclamo: {% if item.claim.claimed_at %}Consumido el {{ item.claim.claimed_at|date:'d/m/Y H:i' }}{% else %}Pendiente{% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <h4 style="font-size: 0.875rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">Viajes y pasajes</h4>
+        <ul style="padding-left: 1.25rem; margin: 0 0 0.5rem 0; font-size: 0.875rem;">
+          {% for leg in item.booking.legs.all %}
+            <li>Tramo {{ leg.sequence }} · {{ leg.origin_stop_name }} → {{ leg.destination_stop_name }} · {{ leg.departure_at|date:'d/m/Y H:i' }}</li>
+          {% endfor %}
+          {% for ticket in item.tickets %}
+            <li>Pasaje <span class="font-mono font-bold">{{ ticket.ticket_code }}</span> · <span class="badge badge-status-{{ ticket.status|lower }}">{{ ticket.get_status_display }}</span> · Butaca {{ ticket.seat_number }} · <a href="{% url 'panel:booking_detail' item.booking.public_id %}">Ver reserva</a></li>
+          {% empty %}
+            <li class="muted">No hay pasajes emitidos.</li>
+          {% endfor %}
+        </ul>
+
+        <p style="font-size: 0.875rem; margin: 0.5rem 0;">
+          <strong>Fulfillment:</strong>
+          {% if item.fulfillment %}
+            {{ item.fulfillment.get_issue_status_display }} / {{ item.fulfillment.get_email_status_display }}
+          {% else %}
+            Sin trabajo registrado
+          {% endif %}
+        </p>
+
+        {% if item.email_attempts %}
+        <p style="font-size: 0.875rem; margin: 0.25rem 0;">
+          <strong>Correo:</strong>
+          {% for attempt in item.email_attempts %}
+            {{ attempt.get_status_display }}{% if not forloop.last %}, {% endif %}
+          {% endfor %}
+        </p>
+        {% endif %}
+      </div>
+
+      <div style="margin-top: 0.75rem; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
+        <h4 style="font-size: 0.875rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.25rem;">Pagos</h4>
+        <ul style="padding-left: 1.25rem; margin: 0; font-size: 0.875rem;">
+          {% for payment in item.payments %}
+            <li>
+              <a href="{% url 'panel:payment_detail' payment.public_id %}" class="font-mono">{{ payment.public_id }}</a> ·
+              <span class="badge badge-status-{{ payment.status|lower }}">{{ payment.get_status_display }}</span> ·
+              {{ payment.created_at|date:'d/m/Y H:i' }}
+            </li>
+          {% empty %}
+            <li class="muted">No hay pagos asociados.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </article>
+    {% empty %}
+    <p class="empty-state">No hay reservas asociadas explícitamente a esta cuenta.</p>
+    {% endfor %}
+  </section>
 </div>
 {% endblock %}

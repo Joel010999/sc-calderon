@@ -74,6 +74,12 @@ Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base 
     - Inclusión estricta de reservas confirmadas (excluye retenidas, liberadas y vencidas), deduplicación de joins y vinculación de menores en falda con la butaca de la madre.
     - Rotulado de uso interno provisional (no homologado, no CNRT, sin códigos visuales ni estados de embarque).
 
+14. **Integración Visual del Panel Rojo (UI/UX)**:
+    - Adopción íntegra de la identidad visual roja en las interfaces internas reales: tipografía, jerarquía, superficies, colores de acento y estados de interacción (`panel.css` y `operations.css`).
+    - Layout responsivo con drawer accesible para dispositivos móviles, soporte de cierre con tecla `Escape`, control de foco y breadcrumbs contextuales.
+    - Cobertura completa de vistas: Dashboard, Inbox operativo, Reporte de ventas, Reconciliación de fulfillment, Transferencias pendientes, Clientes, Auditoría y Gestión de Staff.
+    - Sin recursos externos (0 CDN), sin alteraciones de modelos, migraciones o lógica de negocio, con formularios y tokens CSRF preservados.
+
 ---
 
 ## 2. Antecedentes históricos corregidos y superados
@@ -118,6 +124,7 @@ A continuación se detalla la evidencia técnica verificable de las entregas int
 | **PR #47** (Tarifas salida y prioritarias 51/54) | `1c3e6f1` | 586 tests OK, 7 skipped. Migración `operations.0003` con validación de conflictos históricos. | Concurrencia transaccional verificada en CI de base de datos. | Pendiente: validación de datos tarifarios reales de producción. |
 | **PR #48** (Menores a 5 años, horarios, pasaje AAA) | `69297a5` | 172 tests afectados (169 OK, 3 PostgreSQL skipped). 71 tests de `tickets` al 100% OK. Migración `tickets.0007`. | Workflows de repositorio completados sobre rama integrada. | Pendiente: generación de pasajes con storage S3 real y envío SMTP productivo. |
 | **Etapa Permisos y Navegación** | Rama `Joel010999/scviajes-permisos-navegacion-20261104` | Corrección y alineación de validación tras suite completa (13 fallos y 2 errores resueltos en pruebas y vistas de ventas internas/navegación). Migración `panel.0004`. | Verificación local: Ruff, Django check y makemigrations dry-run en verde. Tests afectados OK. | Pendiente: validación en base PostgreSQL real de staging sin aplicar migraciones destructivas. |
+| **Integración Panel Rojo (UI/UX)** | Rama `Joel010999/panel-rojo-integracion` | 692 tests OK, 6 skipped (PostgreSQL). Ruff (0 errores), Django check (0 problemas), makemigrations dry-run (sin cambios). 23/23 pruebas CDP en Chrome headless (móvil/desktop, contraste, teclado, overflow 0px). | 18 capturas PNG generadas fuera del repo. Cero dependencias externas (sin CDN). Formularios y tokens CSRF intactos. | Pendiente: despliegue e inspección visual en ambiente staging con PostgreSQL. |
 
 ### Validaciones pendientes antes de producción
 1. **Ejecución de suite PostgreSQL completa**: correr los 7 tests de concurrencia y restricciones avanzadas omitidos en SQLite sobre una instancia real de PostgreSQL 16.

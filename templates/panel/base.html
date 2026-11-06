@@ -4,75 +4,173 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SC Viajes - Panel</title>
+    <title>{% block title %}{{ title|default:"SC Viajes - Panel Interno" }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'panel/css/panel.css' %}">
     <link rel="stylesheet" href="{% static 'panel/css/operations.css' %}">
     {% block extra_head %}{% endblock %}
 </head>
 <body>
     <a class="skip-link" href="#panel-main-content">Saltar al contenido principal</a>
+
     {% if request.user.is_authenticated %}
-    <nav class="panel-nav" aria-label="Barra de usuario">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <span>SC Viajes</span>
-            </div>
-            <div class="nav-user">
-                <span class="nav-username">{{ request.user.username }}</span>
-                <form action="{% url 'panel:logout' %}" method="post" style="display: inline;">
-                    {% csrf_token %}
-                    <button type="submit" class="btn-logout">Salir</button>
-                </form>
-            </div>
-        </div>
-    </nav>
+    <div class="app-shell">
+        <!-- Backdrop para menú móvil -->
+        <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
 
-    <div class="panel-layout">
-        <aside class="panel-sidebar" aria-label="Menú lateral">
+        <!-- Menú Lateral (Sidebar) -->
+        <aside class="sidebar" id="main-sidebar" aria-label="Menú principal de navegación">
+            <div class="sidebar-header">
+                <img src="{% static 'assets/scviajes-logo.png' %}" alt="SC Viajes" class="sidebar-brand-logo">
+                <div class="sidebar-brand-text">
+                    <span class="sidebar-brand-title">SC Viajes</span>
+                    <span class="sidebar-brand-subtitle">Panel Interno</span>
+                </div>
+            </div>
+
             <nav class="sidebar-nav">
-                <div class="sidebar-section">
-                    <span class="sidebar-heading">Principal</span>
-                    <a href="{% url 'panel:dashboard' %}" class="sidebar-link">Dashboard</a>
-                    {% if can_access_operational_inbox %}<a href="{% url 'panel:operational_inbox' %}" class="sidebar-link">Bandeja operativa</a>{% endif %}
-                    {% if can_manage_customers %}<a href="{% url 'panel:customer_list' %}" class="sidebar-link">Clientes</a>{% endif %}
-                    {% if can_access_audit_explorer %}<a href="{% url 'panel:audit_list' %}" class="sidebar-link">Auditoría central</a>{% endif %}
-                    {% if can_manage_staff %}<a href="{% url 'panel:staff_list' %}" class="sidebar-link">Usuarios internos</a>{% endif %}
-                </div>
-                {% if can_access_reservations %}
-                <div class="sidebar-section">
-                    <span class="sidebar-heading">Reservas</span>
-                    <a href="{% url 'panel:booking_list' %}" class="sidebar-link">Reservas</a>
-                    {% if can_create_manual_unexpired %}
-                    <a href="{% url 'panel:booking_create' %}" class="sidebar-link">Nueva reserva</a>
+                <!-- Sección: Principal -->
+                <div class="nav-section">
+                    <span class="nav-section-title">Principal</span>
+                    <a href="{% url 'panel:dashboard' %}" class="nav-link{% if request.resolver_match.url_name == 'dashboard' %} active{% endif %}"{% if request.resolver_match.url_name == 'dashboard' %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                        </svg>
+                        <span>Dashboard</span>
+                    </a>
+                    {% if can_access_operational_inbox %}
+                    <a href="{% url 'panel:operational_inbox' %}" class="nav-link{% if request.resolver_match.url_name == 'operational_inbox' %} active{% endif %}"{% if request.resolver_match.url_name == 'operational_inbox' %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                        </svg>
+                        <span>Bandeja operativa</span>
+                    </a>
                     {% endif %}
-                    <a href="{% url 'panel:booking_create' %}?sale_type=transfer" class="sidebar-link">Venta interna</a>
+                    {% if can_manage_customers %}
+                    <a href="{% url 'panel:customer_list' %}" class="nav-link{% if 'customer' in request.resolver_match.url_name %} active{% endif %}"{% if 'customer' in request.resolver_match.url_name %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                        </svg>
+                        <span>Clientes</span>
+                    </a>
+                    {% endif %}
+                    {% if can_access_audit_explorer %}
+                    <a href="{% url 'panel:audit_list' %}" class="nav-link{% if 'audit' in request.resolver_match.url_name %} active{% endif %}"{% if 'audit' in request.resolver_match.url_name %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span>Auditoría central</span>
+                    </a>
+                    {% endif %}
+                    {% if can_manage_staff %}
+                    <a href="{% url 'panel:staff_list' %}" class="nav-link{% if 'staff' in request.resolver_match.url_name %} active{% endif %}"{% if request.resolver_match.url_name == 'staff_list' %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                        <span>Usuarios internos</span>
+                    </a>
+                    {% endif %}
                 </div>
-                {% endif %}
-                {% if can_manage_payments %}
-                <div class="sidebar-section">
-                    <span class="sidebar-heading">Pagos</span>
-                    <a href="{% url 'panel:payment_list' %}" class="sidebar-link">Pagos</a>
+
+                <!-- Sección: Reservas -->
+                {% if can_access_reservations %}
+                <div class="nav-section">
+                    <span class="nav-section-title">Reservas</span>
+                    <a href="{% url 'panel:booking_list' %}" class="nav-link{% if request.resolver_match.url_name == 'booking_list' or request.resolver_match.url_name == 'booking_detail' %} active{% endif %}"{% if request.resolver_match.url_name == 'booking_list' %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        <span>Reservas</span>
+                    </a>
+                    <a href="{% url 'panel:booking_create' %}?sale_type=transfer" class="nav-link{% if request.resolver_match.url_name == 'booking_create' and request.GET.sale_type == 'transfer' %} active{% endif %}">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <span>Venta interna</span>
+                    </a>
                 </div>
                 {% endif %}
 
-                <div class="sidebar-section">
-                    <span class="sidebar-heading">Operaciones</span>
-                    <a href="{% url 'panel:trips' %}" class="sidebar-link">Viajes</a>
+                <!-- Sección: Pagos -->
+                {% if can_manage_payments %}
+                <div class="nav-section">
+                    <span class="nav-section-title">Pagos</span>
+                    <a href="{% url 'panel:payment_list' %}" class="nav-link{% if 'payment' in request.resolver_match.url_name %} active{% endif %}"{% if request.resolver_match.url_name == 'payment_list' %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                        </svg>
+                        <span>Pagos</span>
+                    </a>
+                </div>
+                {% endif %}
+
+                <!-- Sección: Operaciones -->
+                <div class="nav-section">
+                    <span class="nav-section-title">Operaciones</span>
+                    <a href="{% url 'panel:trips' %}" class="nav-link{% if 'trip' in request.resolver_match.url_name or 'route' in request.resolver_match.url_name or 'stop' in request.resolver_match.url_name %} active{% endif %}"{% if request.resolver_match.url_name == 'trips' %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <span>Viajes</span>
+                    </a>
                     {% if can_manage_operations %}
-                    <a href="{% url 'panel:buses' %}" class="sidebar-link">Colectivos</a>
+                    <a href="{% url 'panel:buses' %}" class="nav-link{% if 'bus' in request.resolver_match.url_name %} active{% endif %}"{% if request.resolver_match.url_name == 'buses' %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                        </svg>
+                        <span>Colectivos</span>
+                    </a>
                     {% endif %}
                 </div>
             </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-system-info">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span>America/Argentina/Buenos_Aires</span>
+                </div>
+            </div>
         </aside>
 
-        <div class="panel-main-area">
+        <!-- Área de Contenido Principal -->
+        <div class="main-wrapper">
+            <!-- Barra Superior (Topbar) -->
+            <header class="topbar" aria-label="Barra de herramientas superior">
+                <div class="topbar-left">
+                    <button type="button" class="menu-toggle-btn" id="menu-toggle-btn" aria-label="Abrir menú de navegación lateral" aria-expanded="false">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                        </svg>
+                    </button>
+                    <nav class="topbar-breadcrumbs" aria-label="Miga de pan">
+                        <a href="{% url 'panel:dashboard' %}">SC Viajes</a>
+                        <span class="separator">/</span>
+                        <span class="current">{% block breadcrumb %}{{ title|default:"Panel" }}{% endblock %}</span>
+                    </nav>
+                </div>
+
+                <div class="topbar-right">
+                    <div class="user-profile-badge">
+                        <div class="user-avatar" aria-hidden="true">
+                            {{ request.user.username|slice:":2"|upper }}
+                        </div>
+                        <div class="user-info">
+                            <span class="user-name nav-username">{{ request.user.username }}</span>
+                            <span class="user-role-badge">{% if request.user.is_superuser %}Superusuario{% elif can_manage_operations %}Administrador{% else %}Vendedor{% endif %}</span>
+                        </div>
+                        <form action="{% url 'panel:logout' %}" method="post" style="display: inline; margin-left: 0.5rem;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-logout" title="Cerrar sesión">Salir</button>
+                        </form>
+                    </div>
+                </div>
+            </header>
     {% endif %}
 
-            <main id="panel-main-content" tabindex="-1">
+            <main class="main-content" id="panel-main-content" tabindex="-1">
                 {% if messages %}
-                    <div class="alert-container">
+                    <div class="alert-container" role="region" aria-label="Mensajes del sistema">
                         {% for message in messages %}
-                            <div class="{% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}" role="{% if message.tags == 'success' %}status{% else %}alert{% endif %}">
+                            <div class="{% if message.tags == 'success' %}alert-success{% elif message.tags == 'warning' %}alert-warning{% else %}alert-error{% endif %}" role="{% if message.tags == 'success' %}status{% else %}alert{% endif %}">
                                 {{ message }}
                             </div>
                         {% endfor %}
@@ -85,6 +183,39 @@
     {% if request.user.is_authenticated %}
         </div>
     </div>
+
+    <!-- Script de control del drawer lateral móvil -->
+    <script>
+    (function() {
+        var toggleBtn = document.getElementById('menu-toggle-btn');
+        var sidebar = document.getElementById('main-sidebar');
+        var backdrop = document.getElementById('sidebar-backdrop');
+        if (!toggleBtn || !sidebar || !backdrop) return;
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            backdrop.classList.add('active');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            backdrop.classList.remove('active');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        toggleBtn.addEventListener('click', function() {
+            var isOpen = sidebar.classList.contains('open');
+            if (isOpen) { closeSidebar(); } else { openSidebar(); }
+        });
+        backdrop.addEventListener('click', closeSidebar);
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && sidebar.classList.contains('open')) {
+                closeSidebar();
+                toggleBtn.focus();
+            }
+        });
+    })();
+    </script>
     {% endif %}
 </body>
 </html>

@@ -483,8 +483,10 @@ class IntegrationVentasRecorridosTests(TestCase):
         self.assertEqual(resp_trips_admin.status_code, 200)
         self.assertContains(resp_trips_admin, "Gestionar recorridos")
         self.assertContains(resp_trips_admin, reverse("panel:routes"))
-        self.assertContains(resp_trips_admin, "Nueva reserva")
         self.assertContains(resp_trips_admin, "Venta interna")
+        # Acceso contextual de Nueva reserva dentro de Reservas
+        resp_bookings_admin = self.client.get(reverse("panel:booking_list"))
+        self.assertContains(resp_bookings_admin, "Nueva reserva")
 
         # Vendedor:
         self.client.force_login(self.seller_user)

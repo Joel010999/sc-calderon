@@ -1,16 +1,35 @@
 {% extends 'panel/base.html' %}
 {% load l10n %}
 
+{% block title %}Dashboard General — SC Viajes{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
+
 {% block content %}
 <div class="container">
-    <h1 class="dashboard-title">Dashboard General</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-eyebrow">Vista general</p>
+            <h1 class="page-title">Dashboard General</h1>
+        </div>
+        {% if can_access_operational_inbox %}
+        <div class="page-actions">
+            <a class="btn btn-secondary" href="{% url 'panel:operational_inbox' %}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                </svg>
+                <span>Abrir bandeja operativa</span>
+            </a>
+        </div>
+        {% endif %}
+    </div>
 
+    <!-- Indicadores Principales (Stats Grid) -->
     <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card accent-red">
             <div class="stat-body">
-                <div class="stat-icon stat-icon-blue">
+                <div class="stat-icon stat-icon-blue" aria-hidden="true">
                     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
                     </svg>
                 </div>
                 <div class="stat-info">
@@ -20,20 +39,35 @@
             </div>
             <div class="stat-footer">
                 {% if can_manage_payments %}
-                <a class="stat-link" href="{% url 'panel:payment_list' %}?status=APPROVED">Ver pagos aprobados</a>
+                <a class="stat-link" href="{% url 'panel:payment_list' %}?status=APPROVED">Ver pagos aprobados →</a>
                 {% else %}
-                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                <span class="stat-link" style="color: var(--text-muted); cursor: default;">Próximamente</span>
                 {% endif %}
             </div>
         </div>
 
-        <div class="stat-card">
-            <div class="stat-body"><div class="stat-info"><div class="stat-label">Reservas confirmadas</div><div class="stat-value">{{ confirmed_reservations_count|default:0 }}</div></div></div>
+        <div class="stat-card accent-red">
+            <div class="stat-body">
+                <div class="stat-icon" aria-hidden="true">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Reservas confirmadas</div>
+                    <div class="stat-value">{{ confirmed_reservations_count|default:0 }}</div>
+                </div>
+            </div>
+            <div class="stat-footer">
+                {% if can_access_reservations %}
+                <a class="stat-link" href="{% url 'panel:booking_list' %}?status=CONFIRMED">Ver reservas confirmadas →</a>
+                {% endif %}
+            </div>
         </div>
 
-        <div class="stat-card">
+        <div class="stat-card accent-green">
             <div class="stat-body">
-                <div class="stat-icon stat-icon-green">
+                <div class="stat-icon stat-icon-green" aria-hidden="true">
                     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
@@ -41,30 +75,43 @@
                 <div class="stat-info">
                     <div class="stat-label">Ingresos Confirmados (ARS)</div>
                     <div class="stat-value font-mono">$ {{ confirmed_revenue_total|floatformat:"2u" }}</div>
-                    <div class="stat-subtext" style="font-size: 0.8rem; color: #6b7280; margin-top: 0.25rem;">
+                    <div class="stat-subtext">
                         Efectivo: ${{ cash_revenue|floatformat:"2u" }} ({{ cash_sales_count }}) · Transferencias: ${{ transfer_revenue|floatformat:"2u" }} ({{ transfer_sales_count }})
                     </div>
                 </div>
             </div>
             <div class="stat-footer">
                 {% if can_manage_payments %}
-                <a class="stat-link" href="{% url 'panel:payment_list' %}?status=APPROVED">Ver detalle de ingresos</a>
+                <a class="stat-link" href="{% url 'panel:payment_list' %}?status=APPROVED">Ver detalle de ingresos →</a>
                 {% else %}
-                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                <span class="stat-link" style="color: var(--text-muted); cursor: default;">Próximamente</span>
                 {% endif %}
             </div>
         </div>
 
-        <div class="stat-card">
-            <div class="stat-body"><div class="stat-info"><div class="stat-label">Comisiones retenidas</div><div class="stat-value font-mono">$ {{ commission_total|floatformat:"2u" }}</div><div class="stat-subtext">{{ commissionable_units }} pasajes/tramos a ARS 5.000.</div></div></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-body"><div class="stat-info"><div class="stat-label">Neto operativo</div><div class="stat-value font-mono">$ {{ net_operating_total|floatformat:"2u" }}</div><div class="stat-subtext">Bruto menos comisiones; no es rentabilidad contable.</div></div></div>
+        <div class="stat-card accent-amber">
+            <div class="stat-body">
+                <div class="stat-info">
+                    <div class="stat-label">Comisiones retenidas</div>
+                    <div class="stat-value font-mono">$ {{ commission_total|floatformat:"2u" }}</div>
+                    <div class="stat-subtext">{{ commissionable_units }} pasajes/tramos a ARS 5.000.</div>
+                </div>
+            </div>
         </div>
 
-        <div class="stat-card">
+        <div class="stat-card accent-green">
             <div class="stat-body">
-                <div class="stat-icon stat-icon-yellow">
+                <div class="stat-info">
+                    <div class="stat-label">Neto operativo</div>
+                    <div class="stat-value font-mono">$ {{ net_operating_total|floatformat:"2u" }}</div>
+                    <div class="stat-subtext">Bruto menos comisiones; no es rentabilidad contable.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card accent-amber">
+            <div class="stat-body">
+                <div class="stat-icon stat-icon-yellow" aria-hidden="true">
                     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
@@ -76,18 +123,18 @@
             </div>
             <div class="stat-footer">
                 {% if can_manage_payments %}
-                <a class="stat-link" href="{% url 'panel:pending_transfers' %}">Revisar transferencias</a>
+                <a class="stat-link" href="{% url 'panel:pending_transfers' %}">Revisar transferencias →</a>
                 {% else %}
-                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                <span class="stat-link" style="color: var(--text-muted); cursor: default;">Próximamente</span>
                 {% endif %}
             </div>
         </div>
 
-        <div class="stat-card">
+        <div class="stat-card accent-amber">
             <div class="stat-body">
-                <div class="stat-icon stat-icon-green">
+                <div class="stat-icon" aria-hidden="true">
                     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                 </div>
                 <div class="stat-info">
@@ -97,78 +144,141 @@
             </div>
             <div class="stat-footer">
                 {% if can_access_reservations %}
-                <a class="stat-link" href="{% url 'panel:booking_list' %}?status=HELD">Ver reservas retenidas</a>
+                <a class="stat-link" href="{% url 'panel:booking_list' %}?status=HELD">Ver reservas retenidas →</a>
                 {% else %}
-                <span class="stat-link" style="color: #6b7280; text-decoration: none; cursor: default;">Próximamente</span>
+                <span class="stat-link" style="color: var(--text-muted); cursor: default;">Próximamente</span>
                 {% endif %}
             </div>
         </div>
     </div>
 
-    <h2 class="section-title">Módulos del Sistema</h2>
-    {% if can_access_operational_inbox %}<p><a class="stat-link" href="{% url 'panel:operational_inbox' %}">Abrir bandeja operativa</a></p>{% endif %}
+    <!-- Módulos del Sistema -->
+    <h2 class="section-title" style="margin-top: 2rem;">Módulos del Sistema</h2>
     <div class="modules-grid">
         <div class="module-card disabled">
-            <div class="module-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
             </div>
-            <span class="module-name">Ventas</span>
-            <span class="module-soon">Próximamente</span>
+            <div class="module-info">
+                <span class="module-title module-name">Ventas</span>
+                <span class="module-desc module-soon">Próximamente</span>
+            </div>
         </div>
+
         {% if can_access_reservations %}
         <a class="module-card" href="{% url 'panel:booking_list' %}">
-            <div class="module-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
             </div>
-            <span class="module-name">Reservas</span>
-            <span class="module-soon">Gestión de reservas manuales</span>
+            <div class="module-info">
+                <span class="module-title module-name">Reservas</span>
+                <span class="module-desc module-soon">Gestión de reservas manuales</span>
+            </div>
         </a>
         {% else %}
         <div class="module-card disabled">
-            <div class="module-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
             </div>
-            <span class="module-name">Reservas</span>
-            <span class="module-soon">Próximamente</span>
+            <div class="module-info">
+                <span class="module-title module-name">Reservas</span>
+                <span class="module-desc module-soon">Próximamente</span>
+            </div>
         </div>
         {% endif %}
+
         <div class="module-card disabled">
-            <div class="module-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
             </div>
-            <span class="module-name">Salidas</span>
-            <span class="module-soon">Próximamente</span>
+            <div class="module-info">
+                <span class="module-title module-name">Salidas</span>
+                <span class="module-desc module-soon">Próximamente</span>
+            </div>
         </div>
+
         {% if can_manage_payments %}
         <a class="module-card" href="{% url 'panel:payment_list' %}">
-            <div class="module-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
             </div>
-            <span class="module-name">Pagos</span>
-            <span class="module-soon">Gestión y revisión de pagos</span>
+            <div class="module-info">
+                <span class="module-title module-name">Pagos</span>
+                <span class="module-desc module-soon">Gestión y revisión de pagos</span>
+            </div>
         </a>
         <a class="module-card" href="{% url 'panel:sales_report' %}">
-            <div class="module-icon">▤</div>
-            <span class="module-name">Reportes</span>
-            <span class="module-soon">Ventas aprobadas confirmadas</span>
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <div class="module-info">
+                <span class="module-title module-name">Reportes</span>
+                <span class="module-desc module-soon">Ventas aprobadas confirmadas</span>
+            </div>
         </a>
         {% else %}
         <div class="module-card disabled">
-            <div class="module-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
             </div>
-            <span class="module-name">Pagos</span>
-            <span class="module-soon">Próximamente</span>
+            <div class="module-info">
+                <span class="module-title module-name">Pagos</span>
+                <span class="module-desc module-soon">Próximamente</span>
+            </div>
         </div>
         {% endif %}
-        <a class="module-card" href="{% url 'panel:trips' %}"><span class="module-name">Viajes</span><span class="module-soon">Salidas programadas y disponibilidad</span></a>
-        <div class="module-card disabled">
-            <div class="module-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+
+        <a class="module-card" href="{% url 'panel:trips' %}">
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
             </div>
-            {% if can_manage_customers %}<a href="{% url 'panel:customer_list' %}" class="module-name">Clientes</a>{% else %}<span class="module-name">Clientes</span>{% endif %}
-            <span class="module-soon">Próximamente</span>
+            <div class="module-info">
+                <span class="module-title module-name">Viajes</span>
+                <span class="module-desc module-soon">Salidas programadas y disponibilidad</span>
+            </div>
+        </a>
+
+        {% if can_manage_customers %}
+        <a class="module-card" href="{% url 'panel:customer_list' %}">
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+            </div>
+            <div class="module-info">
+                <span class="module-title module-name">Clientes</span>
+                <span class="module-desc module-soon">Gestión de cuentas y consentimientos</span>
+            </div>
+        </a>
+        {% else %}
+        <div class="module-card disabled">
+            <div class="module-icon-wrap" aria-hidden="true">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+            </div>
+            <div class="module-info">
+                <span class="module-title module-name">Clientes</span>
+                <span class="module-desc module-soon">Próximamente</span>
+            </div>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

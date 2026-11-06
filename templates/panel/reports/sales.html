@@ -1,33 +1,266 @@
 {% extends 'panel/base.html' %}
+{% load l10n %}
+
 {% block content %}
-<div class="container">
-  <h1 class="dashboard-title">Reporte de ventas</h1>
-  <p>Solo incluye pagos aprobados asociados a reservas confirmadas. Este reporte es informativo: no sustituye la contabilidad ni el cierre de caja.</p>
-  <p>Rango máximo configurable: {{ max_range_days }} días. Fechas interpretadas en America/Argentina/Buenos_Aires.</p>
-  <form method="get">
-    <fieldset><legend>Fecha de venta/confirmación</legend>
-    <label>Desde <input type="date" name="desde" value="{{ request.GET.desde }}"></label>
-    <label>Hasta <input type="date" name="hasta" value="{{ request.GET.hasta }}"></label></fieldset>
-    <fieldset><legend>Fecha de viaje</legend>
-    <label>Desde <input type="date" name="viaje_desde" value="{{ request.GET.viaje_desde }}"></label>
-    <label>Hasta <input type="date" name="viaje_hasta" value="{{ request.GET.viaje_hasta }}"></label></fieldset>
-    <label>Medio <select name="medio"><option value="">Todos</option>{% for value,label in payment_methods %}<option value="{{ value }}"{% if request.GET.medio == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-    <label>Canal <select name="canal"><option value="">Todos</option>{% for value,label in channels %}<option value="{{ value }}"{% if request.GET.canal == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-    {% if is_admin %}<label>Vendedor <select name="vendedor"><option value="">Todos</option><option value="sin-vendedor"{% if request.GET.vendedor == 'sin-vendedor' %} selected{% endif %}>Sin vendedor</option>{% for seller in sellers %}<option value="{{ seller.pk }}"{% if request.GET.vendedor == seller.pk|stringformat:'s' %} selected{% endif %}>{{ seller.username }}</option>{% endfor %}</select></label>{% endif %}
-    <button type="submit">Filtrar</button>
-    <a href="{% url 'panel:sales_report_csv' %}{% if query_string %}?{{ query_string }}{% endif %}">Descargar CSV</a>
-  </form>
-  {% if error %}<div class="alert-error">{{ error }}</div>{% endif %}
-  <section class="stats-grid"><div class="stat-card"><b>Compras confirmadas</b><strong>{{ confirmed_sales_count }}</strong></div><div class="stat-card"><b>Pagos únicos</b><strong>{{ payment_count }}</strong></div><div class="stat-card"><b>Ingreso bruto</b><strong>$ {{ total_amount|floatformat:2 }}</strong></div><div class="stat-card"><b>Pasajeros confirmados</b><strong>{{ passenger_count }}</strong></div><div class="stat-card"><b>Pasajes/tramos</b><strong>{{ leg_count }}</strong></div><div class="stat-card"><b>Pasajes comisionables</b><strong>{{ commissionable_units }}</strong></div><div class="stat-card"><b>Comisiones retenidas</b><strong>$ {{ commission_total|floatformat:2 }}</strong></div><div class="stat-card"><b>Neto operativo</b><strong>$ {{ net_operating|floatformat:2 }}</strong><small>Bruto menos comisiones.</small></div><div class="stat-card"><b>Efectivo</b><strong>$ {{ cash_amount|floatformat:2 }}</strong></div><div class="stat-card"><b>Transferencia</b><strong>$ {{ transfer_amount|floatformat:2 }}</strong></div></section>
-  <h2>Desglose por medio</h2><ul>{% for row in by_method %}<li>{{ row.method }}: {{ row.count }} pagos, $ {{ row.amount|floatformat:2 }}</li>{% empty %}<li>Sin datos</li>{% endfor %}</ul>
-  <h2>Desglose por canal</h2><ul>{% for row in by_channel %}<li>{{ row.booking__channel }}: {{ row.count }} pagos, $ {{ row.amount|floatformat:2 }}</li>{% empty %}<li>Sin datos</li>{% endfor %}</ul>
-  {% if is_admin %}<h2>Desglose por vendedor</h2><ul>{% for row in by_seller %}<li>{% if row.booking__seller__username %}{{ row.booking__seller__username }}{% else %}Sin vendedor{% endif %}: {{ row.count }} pagos, $ {{ row.amount|floatformat:2 }}</li>{% empty %}<li>Sin datos</li>{% endfor %}</ul>{% endif %}
-  <h2>Ingresos asignados por salida</h2><p>El importe por salida usa las asignaciones históricas; si hay descuentos no distribuibles, no se prorratea la tarifa actual.</p><ul>{% for row in by_departure %}<li>{{ row.leg__trip__departure_at|date:'d/m/Y H:i' }}: {{ row.units }} pasajes, $ {{ row.amount|floatformat:2 }}</li>{% empty %}<li>Sin datos</li>{% endfor %}</ul>
-  <h2>Detalle</h2>
-  <table><thead><tr><th>Referencia pública</th><th>Fecha/hora confirmación</th><th>Estado</th><th>Canal</th><th>Medio</th><th>Importe</th><th>Pasajeros</th><th>Tramos</th><th>Vendedor</th></tr></thead><tbody>
-  {% for payment in page.object_list %}<tr><td>{{ payment.booking.public_id }}</td><td>{{ payment.booking.confirmed_at|date:'d/m/Y H:i' }}</td><td>Confirmada</td><td>{{ payment.booking.get_channel_display }}</td><td>{{ payment.get_method_display }}</td><td>$ {{ payment.amount|floatformat:2 }}</td><td>{{ payment.passenger_count }}</td><td>{{ payment.leg_count }}</td><td>{{ payment.booking.seller.username|default:'Sin vendedor' }}</td></tr>{% empty %}<tr><td colspan="9">No hay ventas para los filtros seleccionados.</td></tr>{% endfor %}
-  </tbody></table>
-  <p>Mostrando {{ page.start_index|default:0 }}–{{ page.end_index|default:0 }} de {{ paginator.count }} pagos.</p>
-  {% if page.has_previous %}<a href="?{{ query_string }}&pagina={{ page.previous_page_number }}">Anterior</a>{% endif %} {% if page.has_next %}<a href="?{{ query_string }}&pagina={{ page.next_page_number }}">Siguiente</a>{% endif %}
+<div class="container operations">
+  <header class="ops-header">
+    <div>
+      <p class="ops-eyebrow">Reportes financieros</p>
+      <h1 class="dashboard-title">Reporte de ventas</h1>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <a href="{% url 'panel:sales_report_csv' %}{% if query_string %}?{{ query_string }}{% endif %}" class="ops-button secondary">Descargar CSV</a>
+    </div>
+  </header>
+
+  <p class="ops-intro">Solo incluye pagos aprobados asociados a reservas confirmadas. Este reporte es informativo: no sustituye la contabilidad ni el cierre de caja. Rango máximo configurable: {{ max_range_days }} días. Fechas interpretadas en America/Argentina/Buenos_Aires.</p>
+
+  {% if error %}
+  <div class="alert-error" role="alert" style="margin-bottom: 1.5rem;">
+    <strong>Error en el reporte:</strong> {{ error }}
+  </div>
+  {% endif %}
+
+  <!-- Filtros -->
+  <section class="ops-card" aria-label="Filtros del reporte">
+    <form method="get" class="reservations-filter-form">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem;">
+        <fieldset style="border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+          <legend style="padding: 0 0.5rem; font-weight: 600; color: var(--text-primary); font-size: 0.875rem;">Fecha de venta/confirmación</legend>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
+            <div class="form-group">
+              <label class="form-label">Desde</label>
+              <input type="date" name="desde" value="{{ request.GET.desde }}" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Hasta</label>
+              <input type="date" name="hasta" value="{{ request.GET.hasta }}" class="form-input">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset style="border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+          <legend style="padding: 0 0.5rem; font-weight: 600; color: var(--text-primary); font-size: 0.875rem;">Fecha de viaje</legend>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
+            <div class="form-group">
+              <label class="form-label">Desde</label>
+              <input type="date" name="viaje_desde" value="{{ request.GET.viaje_desde }}" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Hasta</label>
+              <input type="date" name="viaje_hasta" value="{{ request.GET.viaje_hasta }}" class="form-input">
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="filters-grid" style="margin-top: 1rem;">
+        <div class="form-group">
+          <label class="form-label">Medio de pago</label>
+          <select name="medio" class="form-input">
+            <option value="">Todos</option>
+            {% for value,label in payment_methods %}
+              <option value="{{ value }}"{% if request.GET.medio == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Canal</label>
+          <select name="canal" class="form-input">
+            <option value="">Todos</option>
+            {% for value,label in channels %}
+              <option value="{{ value }}"{% if request.GET.canal == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {% if is_admin %}
+        <div class="form-group">
+          <label class="form-label">Vendedor</label>
+          <select name="vendedor" class="form-input">
+            <option value="">Todos</option>
+            <option value="sin-vendedor"{% if request.GET.vendedor == 'sin-vendedor' %} selected{% endif %}>Sin vendedor</option>
+            {% for seller in sellers %}
+              <option value="{{ seller.pk }}"{% if request.GET.vendedor == seller.pk|stringformat:'s' %} selected{% endif %}>{{ seller.username }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.75rem; align-items: center;">
+        <button type="submit" class="ops-button">Filtrar</button>
+        <a href="{% url 'panel:sales_report' %}" class="ops-button secondary">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <!-- Métricas Principales -->
+  <section class="stats-grid" aria-label="Métricas de ventas">
+    <div class="stat-card">
+      <span class="stat-label">Compras confirmadas</span>
+      <span class="stat-value font-mono">{{ confirmed_sales_count }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Pagos únicos</span>
+      <span class="stat-value font-mono">{{ payment_count }}</span>
+    </div>
+    <div class="stat-card stat-accent-red">
+      <span class="stat-label">Ingreso bruto</span>
+      <span class="stat-value font-mono">$ {{ total_amount|floatformat:2 }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Pasajeros confirmados</span>
+      <span class="stat-value font-mono">{{ passenger_count }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Pasajes/tramos</span>
+      <span class="stat-value font-mono">{{ leg_count }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Pasajes comisionables</span>
+      <span class="stat-value font-mono">{{ commissionable_units }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Comisiones retenidas</span>
+      <span class="stat-value font-mono">$ {{ commission_total|floatformat:2 }}</span>
+    </div>
+    <div class="stat-card stat-accent-green">
+      <span class="stat-label">Neto operativo</span>
+      <span class="stat-value font-mono" style="color: var(--green-600);">$ {{ net_operating|floatformat:2 }}</span>
+      <small class="muted" style="font-size: 0.75rem; margin-top: 0.25rem;">Bruto menos comisiones.</small>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Efectivo</span>
+      <span class="stat-value font-mono">$ {{ cash_amount|floatformat:2 }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Transferencia</span>
+      <span class="stat-value font-mono">$ {{ transfer_amount|floatformat:2 }}</span>
+    </div>
+  </section>
+
+  <!-- Desgloses -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+    <section class="ops-card">
+      <h2>Desglose por medio</h2>
+      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
+        {% for row in by_method %}
+          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
+            <span><strong>{{ row.method }}</strong></span>
+            <span>{{ row.count }} pagos · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
+          </li>
+        {% empty %}
+          <li class="muted">Sin datos</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="ops-card">
+      <h2>Desglose por canal</h2>
+      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
+        {% for row in by_channel %}
+          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
+            <span><strong>{{ row.booking__channel }}</strong></span>
+            <span>{{ row.count }} pagos · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
+          </li>
+        {% empty %}
+          <li class="muted">Sin datos</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    {% if is_admin %}
+    <section class="ops-card">
+      <h2>Desglose por vendedor</h2>
+      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
+        {% for row in by_seller %}
+          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
+            <span><strong>{% if row.booking__seller__username %}{{ row.booking__seller__username }}{% else %}Sin vendedor{% endif %}</strong></span>
+            <span>{{ row.count }} pagos · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
+          </li>
+        {% empty %}
+          <li class="muted">Sin datos</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="ops-card">
+      <h2>Ingresos asignados por salida</h2>
+      <p class="muted" style="font-size: 0.8125rem;">El importe por salida usa las asignaciones históricas; si hay descuentos no distribuibles, no se prorratea la tarifa actual.</p>
+      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
+        {% for row in by_departure %}
+          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
+            <span>{{ row.leg__trip__departure_at|date:'d/m/Y H:i' }}</span>
+            <span>{{ row.units }} pasajes · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
+          </li>
+        {% empty %}
+          <li class="muted">Sin datos</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  <!-- Detalle de Ventas -->
+  <section class="ops-card" style="margin-top: 1.5rem;" aria-label="Detalle de ventas">
+    <h2>Detalle de transacciones</h2>
+    <div class="table-scroll">
+      <table class="table-audit" style="width: 100%;">
+        <thead>
+          <tr>
+            <th scope="col">Referencia pública</th>
+            <th scope="col">Fecha/hora confirmación</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Canal</th>
+            <th scope="col">Medio</th>
+            <th scope="col">Importe</th>
+            <th scope="col">Pasajeros</th>
+            <th scope="col">Tramos</th>
+            <th scope="col">Vendedor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for payment in page.object_list %}
+          <tr>
+            <td class="font-mono font-bold">
+              <a href="{% url 'panel:booking_detail' payment.booking.public_id %}">
+                {{ payment.booking.public_id }}
+              </a>
+            </td>
+            <td>{{ payment.booking.confirmed_at|date:'d/m/Y H:i' }}</td>
+            <td><span class="badge badge-status-confirmed">Confirmada</span></td>
+            <td>{{ payment.booking.get_channel_display }}</td>
+            <td>{{ payment.get_method_display }}</td>
+            <td class="font-mono font-bold">$ {{ payment.amount|floatformat:2 }}</td>
+            <td style="text-align: center;">{{ payment.passenger_count }}</td>
+            <td style="text-align: center;">{{ payment.leg_count }}</td>
+            <td>{{ payment.booking.seller.username|default:'Sin vendedor' }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="empty-state" style="text-align: center; padding: 2rem;">No hay ventas para los filtros seleccionados.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <span class="muted" style="font-size: 0.875rem;">
+        Mostrando {{ page.start_index|default:0 }}–{{ page.end_index|default:0 }} de {{ paginator.count }} pagos.
+      </span>
+
+      <div style="display: flex; gap: 0.5rem;">
+        {% if page.has_previous %}
+          <a href="?{{ query_string }}&pagina={{ page.previous_page_number }}" class="ops-button secondary small">Anterior</a>
+        {% endif %}
+        {% if page.has_next %}
+          <a href="?{{ query_string }}&pagina={{ page.next_page_number }}" class="ops-button secondary small">Siguiente</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
 </div>
 {% endblock %}
