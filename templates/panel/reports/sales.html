@@ -5,7 +5,7 @@
 <div class="container operations">
   <header class="ops-header">
     <div>
-      <p class="ops-eyebrow">Reportes financieros</p>
+      <p class="ops-eyebrow">Reportes comerciales y operativos</p>
       <h1 class="dashboard-title">Reporte de ventas</h1>
     </div>
     <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -13,7 +13,7 @@
     </div>
   </header>
 
-  <p class="ops-intro">Solo incluye pagos aprobados asociados a reservas confirmadas. Este reporte es informativo: no sustituye la contabilidad ni el cierre de caja. Rango máximo configurable: {{ max_range_days }} días. Fechas interpretadas en America/Argentina/Buenos_Aires.</p>
+  <p class="ops-intro">Presentación analítica de ventas y distribución operativa basada en reservas confirmadas con pago aprobado. Rango máximo configurable: {{ max_range_days }} días. Fechas interpretadas en zona horaria America/Argentina/Buenos_Aires.</p>
 
   {% if error %}
   <div class="alert-error" role="alert" style="margin-bottom: 1.5rem;">
@@ -21,7 +21,7 @@
   </div>
   {% endif %}
 
-  <!-- Filtros -->
+  <!-- Filtros del reporte -->
   <section class="ops-card" aria-label="Filtros del reporte">
     <form method="get" class="reservations-filter-form">
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem;">
@@ -29,12 +29,12 @@
           <legend style="padding: 0 0.5rem; font-weight: 600; color: var(--text-primary); font-size: 0.875rem;">Fecha de venta/confirmación</legend>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
             <div class="form-group">
-              <label class="form-label">Desde</label>
-              <input type="date" name="desde" value="{{ request.GET.desde }}" class="form-input">
+              <label class="form-label" for="filter-desde">Desde</label>
+              <input type="date" id="filter-desde" name="desde" value="{{ request.GET.desde }}" class="form-input">
             </div>
             <div class="form-group">
-              <label class="form-label">Hasta</label>
-              <input type="date" name="hasta" value="{{ request.GET.hasta }}" class="form-input">
+              <label class="form-label" for="filter-hasta">Hasta</label>
+              <input type="date" id="filter-hasta" name="hasta" value="{{ request.GET.hasta }}" class="form-input">
             </div>
           </div>
         </fieldset>
@@ -43,12 +43,12 @@
           <legend style="padding: 0 0.5rem; font-weight: 600; color: var(--text-primary); font-size: 0.875rem;">Fecha de viaje</legend>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
             <div class="form-group">
-              <label class="form-label">Desde</label>
-              <input type="date" name="viaje_desde" value="{{ request.GET.viaje_desde }}" class="form-input">
+              <label class="form-label" for="filter-viaje-desde">Desde</label>
+              <input type="date" id="filter-viaje-desde" name="viaje_desde" value="{{ request.GET.viaje_desde }}" class="form-input">
             </div>
             <div class="form-group">
-              <label class="form-label">Hasta</label>
-              <input type="date" name="viaje_hasta" value="{{ request.GET.viaje_hasta }}" class="form-input">
+              <label class="form-label" for="filter-viaje-hasta">Hasta</label>
+              <input type="date" id="filter-viaje-hasta" name="viaje_hasta" value="{{ request.GET.viaje_hasta }}" class="form-input">
             </div>
           </div>
         </fieldset>
@@ -56,8 +56,8 @@
 
       <div class="filters-grid" style="margin-top: 1rem;">
         <div class="form-group">
-          <label class="form-label">Medio de pago</label>
-          <select name="medio" class="form-input">
+          <label class="form-label" for="filter-medio">Medio de pago</label>
+          <select id="filter-medio" name="medio" class="form-input">
             <option value="">Todos</option>
             {% for value,label in payment_methods %}
               <option value="{{ value }}"{% if request.GET.medio == value %} selected{% endif %}>{{ label }}</option>
@@ -66,8 +66,8 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Canal</label>
-          <select name="canal" class="form-input">
+          <label class="form-label" for="filter-canal">Canal</label>
+          <select id="filter-canal" name="canal" class="form-input">
             <option value="">Todos</option>
             {% for value,label in channels %}
               <option value="{{ value }}"{% if request.GET.canal == value %} selected{% endif %}>{{ label }}</option>
@@ -77,8 +77,8 @@
 
         {% if is_admin %}
         <div class="form-group">
-          <label class="form-label">Vendedor</label>
-          <select name="vendedor" class="form-input">
+          <label class="form-label" for="filter-vendedor">Vendedor</label>
+          <select id="filter-vendedor" name="vendedor" class="form-input">
             <option value="">Todos</option>
             <option value="sin-vendedor"{% if request.GET.vendedor == 'sin-vendedor' %} selected{% endif %}>Sin vendedor</option>
             {% for seller in sellers %}
@@ -96,116 +96,365 @@
     </form>
   </section>
 
-  <!-- Métricas Principales -->
-  <section class="stats-grid" aria-label="Métricas de ventas">
+  <!-- Métricas Operativas No Monetarias -->
+  <section class="stats-grid" aria-label="Resumen de unidades de ventas" style="margin-top: 1.5rem;">
     <div class="stat-card">
       <span class="stat-label">Compras confirmadas</span>
       <span class="stat-value font-mono">{{ confirmed_sales_count }}</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">Pagos únicos</span>
-      <span class="stat-value font-mono">{{ payment_count }}</span>
-    </div>
-    <div class="stat-card stat-accent-red">
-      <span class="stat-label">Ingreso bruto</span>
-      <span class="stat-value font-mono">$ {{ total_amount|floatformat:2 }}</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">Pasajeros confirmados</span>
+      <span class="stat-label">Pasajeros registrados</span>
       <span class="stat-value font-mono">{{ passenger_count }}</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">Pasajes/tramos</span>
+      <span class="stat-label">Tramos vendidos</span>
       <span class="stat-value font-mono">{{ leg_count }}</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">Pasajes comisionables</span>
-      <span class="stat-value font-mono">{{ commissionable_units }}</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">Comisiones retenidas</span>
-      <span class="stat-value font-mono">$ {{ commission_total|floatformat:2 }}</span>
-    </div>
-    <div class="stat-card stat-accent-green">
-      <span class="stat-label">Neto operativo</span>
-      <span class="stat-value font-mono" style="color: var(--green-600);">$ {{ net_operating|floatformat:2 }}</span>
-      <small class="muted" style="font-size: 0.75rem; margin-top: 0.25rem;">Bruto menos comisiones.</small>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">Efectivo</span>
-      <span class="stat-value font-mono">$ {{ cash_amount|floatformat:2 }}</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">Transferencia</span>
-      <span class="stat-value font-mono">$ {{ transfer_amount|floatformat:2 }}</span>
+      <span class="stat-label">Pasajes con asiento</span>
+      <span class="stat-value font-mono">{{ chart_category.denominator }}</span>
     </div>
   </section>
 
-  <!-- Desgloses -->
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
-    <section class="ops-card">
-      <h2>Desglose por medio</h2>
-      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
-        {% for row in by_method %}
-          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
-            <span><strong>{{ row.method }}</strong></span>
-            <span>{{ row.count }} pagos · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
-          </li>
-        {% empty %}
-          <li class="muted">Sin datos</li>
-        {% endfor %}
-      </ul>
-    </section>
+  <!-- Gráficos Analíticos de Ventas -->
+  <section class="charts-section" aria-label="Gráficos analíticos de ventas" style="margin-top: 2rem;">
+    <h2 class="charts-section-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/>
+      </svg>
+      <span>Distribución y comportamiento de ventas</span>
+    </h2>
 
-    <section class="ops-card">
-      <h2>Desglose por canal</h2>
-      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
-        {% for row in by_channel %}
-          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
-            <span><strong>{{ row.booking__channel }}</strong></span>
-            <span>{{ row.count }} pagos · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
-          </li>
-        {% empty %}
-          <li class="muted">Sin datos</li>
-        {% endfor %}
-      </ul>
-    </section>
+    <div class="charts-grid">
+      <!-- Gráfico 1: Canal web vs interna -->
+      <article class="chart-card" id="chart-card-canal" data-chart="channel" aria-labelledby="chart-title-canal">
+        <header class="chart-header">
+          <h3 class="chart-title" id="chart-title-canal">{{ chart_channel.title }}</h3>
+          <p class="chart-subtitle">{{ chart_channel.subtitle }}</p>
+          <div class="chart-meta">
+            <span class="meta-pill"><strong>Unidad:</strong> {{ chart_channel.unit }}</span>
+            <span class="meta-pill highlight"><strong>Denominador:</strong> {{ chart_channel.denominator_label }}</span>
+          </div>
+        </header>
 
-    {% if is_admin %}
-    <section class="ops-card">
-      <h2>Desglose por vendedor</h2>
-      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
-        {% for row in by_seller %}
-          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
-            <span><strong>{% if row.booking__seller__username %}{{ row.booking__seller__username }}{% else %}Sin vendedor{% endif %}</strong></span>
-            <span>{{ row.count }} pagos · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
-          </li>
-        {% empty %}
-          <li class="muted">Sin datos</li>
-        {% endfor %}
-      </ul>
-    </section>
-    {% endif %}
+        {% if chart_channel.has_data %}
+          <!-- Barra apilada visual -->
+          <div class="chart-bar-stacked" role="img" aria-label="Distribución proporcional por canal de venta">
+            {% for item in chart_channel.items %}
+              {% if item.percentage_exact > 0 %}
+                <div class="chart-bar-segment" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};" title="{{ item.label }}: {{ item.percentage }}%"></div>
+              {% endif %}
+            {% endfor %}
+          </div>
 
-    <section class="ops-card">
-      <h2>Ingresos asignados por salida</h2>
-      <p class="muted" style="font-size: 0.8125rem;">El importe por salida usa las asignaciones históricas; si hay descuentos no distribuibles, no se prorratea la tarifa actual.</p>
-      <ul style="list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-direction: column; gap: 0.5rem;">
-        {% for row in by_departure %}
-          <li style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color);">
-            <span>{{ row.leg__trip__departure_at|date:'d/m/Y H:i' }}</span>
-            <span>{{ row.units }} pasajes · <span class="font-mono font-bold">$ {{ row.amount|floatformat:2 }}</span></span>
-          </li>
-        {% empty %}
-          <li class="muted">Sin datos</li>
-        {% endfor %}
-      </ul>
-    </section>
-  </div>
+          <ul class="chart-items-list">
+            {% for item in chart_channel.items %}
+            <li class="chart-item">
+              <div class="chart-item-header">
+                <div class="chart-item-label-wrap">
+                  <span class="chart-color-dot" style="background-color: {{ item.color }};" aria-hidden="true"></span>
+                  <span class="chart-item-label">{{ item.label }}</span>
+                </div>
+                <div class="chart-item-stats">
+                  <span class="chart-count-label font-mono">{{ item.count }} compras</span>
+                  <span class="chart-badge-pct font-mono">{{ item.percentage }}%</span>
+                </div>
+              </div>
+              <div class="chart-track" aria-hidden="true">
+                <div class="chart-fill" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};"></div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
 
-  <!-- Detalle de Ventas -->
-  <section class="ops-card" style="margin-top: 1.5rem;" aria-label="Detalle de ventas">
-    <h2>Detalle de transacciones</h2>
+          {% if chart_channel.notes %}
+          <footer class="chart-footer-note">
+            <p style="margin: 0;">{{ chart_channel.notes }}</p>
+          </footer>
+          {% endif %}
+        {% else %}
+          <div class="chart-empty-state">
+            <span class="chart-empty-badge">{{ chart_channel.empty_message }}</span>
+            <p class="chart-empty-desc">No hay operaciones registradas para los filtros seleccionados.</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <!-- Gráfico 2: Participación por vendedor (solo administración) -->
+      {% if is_admin and chart_seller %}
+      <article class="chart-card" id="chart-card-vendedor" data-chart="seller" aria-labelledby="chart-title-vendedor">
+        <header class="chart-header">
+          <h3 class="chart-title" id="chart-title-vendedor">{{ chart_seller.title }}</h3>
+          <p class="chart-subtitle">{{ chart_seller.subtitle }}</p>
+          <div class="chart-meta">
+            <span class="meta-pill"><strong>Unidad:</strong> {{ chart_seller.unit }}</span>
+            <span class="meta-pill highlight"><strong>Denominador:</strong> {{ chart_seller.denominator_label }}</span>
+          </div>
+        </header>
+
+        {% if chart_seller.has_data %}
+          <div class="chart-bar-stacked" role="img" aria-label="Distribución proporcional por vendedor">
+            {% for item in chart_seller.items %}
+              {% if item.percentage_exact > 0 %}
+                <div class="chart-bar-segment" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};" title="{{ item.label }}: {{ item.percentage }}%"></div>
+              {% endif %}
+            {% endfor %}
+          </div>
+
+          <ul class="chart-items-list">
+            {% for item in chart_seller.items %}
+            <li class="chart-item">
+              <div class="chart-item-header">
+                <div class="chart-item-label-wrap">
+                  <span class="chart-color-dot" style="background-color: {{ item.color }};" aria-hidden="true"></span>
+                  <span class="chart-item-label">{{ item.label }}</span>
+                </div>
+                <div class="chart-item-stats">
+                  <span class="chart-count-label font-mono">{{ item.count }} compras</span>
+                  <span class="chart-badge-pct font-mono">{{ item.percentage }}%</span>
+                </div>
+              </div>
+              <div class="chart-track" aria-hidden="true">
+                <div class="chart-fill" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};"></div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+
+          {% if chart_seller.notes %}
+          <footer class="chart-footer-note">
+            <p style="margin: 0;">{{ chart_seller.notes }}</p>
+          </footer>
+          {% endif %}
+        {% else %}
+          <div class="chart-empty-state">
+            <span class="chart-empty-badge">{{ chart_seller.empty_message }}</span>
+            <p class="chart-empty-desc">No hay operaciones de vendedores para los filtros seleccionados.</p>
+          </div>
+        {% endif %}
+      </article>
+      {% endif %}
+
+      <!-- Gráfico 3: Categoría cama vs semicama -->
+      <article class="chart-card" id="chart-card-categoria" data-chart="category" aria-labelledby="chart-title-categoria">
+        <header class="chart-header">
+          <h3 class="chart-title" id="chart-title-categoria">{{ chart_category.title }}</h3>
+          <p class="chart-subtitle">{{ chart_category.subtitle }}</p>
+          <div class="chart-meta">
+            <span class="meta-pill"><strong>Unidad:</strong> {{ chart_category.unit }}</span>
+            <span class="meta-pill highlight"><strong>Denominador:</strong> {{ chart_category.denominator_label }}</span>
+          </div>
+        </header>
+
+        {% if chart_category.has_data %}
+          <div class="chart-bar-stacked" role="img" aria-label="Distribución proporcional por categoría de butaca">
+            {% for item in chart_category.items %}
+              {% if item.percentage_exact > 0 %}
+                <div class="chart-bar-segment" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};" title="{{ item.label }}: {{ item.percentage }}%"></div>
+              {% endif %}
+            {% endfor %}
+          </div>
+
+          <ul class="chart-items-list">
+            {% for item in chart_category.items %}
+            <li class="chart-item">
+              <div class="chart-item-header">
+                <div class="chart-item-label-wrap">
+                  <span class="chart-color-dot" style="background-color: {{ item.color }};" aria-hidden="true"></span>
+                  <span class="chart-item-label">{{ item.label }}</span>
+                </div>
+                <div class="chart-item-stats">
+                  <span class="chart-count-label font-mono">{{ item.count }} pasajes</span>
+                  <span class="chart-badge-pct font-mono">{{ item.percentage }}%</span>
+                </div>
+              </div>
+              <div class="chart-track" aria-hidden="true">
+                <div class="chart-fill" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};"></div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+
+          {% if chart_category.notes %}
+          <footer class="chart-footer-note">
+            <p style="margin: 0;">{{ chart_category.notes }}</p>
+          </footer>
+          {% endif %}
+        {% else %}
+          <div class="chart-empty-state">
+            <span class="chart-empty-badge">{{ chart_category.empty_message }}</span>
+            <p class="chart-empty-desc">No hay asignaciones de asiento para los filtros seleccionados.</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <!-- Gráfico 4: Sentido del recorrido -->
+      <article class="chart-card" id="chart-card-sentido" data-chart="direction" aria-labelledby="chart-title-sentido">
+        <header class="chart-header">
+          <h3 class="chart-title" id="chart-title-sentido">{{ chart_direction.title }}</h3>
+          <p class="chart-subtitle">{{ chart_direction.subtitle }}</p>
+          <div class="chart-meta">
+            <span class="meta-pill"><strong>Unidad:</strong> {{ chart_direction.unit }}</span>
+            <span class="meta-pill highlight"><strong>Denominador:</strong> {{ chart_direction.denominator_label }}</span>
+          </div>
+        </header>
+
+        {% if chart_direction.has_data %}
+          <div class="chart-bar-stacked" role="img" aria-label="Distribución proporcional por sentido del recorrido">
+            {% for item in chart_direction.items %}
+              {% if item.percentage_exact > 0 %}
+                <div class="chart-bar-segment" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};" title="{{ item.label }}: {{ item.percentage }}%"></div>
+              {% endif %}
+            {% endfor %}
+          </div>
+
+          <ul class="chart-items-list">
+            {% for item in chart_direction.items %}
+            <li class="chart-item">
+              <div class="chart-item-header">
+                <div class="chart-item-label-wrap">
+                  <span class="chart-color-dot" style="background-color: {{ item.color }};" aria-hidden="true"></span>
+                  <span class="chart-item-label">{{ item.label }}</span>
+                </div>
+                <div class="chart-item-stats">
+                  <span class="chart-count-label font-mono">{{ item.count }} tramos</span>
+                  <span class="chart-badge-pct font-mono">{{ item.percentage }}%</span>
+                </div>
+              </div>
+              <div class="chart-track" aria-hidden="true">
+                <div class="chart-fill" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};"></div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+
+          {% if chart_direction.notes %}
+          <footer class="chart-footer-note">
+            <p style="margin: 0;">{{ chart_direction.notes }}</p>
+          </footer>
+          {% endif %}
+        {% else %}
+          <div class="chart-empty-state">
+            <span class="chart-empty-badge">{{ chart_direction.empty_message }}</span>
+            <p class="chart-empty-desc">No hay tramos registrados para los filtros seleccionados.</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <!-- Gráfico 5: Tipo solo ida vs ida/vuelta -->
+      <article class="chart-card" id="chart-card-tipo" data-chart="trip_type" aria-labelledby="chart-title-tipo">
+        <header class="chart-header">
+          <h3 class="chart-title" id="chart-title-tipo">{{ chart_trip_type.title }}</h3>
+          <p class="chart-subtitle">{{ chart_trip_type.subtitle }}</p>
+          <div class="chart-meta">
+            <span class="meta-pill"><strong>Unidad:</strong> {{ chart_trip_type.unit }}</span>
+            <span class="meta-pill highlight"><strong>Denominador:</strong> {{ chart_trip_type.denominator_label }}</span>
+          </div>
+        </header>
+
+        {% if chart_trip_type.has_data %}
+          <div class="chart-bar-stacked" role="img" aria-label="Distribución proporcional por tipo de viaje">
+            {% for item in chart_trip_type.items %}
+              {% if item.percentage_exact > 0 %}
+                <div class="chart-bar-segment" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};" title="{{ item.label }}: {{ item.percentage }}%"></div>
+              {% endif %}
+            {% endfor %}
+          </div>
+
+          <ul class="chart-items-list">
+            {% for item in chart_trip_type.items %}
+            <li class="chart-item">
+              <div class="chart-item-header">
+                <div class="chart-item-label-wrap">
+                  <span class="chart-color-dot" style="background-color: {{ item.color }};" aria-hidden="true"></span>
+                  <span class="chart-item-label">{{ item.label }}</span>
+                </div>
+                <div class="chart-item-stats">
+                  <span class="chart-count-label font-mono">{{ item.count }} compras</span>
+                  <span class="chart-badge-pct font-mono">{{ item.percentage }}%</span>
+                </div>
+              </div>
+              <div class="chart-track" aria-hidden="true">
+                <div class="chart-fill" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};"></div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+
+          {% if chart_trip_type.notes %}
+          <footer class="chart-footer-note">
+            <p style="margin: 0;">{{ chart_trip_type.notes }}</p>
+          </footer>
+          {% endif %}
+        {% else %}
+          <div class="chart-empty-state">
+            <span class="chart-empty-badge">{{ chart_trip_type.empty_message }}</span>
+            <p class="chart-empty-desc">No hay compras registradas para los filtros seleccionados.</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <!-- Gráfico 6: Salida concreta -->
+      <article class="chart-card" id="chart-card-salida" data-chart="departure" aria-labelledby="chart-title-salida">
+        <header class="chart-header">
+          <h3 class="chart-title" id="chart-title-salida">{{ chart_departure.title }}</h3>
+          <p class="chart-subtitle">{{ chart_departure.subtitle }}</p>
+          <div class="chart-meta">
+            <span class="meta-pill"><strong>Unidad:</strong> {{ chart_departure.unit }}</span>
+            <span class="meta-pill highlight"><strong>Denominador:</strong> {{ chart_departure.denominator_label }}</span>
+          </div>
+        </header>
+
+        {% if chart_departure.has_data %}
+          <ul class="chart-items-list">
+            {% for item in chart_departure.items %}
+            <li class="chart-item">
+              <div class="chart-item-header">
+                <div class="chart-item-label-wrap">
+                  <span class="chart-color-dot" style="background-color: {{ item.color }};" aria-hidden="true"></span>
+                  <span class="chart-item-label">{{ item.label }}</span>
+                </div>
+                <div class="chart-item-stats">
+                  <span class="chart-count-label font-mono">{{ item.count }} tramos</span>
+                  <span class="chart-badge-pct font-mono">{{ item.percentage }}%</span>
+                </div>
+              </div>
+              <div class="chart-track" aria-hidden="true">
+                <div class="chart-fill" style="width: {{ item.percentage_exact|unlocalize }}%; background-color: {{ item.color }};"></div>
+              </div>
+              <div class="chart-item-extra">
+                {% if item.occupancy_note %}
+                  <span class="chart-extra-pill">{{ item.occupancy_note }}</span>
+                {% endif %}
+                {% if item.infants_note %}
+                  <span class="chart-extra-pill highlight">{{ item.infants_note }}</span>
+                {% endif %}
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+
+          {% if chart_departure.notes %}
+          <footer class="chart-footer-note">
+            <p style="margin: 0;">{{ chart_departure.notes }}</p>
+          </footer>
+          {% endif %}
+        {% else %}
+          <div class="chart-empty-state">
+            <span class="chart-empty-badge">{{ chart_departure.empty_message }}</span>
+            <p class="chart-empty-desc">No hay salidas operativas con tramos seleccionados.</p>
+          </div>
+        {% endif %}
+      </article>
+    </div>
+  </section>
+
+  <!-- Detalle de transacciones confirmadas (Auditoría sin importes monetarios) -->
+  <section class="ops-card" style="margin-top: 2rem;" aria-label="Detalle de transacciones confirmadas">
+    <h2 style="font-size: 1.15rem; font-weight: 700; color: var(--text-primary); margin: 0 0 1rem 0;">
+      Detalle de operaciones confirmadas
+    </h2>
     <div class="table-scroll">
       <table class="table-audit" style="width: 100%;">
         <thead>
@@ -215,7 +464,6 @@
             <th scope="col">Estado</th>
             <th scope="col">Canal</th>
             <th scope="col">Medio</th>
-            <th scope="col">Importe</th>
             <th scope="col">Pasajeros</th>
             <th scope="col">Tramos</th>
             <th scope="col">Vendedor</th>
@@ -233,14 +481,13 @@
             <td><span class="badge badge-status-confirmed">Confirmada</span></td>
             <td>{{ payment.booking.get_channel_display }}</td>
             <td>{{ payment.get_method_display }}</td>
-            <td class="font-mono font-bold">$ {{ payment.amount|floatformat:2 }}</td>
             <td style="text-align: center;">{{ payment.passenger_count }}</td>
             <td style="text-align: center;">{{ payment.leg_count }}</td>
             <td>{{ payment.booking.seller.username|default:'Sin vendedor' }}</td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="9" class="empty-state" style="text-align: center; padding: 2rem;">No hay ventas para los filtros seleccionados.</td>
+            <td colspan="8" class="empty-state" style="text-align: center; padding: 2rem;">No hay ventas para los filtros seleccionados.</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -249,7 +496,7 @@
 
     <div style="margin-top: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
       <span class="muted" style="font-size: 0.875rem;">
-        Mostrando {{ page.start_index|default:0 }}–{{ page.end_index|default:0 }} de {{ paginator.count }} pagos.
+        Mostrando {{ page.start_index|default:0 }}–{{ page.end_index|default:0 }} de {{ paginator.count }} transacciones.
       </span>
 
       <div style="display: flex; gap: 0.5rem;">
