@@ -42,6 +42,7 @@ def get_commissionable_assignments(booking_ids_or_qs, *, seller_id=None):
         leg__booking__status=BookingStatus.CONFIRMED,
         leg__booking__channel=BookingChannel.MANUAL,
         leg__booking__seller__isnull=False,
+        leg__booking__payments__status=PaymentStatus.APPROVED,
         status=AssignmentStatus.CONFIRMED,
         price__gt=Decimal("0.00"),
     ).distinct()
@@ -63,7 +64,7 @@ def _is_admin(actor):
     ))
 
 
-def build_sales_charts(booking_ids, *, actor, admin_view):
+def build_sales_charts(booking_ids, *, actor, admin_view, leg_ids=None):
     """
     Construye las estructuras de datos para los seis gráficos analíticos de ventas:
     1) Canal web vs interna
@@ -90,8 +91,11 @@ def build_sales_charts(booking_ids, *, actor, admin_view):
 
     # Pre-cálculo eficiente de tramos (1 sola query para gráficos 4, 5 y 6)
     if total_bookings > 0:
+        leg_filter = Q(booking_id__in=booking_ids)
+        if leg_ids is not None:
+            leg_filter &= Q(pk__in=leg_ids)
         all_legs = list(
-            BookingLeg.objects.filter(booking_id__in=booking_ids).select_related(
+            BookingLeg.objects.filter(leg_filter).select_related(
                 "trip__bus", "trip__route", "origin_stop__stop", "destination_stop__stop"
             )
         )
@@ -202,11 +206,14 @@ def build_sales_charts(booking_ids, *, actor, admin_view):
     c3_denom = 0
     c3_note = ""
     if total_bookings > 0:
-        confirmed_assignments = SeatAssignment.objects.filter(
+        assignment_filter = Q(
             leg__booking_id__in=booking_ids,
             leg__booking__status=BookingStatus.CONFIRMED,
             status=AssignmentStatus.CONFIRMED,
         )
+        if leg_ids is not None:
+            assignment_filter &= Q(leg_id__in=leg_ids)
+        confirmed_assignments = SeatAssignment.objects.filter(assignment_filter)
         cat_agg = confirmed_assignments.aggregate(
             cama=Count("pk", filter=Q(category=SeatCategory.CAMA)),
             semicama=Count("pk", filter=Q(category=SeatCategory.SEMI_CAMA)),
@@ -336,13 +343,16 @@ def build_sales_charts(booking_ids, *, actor, admin_view):
         "notes": "Sentido clasificado a partir del recorrido oficial o del par de paradas de subida y bajada del tramo.",
     }
 
-    # 5. Tipo solo ida vs ida/vuelta (usando all_legs en memoria, 0 queries extra)
+    # 5. Tipo solo ida vs ida/vuelta (clasificado según los tramos de cada compra confirmada)
     c5_denom = total_bookings
     c5_items = []
     if c5_denom > 0:
-        legs_per_booking = {}
-        for leg in all_legs:
-            legs_per_booking[leg.booking_id] = legs_per_booking.get(leg.booking_id, 0) + 1
+        legs_per_booking = dict(
+            BookingLeg.objects.filter(booking_id__in=booking_ids)
+            .values("booking_id")
+            .annotate(cnt=Count("pk"))
+            .values_list("booking_id", "cnt")
+        )
 
         one_way = 0
         round_trip = 0
@@ -418,14 +428,20 @@ def build_sales_charts(booking_ids, *, actor, admin_view):
         ) if bus_ids else {}
 
         occupied_seats_map = dict(
-            SeatAssignment.objects.filter(trip_id__in=trip_ids, status=AssignmentStatus.CONFIRMED)
+            SeatAssignment.objects.filter(
+                leg__booking_id__in=booking_ids,
+                leg__in=all_legs,
+                trip_id__in=trip_ids,
+                status=AssignmentStatus.CONFIRMED,
+            )
             .values("trip_id")
-            .annotate(cnt=Count("pk"))
+            .annotate(cnt=Count("pk", distinct=True))
             .values_list("trip_id", "cnt")
         ) if trip_ids else {}
 
         infants_per_trip_map = dict(
             BookingPassenger.objects.filter(
+                booking__legs__in=all_legs,
                 booking__legs__trip_id__in=trip_ids,
                 booking_id__in=booking_ids,
                 is_lap_infant=True,
@@ -606,7 +622,17 @@ def build_sales_report(params, *, actor):
         is_active=True, groups__name="Vendedor"
     ).distinct().order_by("username") if admin_view else []
 
-    charts = build_sales_charts(booking_ids, actor=actor, admin_view=admin_view)
+    leg_qs = BookingLeg.objects.filter(booking_id__in=booking_ids)
+    has_trip_filter = False
+    if trip_start_date and not error:
+        leg_qs = leg_qs.filter(trip__departure_at__gte=timezone.make_aware(datetime.combine(trip_start_date, time.min), tz))
+        has_trip_filter = True
+    if trip_end_date and not error:
+        leg_qs = leg_qs.filter(trip__departure_at__lt=timezone.make_aware(datetime.combine(trip_end_date + timedelta(days=1), time.min), tz))
+        has_trip_filter = True
+    leg_ids = list(leg_qs.values_list("pk", flat=True)) if has_trip_filter else None
+
+    charts = build_sales_charts(booking_ids, actor=actor, admin_view=admin_view, leg_ids=leg_ids)
     passenger_total = charts.pop("_total_persons", 0)
     leg_total = charts["chart_direction"]["denominator"]
 

@@ -24,6 +24,7 @@ from django.utils import timezone
 
 from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, Trip, TripFare, TripStop
 from payments.models import Payment, PaymentMethod, PaymentStatus
+from panel.report_services import COMMISSION_PER_TICKET, build_sales_charts, get_commissionable_assignments
 from sales.models import (
     AssignmentStatus,
     Booking,
@@ -543,6 +544,201 @@ class SalesChartsAndCommissionsTests(SalesChartsFixturesMixin, TestCase):
         self.assertIn("Comisiones retenidas", dash_html)
         self.assertIn("Neto operativo", dash_html)
         self.assertIn("$", dash_html)
+
+    def test_get_commissionable_assignments_requires_approved_payment(self):
+        """
+        Refuerzo de get_commissionable_assignments:
+        Exige internamente PaymentStatus.APPROVED además de Booking CONFIRMED/MANUAL/seller
+        y asignación CONFIRMED con price > 0.
+        """
+        conf_time = timezone.make_aware(datetime(2026, 11, 12, 10, 0), AR)
+        booking = Booking.objects.create(
+            channel=BookingChannel.MANUAL,
+            seller=self.seller_a,
+            status=BookingStatus.CONFIRMED,
+            email="payment_check@test.scviajes",
+            phone="3515559999",
+            confirmed_at=conf_time,
+        )
+        passenger = BookingPassenger.objects.create(
+            booking=booking,
+            position=1,
+            first_name="Test",
+            last_name="Payment",
+            document_type="DNI",
+            document_number="30999999",
+            birth_date=datetime(1990, 1, 1).date(),
+        )
+        leg = BookingLeg.objects.create(
+            booking=booking,
+            sequence=1,
+            trip=self.trip_1,
+            origin_stop=self.trip_1_ts_cba,
+            destination_stop=self.trip_1_ts_ssj,
+            origin_stop_name="Córdoba Capital",
+            destination_stop_name="San Salvador de Jujuy",
+            departure_at=self.trip_1_ts_cba.scheduled_at,
+            arrival_at=self.trip_1_ts_ssj.scheduled_at,
+        )
+        SeatAssignment.objects.create(
+            leg=leg,
+            passenger=passenger,
+            trip=self.trip_1,
+            seat=self.seats_bus_1[12],
+            status=AssignmentStatus.CONFIRMED,
+            seat_number=13,
+            category=SeatCategory.CAMA,
+            price=Decimal("20000.00"),
+            currency="ARS",
+        )
+
+        # 1. Sin pago registrado -> 0 asignaciones comisionables
+        self.assertEqual(get_commissionable_assignments([booking.pk]).count(), 0)
+
+        # 2. Con pago en revisión (UNDER_REVIEW) -> 0 asignaciones comisionables
+        payment = Payment.objects.create(
+            booking=booking,
+            method=PaymentMethod.BANK_TRANSFER,
+            status=PaymentStatus.UNDER_REVIEW,
+            amount=Decimal("20000.00"),
+            currency="ARS",
+        )
+        self.assertEqual(get_commissionable_assignments([booking.pk]).count(), 0)
+
+        # 3. Con pago rechazado (REJECTED) -> 0 asignaciones comisionables
+        payment.status = PaymentStatus.REJECTED
+        payment.save()
+        self.assertEqual(get_commissionable_assignments([booking.pk]).count(), 0)
+
+        # 4. Con pago aprobado (APPROVED) -> 1 asignación comisionable
+        payment.status = PaymentStatus.APPROVED
+        payment.reviewed_by = self.admin
+        payment.reviewed_at = conf_time
+        payment.save()
+        self.assertEqual(get_commissionable_assignments([booking.pk]).count(), 1)
+
+    def test_chart_departure_occupancy_limited_to_scope_and_selected_leg(self):
+        """
+        Regresión obligatoria:
+        chart_departure.occupancy_note debe limitarse a las reservas/legs seleccionados
+        por booking_ids y al tramo seleccionado, sin atribuir ocupación de una ida/vuelta
+        completa ni reservas fuera de los filtros.
+        Verifica:
+        - Reserva confirmada adicional del mismo Trip fuera de filtros (diciembre 2026).
+        - Aislamiento de ocupación por vendedor.
+        - Filtro de un tramo (viaje_desde y viaje_hasta).
+        - Llamada directa a build_sales_charts con leg_ids.
+        """
+        # Crear reserva confirmada adicional del mismo trip_1 fuera del rango de noviembre (diciembre 2026)
+        conf_dec = timezone.make_aware(datetime(2026, 12, 5, 10, 0), AR)
+        b_outside = Booking.objects.create(
+            channel=BookingChannel.MANUAL,
+            seller=self.seller_b,
+            status=BookingStatus.CONFIRMED,
+            email="outside@test.scviajes",
+            phone="3515557777",
+            confirmed_at=conf_dec,
+        )
+        p_out = BookingPassenger.objects.create(
+            booking=b_outside,
+            position=1,
+            first_name="Outside",
+            last_name="Passenger",
+            document_type="DNI",
+            document_number="30888888",
+            birth_date=datetime(1988, 8, 8).date(),
+        )
+        leg_out = BookingLeg.objects.create(
+            booking=b_outside,
+            sequence=1,
+            trip=self.trip_1,
+            origin_stop=self.trip_1_ts_cba,
+            destination_stop=self.trip_1_ts_ssj,
+            origin_stop_name="Córdoba Capital",
+            destination_stop_name="San Salvador de Jujuy",
+            departure_at=self.trip_1_ts_cba.scheduled_at,
+            arrival_at=self.trip_1_ts_ssj.scheduled_at,
+        )
+        SeatAssignment.objects.create(
+            leg=leg_out,
+            passenger=p_out,
+            trip=self.trip_1,
+            seat=self.seats_bus_1[14],
+            status=AssignmentStatus.CONFIRMED,
+            seat_number=15,
+            category=SeatCategory.CAMA,
+            price=Decimal("20000.00"),
+            currency="ARS",
+        )
+        Payment.objects.create(
+            booking=b_outside,
+            method=PaymentMethod.CASH,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("20000.00"),
+            currency="ARS",
+            reviewed_by=self.admin,
+            reviewed_at=conf_dec,
+            registered_by=self.seller_b,
+        )
+
+        # En la base de datos hay 5 butacas confirmadas en trip_1 (4 de noviembre + 1 de diciembre).
+
+        # A) Admin filtrando noviembre: b_outside queda fuera del alcance por fecha de confirmación
+        self.client.force_login(self.admin)
+        resp_nov = self.client.get(reverse("panel:sales_report"), {"desde": "2026-11-01", "hasta": "2026-11-30"})
+        self.assertEqual(resp_nov.status_code, 200)
+        c6_nov = resp_nov.context["chart_departure"]
+        item_trip_1_nov = next(it for it in c6_nov["items"] if it["trip_pk"] == self.trip_1.pk)
+        # Debe contar 4 butacas, NO 5
+        self.assertEqual(item_trip_1_nov["count"], 4)
+        self.assertEqual(item_trip_1_nov["occupancy_note"], "Ocupación del colectivo: 4/60 butacas (6.7%)")
+
+        # B) Vendedor A: en su alcance solo tiene b_seller_a (1 asiento en trip_1)
+        self.client.force_login(self.seller_a)
+        resp_seller = self.client.get(reverse("panel:sales_report"))
+        self.assertEqual(resp_seller.status_code, 200)
+        c6_seller = resp_seller.context["chart_departure"]
+        item_trip_1_seller = next(it for it in c6_seller["items"] if it["trip_pk"] == self.trip_1.pk)
+        # No debe atribuir ocupación ajena ni de b_outside
+        self.assertEqual(item_trip_1_seller["count"], 1)
+        self.assertEqual(item_trip_1_seller["occupancy_note"], "Ocupación del colectivo: 1/60 butacas (1.7%)")
+
+        # C) Filtro de un tramo: viaje_desde y viaje_hasta para la salida de ida (2026-11-20)
+        self.client.force_login(self.admin)
+        resp_tramo = self.client.get(
+            reverse("panel:sales_report"),
+            {"desde": "2026-11-01", "hasta": "2026-11-30", "viaje_desde": "2026-11-20", "viaje_hasta": "2026-11-20"},
+        )
+        self.assertEqual(resp_tramo.status_code, 200)
+        c6_tramo = resp_tramo.context["chart_departure"]
+        # En chart_departure solo deben figurar las salidas del tramo filtrado (trip_1 y trip_2)
+        trip_pks_tramo = [it["trip_pk"] for it in c6_tramo["items"]]
+        self.assertIn(self.trip_1.pk, trip_pks_tramo)
+        self.assertIn(self.trip_2.pk, trip_pks_tramo)
+        self.assertNotIn(self.trip_return.pk, trip_pks_tramo)
+        item_trip_1_tramo = next(it for it in c6_tramo["items"] if it["trip_pk"] == self.trip_1.pk)
+        # La ocupación de trip_1 se limita a las 4 reservas del tramo sin atribuir la vuelta de b_seller_a ni b_online_2
+        self.assertEqual(item_trip_1_tramo["count"], 4)
+        self.assertEqual(item_trip_1_tramo["occupancy_note"], "Ocupación del colectivo: 4/60 butacas (6.7%)")
+
+        # D) Llamada directa a build_sales_charts para b_seller_a (ida y vuelta):
+        # Con ambos tramos: cada salida reporta su propio asiento individual
+        charts_both = build_sales_charts([self.b_seller_a.pk], actor=self.seller_a, admin_view=False)
+        c6_both = {it["trip_pk"]: it for it in charts_both["chart_departure"]["items"]}
+        self.assertEqual(c6_both[self.trip_1.pk]["occupancy_note"], "Ocupación del colectivo: 1/60 butacas (1.7%)")
+        self.assertEqual(c6_both[self.trip_return.pk]["occupancy_note"], "Ocupación del colectivo: 1/60 butacas (1.7%)")
+
+        # Con leg_ids restringido únicamente al tramo de ida:
+        leg_ida = self.b_seller_a.legs.get(trip=self.trip_1)
+        charts_ida_only = build_sales_charts(
+            [self.b_seller_a.pk], actor=self.seller_a, admin_view=False, leg_ids=[leg_ida.pk]
+        )
+        self.assertEqual(len(charts_ida_only["chart_departure"]["items"]), 1)
+        self.assertEqual(charts_ida_only["chart_departure"]["items"][0]["trip_pk"], self.trip_1.pk)
+        self.assertEqual(
+            charts_ida_only["chart_departure"]["items"][0]["occupancy_note"],
+            "Ocupación del colectivo: 1/60 butacas (1.7%)",
+        )
 
 
 SCREENSHOT_DIR = r"C:\Users\JOEL\AppData\Local\Temp\scviajes_charts_20261106"

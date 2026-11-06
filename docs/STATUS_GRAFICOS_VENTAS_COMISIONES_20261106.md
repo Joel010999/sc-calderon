@@ -46,7 +46,7 @@ Se reemplazó la presentación visual anterior por 6 gráficos analíticos con b
 | **Migraciones de esquema** | `python manage.py makemigrations --check --dry-run` | **PASS (Sin cambios)** | No se modificaron modelos ni esquemas de base de datos. |
 | **Diff y espacios en blanco** | `git diff --check` | **PASS (0 alertas)** | Formato limpio, sin espacios finales ni saltos erróneos. |
 | **Pruebas de navegador (CDP)** | `SalesChartsBrowserValidationTests` (Chrome headless) | **PASS (8/8 tests OK)** | Desktop (1440px) y móvil (390px): 0 errores JS, 0px desborde horizontal (`scrollWidth <= clientWidth`), porcentajes reales renderizados. |
-| **Suite completa Django** | `python manage.py test -v 2` | **PASS (700 tests OK, 6 skipped)** | Ejecutados 700 tests en 548.835s sin fallos ni errores. Las 6 omisiones corresponden a pruebas de concurrencia PostgreSQL. |
+| **Suite completa Django** | `python manage.py test -v 2` | **PASS (696 pruebas aprobadas, 6 omitidas)** | Validación final posterior a las correcciones: Found 707, Ran 702, OK (skipped=6): 696 pruebas aprobadas y 6 omitidas en 542.544s sin fallos ni errores. Las 6 omisiones corresponden a pruebas de concurrencia PostgreSQL. |
 | **Logs íntegros fuera del repositorio** | `C:\Users\JOEL\AppData\Local\Temp\scviajes_charts_20261106\full_test_suite_output.log` | **Preservado íntegro** | Stdout/stderr completo guardado fuera del árbol de trabajo. |
 
 ---
