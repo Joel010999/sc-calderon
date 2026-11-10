@@ -13,8 +13,12 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 from zoneinfo import ZoneInfo
 
-import aiohttp
-import requests
+try:
+    import aiohttp
+    import requests
+except ImportError:
+    aiohttp = None
+    requests = None
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
@@ -764,6 +768,8 @@ class SalesChartsBrowserValidationTests(SalesChartsFixturesMixin, StaticLiveServ
         self.setup_fixtures()
 
     def _login_user(self, username, password):
+        if not requests:
+            self.skipTest("requests no está disponible")
         session = requests.Session()
         login_url = f"{self.live_server_url}/panel/login/"
         session.get(login_url)
@@ -782,6 +788,8 @@ class SalesChartsBrowserValidationTests(SalesChartsFixturesMixin, StaticLiveServ
         return session.cookies.get("sessionid")
 
     def test_sales_report_browser_visual_and_overflow(self):
+        if not requests or not aiohttp:
+            self.skipTest("requests y aiohttp son necesarios para la prueba visual con Chrome")
         if not os.path.exists(CHROME_PATH):
             self.skipTest(f"Chrome no encontrado en {CHROME_PATH}")
 

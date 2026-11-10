@@ -23,6 +23,7 @@ from decimal import Decimal
 import io
 import shutil
 import tempfile
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -1011,3 +1012,78 @@ class ExpirationReleasesAvailabilityTests(InternalTransferSalesBaseTestCase):
         avail = get_trip_availability(trip=trip, origin_stop=ts_cba, destination_stop=ts_ssj)
         self.assertIn(self.seat_1, avail["available_seats"])
         self.assertNotIn(self.seat_1.pk, avail["occupied_seat_ids"])
+
+
+class SeatNumberToPkResolutionTests(InternalTransferSalesBaseTestCase):
+    """Verifica que seat_numbers con PK != number (típico en PostgreSQL) se resuelvan correctamente."""
+
+    def test_seat_number_resolved_when_pk_differs_from_number(self):
+        now = timezone.now()
+        trip, ts_cba, _, ts_ssj = self.create_test_trip(departure_dt=now + timedelta(days=2))
+        dummy_bus = Bus.objects.create(code=f"BUS-OFFSET-{uuid4().hex[:6]}", display_name="Offset Bus", is_active=True)
+        for i in range(1, 10):
+            Seat.objects.create(bus=dummy_bus, number=i, deck=Seat.Deck.LOWER, category=SeatCategory.CAMA, position_x=i, position_y=0)
+
+        seat_custom = Seat.objects.create(
+            bus=trip.bus,
+            number=44,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=10,
+            position_y=0,
+        )
+        self.assertNotEqual(seat_custom.pk, seat_custom.number)
+
+        booking = create_internal_transfer_booking(
+            seller=self.seller_1,
+            trip=trip,
+            origin_stop=ts_cba,
+            destination_stop=ts_ssj,
+            seat_numbers=[44],
+            seat_category=SeatCategory.CAMA,
+            email="offset@scviajes.com",
+            phone="3511112222",
+            passenger_data=[make_pax(first_name="Offset", last_name="Test", doc="99887766")],
+            now=now,
+        )
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        sa = SeatAssignment.objects.get(leg__booking=booking, seat=seat_custom)
+        self.assertEqual(sa.seat_number, 44)
+        self.assertEqual(sa.seat_id, seat_custom.pk)
+
+    def test_immediate_sale_seat_number_resolved_when_pk_differs_from_number(self):
+        now = timezone.now()
+        trip, ts_cba, _, ts_ssj = self.create_test_trip(departure_dt=now + timedelta(days=2))
+        dummy_bus = Bus.objects.create(code=f"BUS-OFFSET-IMM-{uuid4().hex[:6]}", display_name="Offset Bus Imm", is_active=True)
+        for i in range(1, 10):
+            Seat.objects.create(bus=dummy_bus, number=i, deck=Seat.Deck.LOWER, category=SeatCategory.CAMA, position_x=i, position_y=0)
+
+        seat_custom = Seat.objects.create(
+            bus=trip.bus,
+            number=45,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=11,
+            position_y=0,
+        )
+        self.assertNotEqual(seat_custom.pk, seat_custom.number)
+
+        booking = create_immediate_transfer_sale(
+            seller=self.seller_1,
+            trip=trip,
+            origin_stop=ts_cba,
+            destination_stop=ts_ssj,
+            seat_numbers=[45],
+            seat_category=SeatCategory.CAMA,
+            email="offset-imm@scviajes.com",
+            phone="3511112222",
+            passenger_data=[make_pax(first_name="Offset", last_name="Imm", doc="99887755")],
+            voucher=self.sample_pdf_voucher(),
+            payment_verified=True,
+            now=now,
+        )
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        sa = SeatAssignment.objects.get(leg__booking=booking, seat=seat_custom)
+        self.assertEqual(sa.seat_number, 45)
+        self.assertEqual(sa.seat_id, seat_custom.pk)
+        self.assertEqual(sa.status, AssignmentStatus.CONFIRMED)

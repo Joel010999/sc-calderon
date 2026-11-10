@@ -189,6 +189,63 @@ def validate_complete_internal_data(
         raise ValidationError(errors)
 
 
+def _resolve_seat_numbers(trip, seat_numbers):
+    """Resuelve números de butaca a objetos Seat en el colectivo del viaje."""
+    if not seat_numbers:
+        return []
+    if isinstance(trip, int):
+        from operations.models import Trip
+        trip = Trip.objects.select_related("bus").filter(pk=trip).first()
+    bus = getattr(trip, "bus", None)
+    if not bus:
+        return list(seat_numbers)
+    from operations.models import Seat
+    seats_by_number = {seat.number: seat for seat in Seat.objects.filter(bus=bus)}
+    resolved = []
+    for s in seat_numbers:
+        if hasattr(s, "pk"):
+            resolved.append(s)
+        elif isinstance(s, int) and s in seats_by_number:
+            resolved.append(seats_by_number[s])
+        else:
+            resolved.append(s)
+    return resolved
+
+
+def _normalize_internal_legs(legs):
+    """Normaliza tramos asegurando que butacas indicadas por número se resuelvan a objetos Seat."""
+    if not legs:
+        return []
+    normalized = []
+    for leg in legs:
+        leg_copy = dict(leg)
+        trip = leg_copy.get("trip")
+        if "seats" not in leg_copy and "seat_numbers" in leg_copy:
+            leg_copy["seats"] = _resolve_seat_numbers(trip, leg_copy.get("seat_numbers"))
+        elif "seats" in leg_copy:
+            seats = leg_copy.get("seats") or []
+            if isinstance(trip, int):
+                from operations.models import Trip
+                trip = Trip.objects.select_related("bus").filter(pk=trip).first()
+            bus = getattr(trip, "bus", None)
+            if bus:
+                from operations.models import Seat
+                bus_seats = list(Seat.objects.filter(bus=bus))
+                pks = {seat.pk for seat in bus_seats}
+                by_num = {seat.number: seat for seat in bus_seats}
+                new_seats = []
+                for s in seats:
+                    if hasattr(s, "pk"):
+                        new_seats.append(s)
+                    elif isinstance(s, int) and s not in pks and s in by_num:
+                        new_seats.append(by_num[s])
+                    else:
+                        new_seats.append(s)
+                leg_copy["seats"] = new_seats
+        normalized.append(leg_copy)
+    return normalized
+
+
 @transaction.atomic
 def create_internal_transfer_booking(
     *,
@@ -238,17 +295,19 @@ def create_internal_transfer_booking(
 
     if legs is None:
         if trip_data is not None:
-            legs = [trip_data]
+            legs = _normalize_internal_legs([trip_data])
         elif trip is not None:
             legs = [{
                 "trip": trip,
                 "origin_stop": origin_stop,
                 "destination_stop": destination_stop,
                 "category": seat_category,
-                "seats": seat_numbers or [],
+                "seats": _resolve_seat_numbers(trip, seat_numbers),
             }]
         else:
             legs = []
+    else:
+        legs = _normalize_internal_legs(legs)
 
     trips = [leg["trip"] for leg in legs]
     _, is_last_hour = validate_internal_sale_timing(trips, now=now)
@@ -357,17 +416,19 @@ def create_immediate_transfer_sale(
 
     if legs is None:
         if trip_data is not None:
-            legs = [trip_data]
+            legs = _normalize_internal_legs([trip_data])
         elif trip is not None:
             legs = [{
                 "trip": trip,
                 "origin_stop": origin_stop,
                 "destination_stop": destination_stop,
                 "category": seat_category,
-                "seats": seat_numbers or [],
+                "seats": _resolve_seat_numbers(trip, seat_numbers),
             }]
         else:
             legs = []
+    else:
+        legs = _normalize_internal_legs(legs)
 
     if not payment_verified:
         raise ValidationError(
