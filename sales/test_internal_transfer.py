@@ -1087,3 +1087,174 @@ class SeatNumberToPkResolutionTests(InternalTransferSalesBaseTestCase):
         self.assertEqual(sa.seat_number, 45)
         self.assertEqual(sa.seat_id, seat_custom.pk)
         self.assertEqual(sa.status, AssignmentStatus.CONFIRMED)
+
+
+class SeatNumberPkCollisionRegressionTests(InternalTransferSalesBaseTestCase):
+    """Regresión específica para colisión cruzada entre número de butaca y PK."""
+
+    def _setup_collision_trip(self):
+        now = timezone.now()
+        trip, ts_cba, _, ts_ssj = self.create_test_trip(departure_dt=now + timedelta(days=2))
+        dummy_bus = Bus.objects.create(code=f"BUS-DUMMY-{uuid4().hex[:6]}", display_name="Dummy Bus", is_active=True)
+        for i in range(1, 6):
+            Seat.objects.create(bus=dummy_bus, number=i, deck=Seat.Deck.LOWER, category=SeatCategory.CAMA, position_x=i, position_y=0)
+
+        next_pk = (Seat.objects.order_by("-pk").first().pk if Seat.objects.exists() else 0) + 1
+        # seat_a: PK = next_pk, number = next_pk + 1
+        # seat_b: PK = next_pk + 1, number = next_pk
+        seat_a = Seat.objects.create(
+            bus=trip.bus,
+            number=next_pk + 1,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=12,
+            position_y=0,
+        )
+        seat_b = Seat.objects.create(
+            bus=trip.bus,
+            number=next_pk,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=11,
+            position_y=0,
+        )
+        self.assertEqual(seat_a.number, seat_b.pk)
+        self.assertEqual(seat_b.number, seat_a.pk)
+        return now, trip, ts_cba, ts_ssj, seat_a, seat_b
+
+    def test_pending_transfer_booking_seat_numbers_resolves_number_not_pk(self):
+        now, trip, ts_cba, ts_ssj, seat_a, seat_b = self._setup_collision_trip()
+
+        # Solicitamos butaca por número (seat_b.number, cuyo valor coincide con seat_a.pk)
+        target_num = seat_b.number
+        booking = create_internal_transfer_booking(
+            seller=self.seller_1,
+            trip=trip,
+            origin_stop=ts_cba,
+            destination_stop=ts_ssj,
+            seat_numbers=[target_num],
+            seat_category=SeatCategory.CAMA,
+            email="collision_pending@scviajes.com",
+            phone="3511112222",
+            passenger_data=[make_pax(first_name="Coll", last_name="Pending", doc="11223344")],
+            now=now,
+        )
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.seat, seat_b)
+        self.assertEqual(sa.seat_number, target_num)
+        self.assertEqual(sa.seat_id, seat_b.pk)
+
+    def test_immediate_transfer_sale_seat_numbers_resolves_number_not_pk(self):
+        now, trip, ts_cba, ts_ssj, seat_a, seat_b = self._setup_collision_trip()
+
+        # Solicitamos butaca por número (seat_a.number, cuyo valor coincide con seat_b.pk)
+        target_num = seat_a.number
+        booking = create_immediate_transfer_sale(
+            seller=self.seller_1,
+            trip=trip,
+            origin_stop=ts_cba,
+            destination_stop=ts_ssj,
+            seat_numbers=[target_num],
+            seat_category=SeatCategory.CAMA,
+            email="collision_imm@scviajes.com",
+            phone="3511112222",
+            passenger_data=[make_pax(first_name="Coll", last_name="Imm", doc="11223355")],
+            voucher=self.sample_pdf_voucher(),
+            payment_verified=True,
+            now=now,
+        )
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.seat, seat_a)
+        self.assertEqual(sa.seat_number, target_num)
+        self.assertEqual(sa.seat_id, seat_a.pk)
+
+    def test_legs_with_seat_numbers_contract_resolves_correctly(self):
+        now, trip, ts_cba, ts_ssj, seat_a, seat_b = self._setup_collision_trip()
+
+        target_num = seat_b.number
+        legs = [{
+            "trip": trip,
+            "origin_stop": ts_cba,
+            "destination_stop": ts_ssj,
+            "category": SeatCategory.CAMA,
+            "seat_numbers": [target_num],
+        }]
+        booking = create_internal_transfer_booking(
+            seller=self.seller_1,
+            legs=legs,
+            email="collision_legs_pending@scviajes.com",
+            phone="3511112222",
+            passengers_data=[make_pax(first_name="Legs", last_name="Pending", doc="11223366")],
+            now=now,
+        )
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.seat, seat_b)
+        self.assertEqual(sa.seat_number, target_num)
+
+    def test_legs_with_seats_ids_contract_preserved_without_number_confusion(self):
+        now, trip, ts_cba, ts_ssj, seat_a, seat_b = self._setup_collision_trip()
+
+        # Un caller que usa legítimamente IDs en legs[*][seats] debe obtener la butaca con ese PK
+        legs = [{
+            "trip": trip,
+            "origin_stop": ts_cba,
+            "destination_stop": ts_ssj,
+            "category": SeatCategory.CAMA,
+            "seats": [seat_a.pk],  # seat_a.pk coincide con el número de seat_b
+        }]
+        booking = create_internal_transfer_booking(
+            seller=self.seller_1,
+            legs=legs,
+            email="collision_legs_seats@scviajes.com",
+            phone="3511112222",
+            passengers_data=[make_pax(first_name="Legs", last_name="Seats", doc="11223377")],
+            now=now,
+        )
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.seat, seat_a)
+        self.assertEqual(sa.seat_id, seat_a.pk)
+        self.assertEqual(sa.seat_number, seat_a.number)
+
+    def test_alien_bus_seat_rejected_by_bus_validation(self):
+        now, trip, ts_cba, ts_ssj, seat_a, seat_b = self._setup_collision_trip()
+        alien_bus = Bus.objects.create(code=f"BUS-ALIEN-{uuid4().hex[:6]}", display_name="Alien Bus", is_active=True)
+        alien_seat = Seat.objects.create(
+            bus=alien_bus,
+            number=99,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=0,
+            position_y=0,
+        )
+        # Butaca ajena pasada como objeto en seats
+        with self.assertRaises(ValidationError):
+            create_internal_transfer_booking(
+                seller=self.seller_1,
+                legs=[{
+                    "trip": trip,
+                    "origin_stop": ts_cba,
+                    "destination_stop": ts_ssj,
+                    "category": SeatCategory.CAMA,
+                    "seats": [alien_seat],
+                }],
+                email="alien_obj@scviajes.com",
+                passengers_data=[make_pax(first_name="Alien", last_name="Test", doc="11223388")],
+                now=now,
+            )
+        # Butaca ajena pasada como número inexistente en seat_numbers
+        with self.assertRaises(ValidationError):
+            create_internal_transfer_booking(
+                seller=self.seller_1,
+                legs=[{
+                    "trip": trip,
+                    "origin_stop": ts_cba,
+                    "destination_stop": ts_ssj,
+                    "category": SeatCategory.CAMA,
+                    "seat_numbers": [9999],
+                }],
+                email="alien_num@scviajes.com",
+                passengers_data=[make_pax(first_name="Alien", last_name="Test2", doc="11223399")],
+                now=now,
+            )

@@ -204,41 +204,51 @@ def _resolve_seat_numbers(trip, seat_numbers):
     resolved = []
     for s in seat_numbers:
         if hasattr(s, "pk"):
+            if getattr(s, "bus_id", None) != bus.pk:
+                raise ValidationError("La butaca no pertenece al colectivo del viaje.")
             resolved.append(s)
-        elif isinstance(s, int) and s in seats_by_number:
-            resolved.append(seats_by_number[s])
+        elif isinstance(s, int) or (isinstance(s, str) and str(s).isdigit()):
+            num = int(s)
+            if num not in seats_by_number:
+                raise ValidationError("La butaca seleccionada no pertenece al colectivo del viaje.")
+            resolved.append(seats_by_number[num])
         else:
             resolved.append(s)
     return resolved
 
 
 def _normalize_internal_legs(legs):
-    """Normaliza tramos asegurando que butacas indicadas por número se resuelvan a objetos Seat."""
+    """Normaliza tramos asegurando que butacas indicadas por número o ID se validen en el colectivo."""
     if not legs:
         return []
     normalized = []
     for leg in legs:
         leg_copy = dict(leg)
         trip = leg_copy.get("trip")
-        if "seats" not in leg_copy and "seat_numbers" in leg_copy:
+        if isinstance(trip, int):
+            from operations.models import Trip
+            trip = Trip.objects.select_related("bus").filter(pk=trip).first()
+        bus = getattr(trip, "bus", None)
+
+        if "seat_numbers" in leg_copy and leg_copy.get("seat_numbers") is not None:
             leg_copy["seats"] = _resolve_seat_numbers(trip, leg_copy.get("seat_numbers"))
         elif "seats" in leg_copy:
             seats = leg_copy.get("seats") or []
-            if isinstance(trip, int):
-                from operations.models import Trip
-                trip = Trip.objects.select_related("bus").filter(pk=trip).first()
-            bus = getattr(trip, "bus", None)
             if bus:
                 from operations.models import Seat
                 bus_seats = list(Seat.objects.filter(bus=bus))
-                pks = {seat.pk for seat in bus_seats}
-                by_num = {seat.number: seat for seat in bus_seats}
+                seats_by_pk = {seat.pk: seat for seat in bus_seats}
                 new_seats = []
                 for s in seats:
                     if hasattr(s, "pk"):
+                        if getattr(s, "bus_id", None) != bus.pk:
+                            raise ValidationError("La butaca no pertenece al colectivo del viaje.")
                         new_seats.append(s)
-                    elif isinstance(s, int) and s not in pks and s in by_num:
-                        new_seats.append(by_num[s])
+                    elif isinstance(s, int) or (isinstance(s, str) and str(s).isdigit()):
+                        pk = int(s)
+                        if pk not in seats_by_pk:
+                            raise ValidationError("La butaca seleccionada no pertenece al colectivo del viaje.")
+                        new_seats.append(seats_by_pk[pk])
                     else:
                         new_seats.append(s)
                 leg_copy["seats"] = new_seats

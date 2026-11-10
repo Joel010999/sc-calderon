@@ -856,3 +856,58 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         finally:
             self.fare_out_cama.amount = Decimal("15000.00")
             self.fare_out_cama.save()
+
+    def test_http_booking_create_number_pk_collision(self):
+        """Venta interna vía HTTP no confunde número de butaca con PK cuando colisionan."""
+        dummy_bus = Bus.objects.create(code="BUS-DUMMY-HTTP", display_name="Dummy Bus", is_active=True)
+        # Crear suficientes butacas para posicionar los PKs exactamente
+        next_pk = Seat.objects.order_by("-pk").first().pk + 1
+        # seat_a tendrá PK = next_pk, número = next_pk + 1
+        # seat_b tendrá PK = next_pk + 1, número = next_pk
+        target_num_a = next_pk + 1
+        target_num_b = next_pk
+        seat_a = Seat.objects.create(
+            bus=self.trip_outbound.bus,
+            number=target_num_a,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=10,
+            position_y=10,
+        )
+        seat_b = Seat.objects.create(
+            bus=self.trip_outbound.bus,
+            number=target_num_b,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=11,
+            position_y=10,
+        )
+        self.assertEqual(seat_a.number, seat_b.pk)
+        self.assertEqual(seat_b.number, seat_a.pk)
+
+        create_url = reverse("panel:booking_create")
+        post_data = {
+            "action": "create_booking",
+            "sale_type": "transfer",
+            "trip_type": "oneway",
+            "passengers_count": "1",
+            "outbound_trip": str(self.trip_outbound.pk),
+            "outbound_origin": str(self.ts_out_cba.pk),
+            "outbound_destination": str(self.ts_out_ssj.pk),
+            "outbound_seats": [str(target_num_b)],  # Butaca con número target_num_b (su PK coincide con seat_a.number)
+            "contact_email": "collision_http@correo.com",
+            "p_1_first_name": "Juan",
+            "p_1_last_name": "Colision",
+            "p_1_document_type": "DNI",
+            "p_1_document_number": "41.555.666",
+            "p_1_birth_date": "1992-04-15",
+            "p_1_nationality": "Argentina",
+        }
+        resp = self.client.post(create_url, post_data, secure=True)
+        self.assertEqual(resp.status_code, 302)
+
+        booking = Booking.objects.get(email="collision_http@correo.com")
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.seat, seat_b)
+        self.assertEqual(sa.seat_number, target_num_b)
+        self.assertEqual(sa.seat_id, seat_b.pk)

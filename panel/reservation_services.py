@@ -98,6 +98,9 @@ def create_panel_manual_booking(*, actor, email="", phone="", internal_note="", 
         from panel.internal_sales_permissions import require_can_create_manual_unexpired_reservation
         require_can_create_manual_unexpired_reservation(actor)
 
+    from sales.internal_transfer import _normalize_internal_legs
+    legs = _normalize_internal_legs(legs)
+
     booking = create_manual_booking(
         seller=actor,
         email=email,
