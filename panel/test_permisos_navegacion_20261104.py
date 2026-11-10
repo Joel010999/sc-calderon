@@ -182,11 +182,13 @@ class PermisosNavegacionTestCase(TestCase):
         self.assertNotIn(reverse("panel:audit_list"), content)
         self.assertNotIn(reverse("panel:staff_list"), content)
         self.assertNotIn(reverse("panel:buses"), content)
+        self.assertNotIn(f'href="{reverse("panel:operations")}"', content)
+        self.assertNotIn(f'href="{reverse("panel:routes")}"', content)
         self.assertIn(reverse("panel:trips"), content)
         self.assertIn(reverse("panel:payment_list"), content)
         self.assertIn("Venta interna", content)
 
-        # Admin: Clientes, Auditoría, Usuarios, Colectivos sí están presentes
+        # Admin: Clientes, Auditoría, Usuarios, Colectivos sí están presentes; no accesos independientes a Operaciones ni Recorridos
         self.client.force_login(self.admin)
         resp_admin = self.client.get(reverse("panel:dashboard"))
         content_admin = resp_admin.content.decode("utf-8")
@@ -194,6 +196,9 @@ class PermisosNavegacionTestCase(TestCase):
         self.assertIn(reverse("panel:audit_list"), content_admin)
         self.assertIn(reverse("panel:staff_list"), content_admin)
         self.assertIn(reverse("panel:buses"), content_admin)
+        self.assertIn(reverse("panel:trips"), content_admin)
+        self.assertNotIn(f'href="{reverse("panel:operations")}"', content_admin)
+        self.assertNotIn(f'href="{reverse("panel:routes")}"', content_admin)
 
     def test_reservations_list_header_buttons_and_seller_dropdown(self):
         """Entrega de pasajes en Reservas; Nueva reserva manual solo admin; dropdown de vendedores aislado."""

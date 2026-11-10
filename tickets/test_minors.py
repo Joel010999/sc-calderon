@@ -12,7 +12,7 @@ from sales.services import confirm_booking, create_online_booking
 from tickets.boarding import validate_boarding
 from tickets.exceptions import InvalidTicketError
 from tickets.models import Ticket
-from tickets.services import issue_tickets_for_booking
+from tickets.services import issue_tickets_for_booking, send_booking_tickets
 from tickets.storage import get_ticket_storage
 from tickets.tests import TicketBaseMixin
 
@@ -101,7 +101,15 @@ class MinorTicketIssuanceTests(TicketBaseMixin, TransactionTestCase):
         outbound_infant_ticket = next(t for t in infant_tickets if t.leg.trip_id == self.trip_ida.pk)
         return_infant_ticket = next(t for t in infant_tickets if t.leg.trip_id == self.trip_vuelta.pk)
 
-        # Snapshot de butaca de referencia por cada tramo usando accompanied_by
+        # Sin asignación propia de butaca
+        self.assertIsNone(outbound_infant_ticket.seat_assignment)
+        self.assertIsNone(return_infant_ticket.seat_assignment)
+        self.assertIsNone(outbound_infant_ticket.seat_number)
+        self.assertIsNone(return_infant_ticket.seat_number)
+
+        # Snapshot de butaca de referencia por cada tramo persistido en DB
+        outbound_infant_ticket.refresh_from_db()
+        return_infant_ticket.refresh_from_db()
         self.assertEqual(outbound_infant_ticket.companion_seat_reference, str(self.seat_1.number))
         self.assertEqual(return_infant_ticket.companion_seat_reference, str(self.seat_v3.number))
 
@@ -177,6 +185,17 @@ class MinorTicketIssuanceTests(TicketBaseMixin, TransactionTestCase):
             pdf_bytes_2 = f.read()
 
         self.assertEqual(pdf_bytes_1, pdf_bytes_2)
+
+        # Recarga desde DB conserva snapshot persistido
+        infant_ticket_1.refresh_from_db()
+        self.assertEqual(infant_ticket_1.companion_seat_reference, str(self.seat_1.number))
+
+        # Reenvío de pasajes no recalcula ni altera PDF
+        attempt = send_booking_tickets(booking, retry=True, now=self.now + timedelta(minutes=15))
+        self.assertIsNotNone(attempt)
+        with storage.open(pdf_path_1, "rb") as f:
+            pdf_bytes_3 = f.read()
+        self.assertEqual(pdf_bytes_1, pdf_bytes_3)
 
     def test_lap_infant_fails_and_leaves_evidence_when_companion_lacks_valid_seat(self):
         """Si falta asignación válida del acompañante, se conserva validación y se deja evidencia en logs."""

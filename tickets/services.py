@@ -383,6 +383,7 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         seat_number=assignment.seat_number if assignment else None,
                         seat_category=assignment.category if assignment else "LAP_INFANT",
                         seat_category_display=cat_display,
+                        companion_seat_reference=companion_seat if passenger.is_lap_infant else "",
                         price=ticket_price,
                         currency=ticket_currency,
                         booking_public_id=booking.public_id,
