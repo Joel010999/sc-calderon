@@ -861,16 +861,12 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
             self.fare_out_cama.save()
 
     def _setup_collision_seats(self):
-        # Crear colectivos/butacas para alinear los PKs de modo que colisionen con los números
-        Bus.objects.create(code="BUS-DUMMY-HTTP", display_name="Dummy Bus", is_active=True)
-        next_pk = (Seat.objects.order_by("-pk").first().pk if Seat.objects.exists() else 0) + 1
-        # seat_a tendrá PK = next_pk, número = next_pk + 1
-        # seat_b tendrá PK = next_pk + 1, número = next_pk
-        target_num_a = next_pk + 1
-        target_num_b = next_pk
+        # Crear butacas con números temporales y reasignar sus números usando los PKs reales
+        # asignados por la base de datos para garantizar la colisión cruzada (seat_a.number == seat_b.pk
+        # y seat_b.number == seat_a.pk) sin predecir PKs ni reiniciar secuencias.
         seat_a = Seat.objects.create(
             bus=self.trip_outbound.bus,
-            number=target_num_a,
+            number=99001,
             deck=Seat.Deck.LOWER,
             category=SeatCategory.CAMA,
             position_x=10,
@@ -878,12 +874,18 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         )
         seat_b = Seat.objects.create(
             bus=self.trip_outbound.bus,
-            number=target_num_b,
+            number=99002,
             deck=Seat.Deck.LOWER,
             category=SeatCategory.CAMA,
             position_x=11,
             position_y=10,
         )
+        target_num_a = seat_b.pk
+        target_num_b = seat_a.pk
+        seat_a.number = target_num_a
+        seat_b.number = target_num_b
+        seat_a.save()
+        seat_b.save()
         self.assertEqual(seat_a.number, seat_b.pk)
         self.assertEqual(seat_b.number, seat_a.pk)
         return seat_a, seat_b, target_num_a, target_num_b
