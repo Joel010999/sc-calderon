@@ -246,24 +246,6 @@ def booking_release(request, public_id):
     return redirect("panel:booking_detail", public_id=public_id)
 
 
-def _extract_seat_numbers_for_bus(bus, raw_values):
-    """Extrae números de butaca para el colectivo dado, admitiendo número o PK legítimo."""
-    if not bus or not raw_values:
-        return list(raw_values or [])
-    bus_seats = list(Seat.objects.filter(bus=bus))
-    seats_by_num = {s.number: s for s in bus_seats}
-    seats_by_pk = {s.pk: s for s in bus_seats}
-    result = []
-    for v in raw_values:
-        if v in seats_by_num:
-            result.append(v)
-        elif v in seats_by_pk:
-            result.append(seats_by_pk[v].number)
-        else:
-            result.append(v)
-    return result
-
-
 def _build_deck_map(
     bus,
     active_seats,
@@ -297,7 +279,7 @@ def _build_deck_map(
                 is_priority_blocked = (not is_occupied) and is_seat_blocked_for_general_sale(trip, seat, now=now)
             else:
                 is_priority_blocked = False
-            is_selected = (seat.pk in selected_set or seat.number in selected_set) and (not is_occupied) and (not is_priority_blocked)
+            is_selected = (seat.pk in selected_set) and (not is_occupied) and (not is_priority_blocked)
             fare_amount = fares_by_category.get(seat.category)
             has_fare = fare_amount is not None
 
@@ -517,22 +499,19 @@ def booking_create(request):
                 form_errors.extend(exc.messages)
 
         if not form_errors:
-            outbound_seat_numbers = _extract_seat_numbers_for_bus(outbound_trip.bus if outbound_trip else None, outbound_selected_seats)
-            return_seat_numbers = _extract_seat_numbers_for_bus(return_trip.bus if return_trip else None, return_selected_seats)
-
-            # Armar los tramos para la venta/reserva
+            # Armar los tramos para create_manual_booking
             legs = [{
                 "trip": outbound_trip,
                 "origin_stop": outbound_orig,
                 "destination_stop": outbound_dest,
-                "seat_numbers": outbound_seat_numbers,
+                "seats": outbound_selected_seats,
             }]
             if is_roundtrip:
                 legs.append({
                     "trip": return_trip,
                     "origin_stop": return_orig,
                     "destination_stop": return_dest,
-                    "seat_numbers": return_seat_numbers,
+                    "seats": return_selected_seats,
                 })
 
             try:
