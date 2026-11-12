@@ -9,6 +9,7 @@ import tempfile
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -18,7 +19,7 @@ from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, T
 from panel.models import AuditEvent
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from payments.services import register_cash_payment, register_transfer_payment
-from cash_register.services import open_cash
+from cash_register.models import CashSession
 from sales.exceptions import InvalidBookingError
 from sales.models import (
     AssignmentStatus,
@@ -65,7 +66,7 @@ class PanelPaymentsTestCase(TestCase):
         self.staff_user = User.objects.create_user(username="staff_only", password="password123", is_staff=True)
         self.common_user = User.objects.create_user(username="common_user", password="password123")
         self.superuser = User.objects.create_superuser(username="super_p", password="password123")
-        open_cash(operator=self.seller_user, opening_amount=Decimal("0.00"))
+        CashSession.objects.create(opened_by=self.seller_user, opening_amount=Decimal("0.00"), status=CashSession.Status.OPEN)
 
         # Estructura operativa
         self.stop_cba = Stop.objects.create(name="Córdoba Capital", code="CBA")
@@ -168,7 +169,7 @@ class PanelPaymentsTestCase(TestCase):
         self.trip.status = Trip.Status.STARTED
         self.trip.started_at = timezone.now()
         self.trip.save(update_fields=["status", "started_at", "updated_at"])
-        with self.assertRaises(InvalidBookingError):
+        with self.assertRaises(ValidationError):
             register_cash_payment(booking_or_id=cash_booking, seller=self.seller_user)
 
         transfer_booking = self.create_booking(email="transfer-after-start@correo.com")
@@ -239,9 +240,8 @@ class PanelPaymentsTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Cobro y confirmación económica")
         self.assertContains(resp, "$ 12000.00")
-        self.assertContains(resp, "Cobro en Efectivo")
+        self.assertNotContains(resp, "Cobro en Efectivo")
         self.assertContains(resp, "Transferencia Bancaria")
-        self.assertContains(resp, reverse("panel:booking_pay_cash", kwargs={"public_id": booking.public_id}))
         self.assertContains(resp, reverse("panel:booking_pay_transfer", kwargs={"public_id": booking.public_id}))
 
     def test_booking_detail_no_actions_on_confirmed_expired_released(self):
@@ -276,26 +276,18 @@ class PanelPaymentsTestCase(TestCase):
 
     # --- Resistencia a Manipulación de Importes ---
 
-    def test_cash_payment_ignores_tampered_amount_in_form(self):
-        """El servidor calcula el importe total a partir de SeatAssignment; cualquier 'amount'
-        falsificado enviado por POST es ignorado."""
+    def test_direct_post_to_cash_payment_is_rejected(self):
+        """El endpoint y servicio de cobro en efectivo han sido retirados y deshabilitados."""
         self.client.force_login(self.seller_user)
-        booking = self.create_booking()  # Total real: 12000.00
-        url = reverse("panel:booking_pay_cash", kwargs={"public_id": booking.public_id})
-
-        # Enviamos un importe falso manipulado (ej. 1.00)
-        resp = self.client.post(url, {
-            "amount": "1.00",
-            "reference": "Intento de pagar $1",
+        booking = self.create_booking()
+        # La URL ya no existe (404)
+        resp = self.client.post(f"/panel/reservas/{booking.public_id}/pagar-efectivo/", {
+            "amount": "12000.00",
+            "reference": "Intento de pago en efectivo",
         })
-
-        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.status_code, 404)
         booking.refresh_from_db()
-        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
-
-        payment = Payment.objects.get(booking=booking)
-        self.assertEqual(payment.amount, Decimal("12000.00"))
-        self.assertNotEqual(payment.amount, Decimal("1.00"))
+        self.assertEqual(booking.status, BookingStatus.HELD)
 
     def test_transfer_payment_ignores_tampered_amount_in_form(self):
         """En transferencias bancarias, cualquier importe enviado en POST es ignorado;
@@ -319,9 +311,21 @@ class PanelPaymentsTestCase(TestCase):
     def test_payment_list_filters_and_search(self):
         self.client.force_login(self.seller_user)
 
-        # Crear dos pagos: uno en efectivo y uno transferencia aprobada
+        # Crear dos pagos: uno en efectivo histórico y uno transferencia en revisión
         b1 = self.create_booking(email="carlos@correo.com")
-        p1 = register_cash_payment(booking_or_id=b1, seller=self.seller_user)
+        b1.status = BookingStatus.CONFIRMED
+        b1.confirmed_at = timezone.now()
+        b1.save(update_fields=["status", "confirmed_at", "updated_at"])
+        p1 = Payment.objects.create(
+            booking=b1,
+            method=PaymentMethod.CASH,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("12000.00"),
+            currency="ARS",
+            registered_by=self.seller_user,
+            reviewed_by=self.seller_user,
+            reviewed_at=timezone.now(),
+        )
 
         b2 = self.create_booking(email="ana@correo.com", seats=[self.seat_2])
         p2 = register_transfer_payment(booking_or_id=b2, seller=self.seller_user, voucher=self.sample_voucher())
@@ -346,6 +350,57 @@ class PanelPaymentsTestCase(TestCase):
         # 4. Búsqueda por documento normalizado
         resp = self.client.get(list_url, {"q": "28.123.456"})
         self.assertContains(resp, str(p1.public_id)[:8])
+
+    def test_payment_list_all_sellers_scoped_by_role(self):
+        """Verifica que all_sellers en el contexto del listado de pagos se restrinja
+        exclusivamente al vendedor actual para no administradores, sin exponer usuarios ajenos
+        mediante opciones ni filtros, manteniendo el listado global solo para administradores y superusuarios."""
+        other_seller = User.objects.create_user(username="other_seller_p", password="password123")
+        other_seller.groups.add(self.seller_group)
+
+        list_url = reverse("panel:payment_list")
+
+        # 1. Como Vendedor: all_sellers debe contener únicamente su propio usuario
+        self.client.force_login(self.seller_user)
+        resp = self.client.get(list_url)
+        self.assertEqual(resp.status_code, 200)
+        seller_context_sellers = list(resp.context["all_sellers"])
+        self.assertEqual(seller_context_sellers, [self.seller_user])
+        self.assertNotIn(other_seller, seller_context_sellers)
+        self.assertNotIn(self.admin_user, seller_context_sellers)
+        self.assertContains(resp, f'<option value="{self.seller_user.username}"')
+        self.assertNotContains(resp, f'<option value="{other_seller.username}"')
+        self.assertNotContains(resp, f'<option value="{self.admin_user.username}"')
+
+        # 2. Vendedor no puede filtrar por vendedor ajeno (se limpia el filtro)
+        resp_tampered = self.client.get(list_url, {"seller": other_seller.username})
+        self.assertEqual(resp_tampered.status_code, 200)
+        self.assertEqual(resp_tampered.context["selected_seller"], "")
+
+        # 3. Como Administrador: all_sellers contiene todos los vendedores y administradores
+        self.client.force_login(self.admin_user)
+        resp_admin = self.client.get(list_url)
+        self.assertEqual(resp_admin.status_code, 200)
+        admin_context_sellers = list(resp_admin.context["all_sellers"])
+        self.assertIn(self.seller_user, admin_context_sellers)
+        self.assertIn(other_seller, admin_context_sellers)
+        self.assertIn(self.admin_user, admin_context_sellers)
+        self.assertContains(resp_admin, f'<option value="{self.seller_user.username}"')
+        self.assertContains(resp_admin, f'<option value="{other_seller.username}"')
+        self.assertContains(resp_admin, f'<option value="{self.admin_user.username}"')
+
+        # Administrador puede filtrar legítimamente por cualquier vendedor
+        resp_admin_filter = self.client.get(list_url, {"seller": other_seller.username})
+        self.assertEqual(resp_admin_filter.status_code, 200)
+        self.assertEqual(resp_admin_filter.context["selected_seller"], other_seller.username)
+
+        # 4. Como Superusuario: all_sellers contiene lista global
+        self.client.force_login(self.superuser)
+        resp_super = self.client.get(list_url)
+        self.assertEqual(resp_super.status_code, 200)
+        super_context_sellers = list(resp_super.context["all_sellers"])
+        self.assertIn(self.seller_user, super_context_sellers)
+        self.assertIn(other_seller, super_context_sellers)
 
     # --- Transferencias Pendientes, Aprobación y Rechazo ---
 
@@ -434,9 +489,21 @@ class PanelPaymentsTestCase(TestCase):
         sin contar pagos en revisión ni rechazados."""
         self.client.force_login(self.seller_user)
 
-        # 1. Pago en efectivo aprobado (12000)
+        # 1. Pago en efectivo aprobado histórico (12000)
         b1 = self.create_booking(email="cash@correo.com")
-        register_cash_payment(booking_or_id=b1, seller=self.seller_user)
+        b1.status = BookingStatus.CONFIRMED
+        b1.confirmed_at = timezone.now()
+        b1.save(update_fields=["status", "confirmed_at", "updated_at"])
+        Payment.objects.create(
+            booking=b1,
+            method=PaymentMethod.CASH,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("12000.00"),
+            currency="ARS",
+            registered_by=self.seller_user,
+            reviewed_by=self.seller_user,
+            reviewed_at=timezone.now(),
+        )
 
         # 2. Pago transferencia aprobado (8000)
         b2 = self.create_booking(email="transf_app@correo.com", seats=[self.seat_2])

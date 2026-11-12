@@ -1,13 +1,39 @@
 {% extends "panel/base.html" %}
+{% load l10n %}
+
 {% block content %}
-<h1>Invitar usuario interno</h1>
-<p>La persona recibirá un enlace seguro para establecer su contraseña. No se envían contraseñas por correo o WhatsApp.</p>
-<form method="post">
-  {% csrf_token %}
-  <label>Correo<input type="email" name="email" required></label>
-  <label>Rol<select name="role">
-    {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
-  </select></label>
-  <button>Enviar invitación</button>
-</form>
+<div class="container operations">
+  <header class="ops-header">
+    <div>
+      <p class="ops-eyebrow"><a href="{% url 'panel:staff_list' %}">← Volver a usuarios internos</a></p>
+      <h1 class="dashboard-title">Invitar usuario interno</h1>
+    </div>
+  </header>
+
+  <p class="ops-intro">La persona recibirá un enlace seguro para establecer su contraseña. No se envían contraseñas por correo o WhatsApp.</p>
+
+  <section class="ops-card" style="max-width: 600px;">
+    <form method="post" class="reservations-filter-form">
+      {% csrf_token %}
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="id_email">Correo electrónico *</label>
+        <input type="email" name="email" id="id_email" required placeholder="ejemplo@scviajes.com.ar" class="form-input">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1.5rem;">
+        <label class="form-label" for="id_role">Rol del usuario *</label>
+        <select name="role" id="id_role" class="form-input" required>
+          {% for r in roles %}
+            <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-actions" style="display: flex; gap: 0.75rem;">
+        <button type="submit" class="ops-button">Enviar invitación</button>
+        <a href="{% url 'panel:staff_list' %}" class="ops-button secondary">Cancelar</a>
+      </div>
+    </form>
+  </section>
+</div>
 {% endblock %}

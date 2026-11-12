@@ -36,25 +36,72 @@ class Stop(TimestampedModel):
     def __str__(self):
         return f"{self.code} — {self.name}"
 
+    @property
+    def has_historical_trips(self):
+        if not self.pk:
+            return False
+        return bool(
+            self.trip_stops.exists()
+            or Trip.objects.filter(route__route_stops__stop=self).exists()
+        )
+
     def clean(self):
         super().clean()
-        if not self._state.adding:
-            previous = type(self).objects.filter(pk=self.pk).values_list("code", flat=True).first()
-            if previous is not None and previous != self.code:
-                raise ValidationError({"code": "El código de una parada existente no se puede cambiar."})
+        if not self._state.adding and self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values("code", "name", "city", "province").first()
+            if previous is not None:
+                if previous["code"] != self.code:
+                    raise ValidationError({"code": "El código de una parada existente no se puede cambiar."})
+                if self.has_historical_trips:
+                    if previous["province"] != self.province:
+                        raise ValidationError({"province": "No se puede modificar la provincia de una parada utilizada en viajes históricos."})
+                    if previous["name"] != self.name:
+                        raise ValidationError({"name": "No se puede modificar el nombre de una parada utilizada en viajes históricos."})
+                    if previous["city"] != self.city:
+                        raise ValidationError({"city": "No se puede modificar la ciudad de una parada utilizada en viajes históricos."})
 
 
 class Route(TimestampedModel):
-    code = models.CharField("código", max_length=30, unique=True, validators=[validate_code])
+    code = models.CharField("código", max_length=30, validators=[validate_code])
     name = models.CharField("nombre", max_length=150)
+    version = models.PositiveIntegerField("versión", default=1, validators=[MinValueValidator(1)])
+    parent_route = models.ForeignKey(
+        "self",
+        verbose_name="versión anterior",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subsequent_versions",
+    )
     is_active = models.BooleanField("activo", default=True)
 
     class Meta:
         verbose_name = "recorrido"
         verbose_name_plural = "recorridos"
+        constraints = [
+            models.UniqueConstraint(fields=["code", "version"], name="ops_route_code_version_unique", violation_error_message="Ya existe esa versión para el código de recorrido."),
+            models.CheckConstraint(condition=Q(version__gte=1), name="ops_route_version_positive", violation_error_message="La versión debe ser mayor o igual a 1."),
+        ]
 
     def __str__(self):
+        if self.version > 1:
+            return f"{self.code} (v{self.version}) — {self.name}"
         return f"{self.code} — {self.name}"
+
+    @property
+    def has_trips(self):
+        return bool(self.pk and self.trips.exists())
+
+    def clean(self):
+        super().clean()
+        if not self._state.adding and self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values("code", "name", "version").first()
+            if previous is not None and self.has_trips:
+                if previous["code"] != self.code or previous["name"] != self.name or previous["version"] != self.version:
+                    raise ValidationError(
+                        "Un recorrido con viajes asociados no se puede modificar directamente. "
+                        "Debe crearse una nueva versión."
+                    )
 
     def allows_journey(self, origin, destination):
         """Acepta paradas guardadas; no depende de sus nombres ni del orden global."""
@@ -89,6 +136,27 @@ class RouteStop(models.Model):
 
     def __str__(self):
         return f"{self.route.code} · {self.sequence}: {self.stop.name}"
+
+    def clean(self):
+        super().clean()
+        if self.route_id:
+            try:
+                route = self.route
+            except Route.DoesNotExist:
+                route = None
+            if route and route.pk and route.trips.exists():
+                raise ValidationError(
+                    "No se pueden modificar paradas de un recorrido que ya tiene viajes asociados. "
+                    "Debe crearse una nueva versión."
+                )
+
+    def delete(self, *args, **kwargs):
+        if self.route_id and self.route.trips.exists():
+            raise ValidationError(
+                "No se pueden eliminar paradas de un recorrido que ya tiene viajes asociados. "
+                "Debe crearse una nueva versión."
+            )
+        return super().delete(*args, **kwargs)
 
 
 class Bus(TimestampedModel):

@@ -96,21 +96,28 @@ class TripDataMixin:
 
 
 class TripLifecycleTests(TripDataMixin, TestCase):
-    def test_seller_can_start_and_complete_with_idempotent_audit(self):
+    def test_admin_and_super_can_start_and_complete_with_idempotent_audit(self):
         trip = self.make_trip()
-        started, changed = start_trip(actor=self.seller, trip_pk=trip.pk)
+        started, changed = start_trip(actor=self.admin, trip_pk=trip.pk)
         self.assertTrue(changed)
         self.assertEqual(started.status, Trip.Status.STARTED)
         self.assertIsNotNone(started.started_at)
         self.assertIsNone(started.completed_at)
-        started_again, changed = start_trip(actor=self.seller, trip_pk=trip.pk)
+        started_again, changed = start_trip(actor=self.superuser, trip_pk=trip.pk)
         self.assertFalse(changed)
         self.assertEqual(started_again.status, Trip.Status.STARTED)
-        completed, changed = complete_trip(actor=self.seller, trip_pk=trip.pk)
+        completed, changed = complete_trip(actor=self.admin, trip_pk=trip.pk)
         self.assertTrue(changed)
         self.assertEqual(completed.status, Trip.Status.COMPLETED)
         self.assertIsNotNone(completed.completed_at)
         self.assertEqual(AuditEvent.objects.filter(entity_id=str(trip.pk)).count(), 2)
+
+    def test_seller_cannot_start_or_complete_trip(self):
+        trip = self.make_trip()
+        with self.assertRaises(PermissionDenied):
+            start_trip(actor=self.seller, trip_pk=trip.pk)
+        with self.assertRaises(PermissionDenied):
+            complete_trip(actor=self.seller, trip_pk=trip.pk)
 
     def test_start_has_explicit_confirmation_screen_and_get_is_read_only(self):
         trip = self.make_trip()
@@ -124,9 +131,10 @@ class TripLifecycleTests(TripDataMixin, TestCase):
     def test_start_and_complete_views_require_post_and_authorized_role(self):
         trip = self.make_trip()
         self.assertEqual(self.client.get(self.url("trip_start", trip_pk=trip.pk), secure=True).status_code, 405)
-        self.client.force_login(self.common)
-        response = self.client.post(self.url("trip_start", trip_pk=trip.pk), secure=True)
-        self.assertEqual(response.status_code, 403)
+        for forbidden in (self.seller, self.common, self.staff):
+            self.client.force_login(forbidden)
+            self.assertEqual(self.client.post(self.url("trip_start", trip_pk=trip.pk), secure=True).status_code, 403)
+            self.assertEqual(self.client.post(self.url("trip_complete", trip_pk=trip.pk), secure=True).status_code, 403)
         self.client.force_login(self.admin)
         response = self.client.post(self.url("trip_start", trip_pk=trip.pk), secure=True)
         self.assertRedirects(response, self.url("trip_detail", pk=trip.pk), fetch_redirect_response=False)
@@ -413,13 +421,15 @@ class TripPermissionTests(TripDataMixin, TestCase):
         self.client.force_login(self.seller)
         for url in self.read_urls():
             self.assertEqual(self.client.get(url, secure=True).status_code, 200)
-        self.assertEqual(self.client.get(self.url("trip_start_confirm", trip_pk=self.trip.pk), secure=True).status_code, 200)
+        self.assertEqual(self.client.get(self.url("trip_start_confirm", trip_pk=self.trip.pk), secure=True).status_code, 403)
         self.assertEqual(self.client.get(self.url("trip_stops_schedule", trip_pk=self.trip.pk), secure=True).status_code, 403)
         self.assertEqual(self.client.post(
             self.url("trip_stops_schedule", trip_pk=self.trip.pk),
             self.schedule_data(self.start + timedelta(days=1, hours=1)),
             secure=True,
         ).status_code, 403)
+        for url, data in self.writes():
+            self.assertEqual(self.client.post(url, data, secure=True).status_code, 403)
 
         self.client.force_login(self.staff)
         for url in self.read_urls():
@@ -466,6 +476,10 @@ class TripPermissionTests(TripDataMixin, TestCase):
                 save_fare(actor=user, trip_pk=self.trip.pk, data=self.fare_data(self.trip))
             with self.assertRaises(PermissionDenied):
                 set_fare_active(actor=user, trip_pk=self.trip.pk, pk=self.fare.pk, active=False)
+            with self.assertRaises(PermissionDenied):
+                start_trip(actor=user, trip_pk=self.trip.pk)
+            with self.assertRaises(PermissionDenied):
+                complete_trip(actor=user, trip_pk=self.trip.pk)
         self.assertEqual(self.database_state(), before)
 
     def test_every_write_requires_csrf(self):
@@ -827,15 +841,8 @@ class TripReadTests(TripDataMixin, TestCase):
         self.assertEqual(len(expanded), len(initial))
 
     def test_overview_counts_scheduled_future_and_boarding(self):
-        self.make_trip()
-        self.make_trip(self.start + timedelta(days=1), status=Trip.Status.BOARDING)
-        self.make_trip(self.start - timedelta(days=5))
-        self.make_trip(self.start + timedelta(days=2), status=Trip.Status.CANCELLED)
         response = self.client.get(self.url("operations"), secure=True)
-        metrics = dict(response.context["metrics"])
-        self.assertEqual(metrics["Viajes programados futuros"], 1)
-        self.assertEqual(metrics["Viajes en embarque"], 1)
-        self.assertContains(response, self.url("trips"))
+        self.assertRedirects(response, self.url("trips"), status_code=302)
 
     def test_admin_and_remote_frontend_regression(self):
         trip = self.make_trip()

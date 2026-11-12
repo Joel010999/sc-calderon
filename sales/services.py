@@ -269,7 +269,7 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
 
 
 @transaction.atomic
-def create_booking(*, channel, email, phone="", seller=None, internal_note="", legs, passengers_data=None, now=None):
+def create_booking(*, channel, email, phone="", seller=None, internal_note="", legs, passengers_data=None, expires_at=None, now=None):
     """Crea una reserva (ida o ida/vuelta) con sus tramos, pasajeros y butacas.
 
     Operación completamente atómica con bloqueos ordenados por PK sobre los viajes
@@ -372,7 +372,8 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
         hold_minutes = get_online_hold_minutes()
         expires_at = effective_now + timedelta(minutes=hold_minutes)
     else:
-        expires_at = None
+        if expires_at is not None:
+            validate_aware_datetime(expires_at)
 
     # 4. Recarga de paradas actuales desde base de datos
     all_stop_pks = set()
@@ -423,6 +424,10 @@ def create_booking(*, channel, email, phone="", seller=None, internal_note="", l
         dest = trip_stops.get(dest_pk)
         if not orig or not dest:
             raise ValidationError("Una o más paradas indicadas no existen.")
+
+        # Regla (10): Desde salida inicial no nuevas ventas (restringido al flujo interno/manual)
+        if channel == BookingChannel.MANUAL and effective_now >= trip.departure_at:
+            raise ValidationError("No se permiten nuevas ventas una vez iniciada la salida del viaje.")
 
         # Validar estado del viaje: sólo excluye estados iniciados y finales
         if trip.status in [Trip.Status.STARTED, Trip.Status.COMPLETED, Trip.Status.CANCELLED]:
@@ -617,7 +622,7 @@ def create_online_booking(*, email, phone="", legs, passengers_data=None, now=No
     )
 
 
-def create_manual_booking(*, seller, email="", phone="", internal_note="", legs, passengers_data=None, now=None):
+def create_manual_booking(*, seller, email="", phone="", internal_note="", legs, passengers_data=None, expires_at=None, now=None):
     """Crea una reserva canal MANUAL con vendedor autorizado."""
     return create_booking(
         channel=BookingChannel.MANUAL,
@@ -627,6 +632,7 @@ def create_manual_booking(*, seller, email="", phone="", internal_note="", legs,
         internal_note=internal_note,
         legs=legs,
         passengers_data=passengers_data,
+        expires_at=expires_at,
         now=now,
     )
 
@@ -672,6 +678,24 @@ def confirm_booking(booking_or_id, now=None):
             )
             is_expired = True
         else:
+            # Regla (9): Confirmar comprueba y asigna butaca transaccionalmente y rechaza conflicto
+            assignments = list(
+                SeatAssignment.objects.select_for_update().filter(
+                    leg__booking=booking,
+                    status=AssignmentStatus.HELD,
+                ).select_related("seat", "trip")
+            )
+            for sa in assignments:
+                conflicting = SeatAssignment.objects.filter(
+                    trip=sa.trip,
+                    seat=sa.seat,
+                    status=AssignmentStatus.CONFIRMED,
+                ).exclude(leg__booking=booking).exists()
+                if conflicting:
+                    raise SeatUnavailableError(
+                        f"Conflicto de butaca: la butaca {sa.seat_number} ya fue confirmada por otra reserva."
+                    )
+
             booking.status = BookingStatus.CONFIRMED
             booking.confirmed_at = effective_now
             booking.full_clean()

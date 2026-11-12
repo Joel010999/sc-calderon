@@ -1,6 +1,6 @@
 {% extends 'panel/operations/base.html' %}
 {% load tz %}
-{% block actions %}{% if can_manage %}<a class="ops-button" href="{% url 'panel:trip_create' %}">Nuevo viaje</a>{% endif %}{% endblock %}
+{% block actions %}{% if can_manage %}<a class="ops-button" href="{% url 'panel:routes' %}">Gestionar recorridos</a> <a class="ops-button" href="{% url 'panel:trip_create' %}">Nuevo viaje</a>{% endif %}{% endblock %}
 {% block operations_content %}
 {% timezone display_timezone %}
 <p class="ops-intro">Fechas y horas de Argentina. Los próximos viajes se muestran primero; los pasados, del más reciente al más antiguo.</p>

@@ -50,9 +50,7 @@ def transition_trip(*, actor, trip_pk, target_status):
     El viaje se bloquea antes de validar el estado, por lo que dos operadores
     concurrentes no pueden ejecutar la misma transición ni duplicar auditoría.
     """
-    from .permissions import require_reservations_access
-
-    require_reservations_access(actor)
+    require_operations_manager(actor)
     trip = get_object_or_404(Trip.objects.select_for_update(), pk=trip_pk)
     allowed = {
         Trip.Status.STARTED: Trip.Status.SCHEDULED,

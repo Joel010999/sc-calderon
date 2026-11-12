@@ -1,23 +1,148 @@
 {% extends 'panel/base.html' %}
+{% load l10n %}
+
 {% block content %}
-<div class="container customer-panel">
-  <h1 class="dashboard-title">Clientes</h1>
-  <p class="read-only">Consulta interna de solo lectura. Las reservas solo se muestran cuando existe una asociación explícita.</p>
+<div class="container operations">
+  <header class="ops-header">
+    <div>
+      <p class="ops-eyebrow">Administración</p>
+      <h1 class="dashboard-title">Clientes</h1>
+    </div>
+  </header>
+
+  <p class="ops-intro">Consulta interna de solo lectura. Las reservas solo se muestran cuando existe una asociación explícita con la cuenta del usuario.</p>
+
+  <!-- Métricas de Clientes -->
   <section class="stats-grid" aria-label="Indicadores de clientes">
-    <div class="stat-card"><div class="stat-label">Clientes totales</div><div class="stat-value">{{ metrics.total }}</div></div>
-    <div class="stat-card"><div class="stat-label">Con consentimiento comercial</div><div class="stat-value">{{ metrics.consented }}</div></div>
-    <div class="stat-card"><div class="stat-label">Con compras</div><div class="stat-value">{{ metrics.with_purchases }}</div></div>
-    <div class="stat-card"><div class="stat-label">Altas últimos {{ recent_days }} días</div><div class="stat-value">{{ metrics.recent }}</div></div>
+    <div class="stat-card">
+      <span class="stat-label">Clientes totales</span>
+      <span class="stat-value font-mono">{{ metrics.total }}</span>
+    </div>
+    <div class="stat-card stat-accent-green">
+      <span class="stat-label">Con consentimiento comercial</span>
+      <span class="stat-value font-mono" style="color: var(--green-600);">{{ metrics.consented }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Con compras</span>
+      <span class="stat-value font-mono">{{ metrics.with_purchases }}</span>
+    </div>
+    <div class="stat-card stat-accent-red">
+      <span class="stat-label">Altas últimos {{ recent_days }} días</span>
+      <span class="stat-value font-mono">{{ metrics.recent }}</span>
+    </div>
   </section>
-  <section class="ops-card"><h2>Buscar y filtrar</h2><form method="get" class="filters-grid">
-    <label>Nombre o email normalizado<input name="q" value="{{ selected.q }}" maxlength="120"></label>
-    <label>Cuenta<select name="active"><option value="">Todas</option><option value="active" {% if selected.active == 'active' %}selected{% endif %}>Activa</option><option value="inactive" {% if selected.active == 'inactive' %}selected{% endif %}>Inactiva</option></select></label>
-    <label>Consentimiento<select name="consent"><option value="">Todos</option><option value="active" {% if selected.consent == 'active' %}selected{% endif %}>Activo</option><option value="inactive" {% if selected.consent == 'inactive' %}selected{% endif %}>Inactivo</option></select></label>
-    <label>Reservas<select name="reservations"><option value="">Todas</option><option value="with" {% if selected.reservations == 'with' %}selected{% endif %}>Con reservas</option><option value="without" {% if selected.reservations == 'without' %}selected{% endif %}>Sin reservas</option></select></label>
-    <label>Alta desde<input type="date" name="date_from" value="{{ selected.date_from }}"></label><label>Alta hasta<input type="date" name="date_to" value="{{ selected.date_to }}"></label><button type="submit">Aplicar filtros</button>
-  </form></section>
-  <section class="ops-card"><h2>{{ total }} resultado{{ total|pluralize }}</h2><div class="table-scroll"><table class="table-audit"><thead><tr><th>Cliente</th><th>Estado</th><th>Consentimiento</th><th>Reservas</th><th>Alta</th><th></th></tr></thead><tbody>
-  {% for customer in page.object_list %}<tr><td><strong>{{ customer.user.get_full_name|default:'Sin nombre' }}</strong><br><span class="muted">{{ customer.normalized_email }}</span></td><td>{{ customer.user.is_active|yesno:'Activa,Inactiva' }}</td><td>{% if customer.current_consent %}Activo{% else %}Inactivo{% endif %}</td><td>{{ customer.reservation_count }}</td><td>{{ customer.created_at|date:'d/m/Y H:i' }}</td><td><a href="{% url 'panel:customer_detail' customer.pk %}">Ver detalle</a></td></tr>{% empty %}<tr><td colspan="6" class="empty-state">No hay clientes con estos filtros.</td></tr>{% endfor %}
-  </tbody></table></div>{% if page.has_other_pages %}<nav class="pagination" aria-label="Paginación"><span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ selected.q|urlencode }}&active={{ selected.active }}&consent={{ selected.consent }}&reservations={{ selected.reservations }}&date_from={{ selected.date_from }}&date_to={{ selected.date_to }}">Anterior</a>{% endif %}{% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ selected.q|urlencode }}&active={{ selected.active }}&consent={{ selected.consent }}&reservations={{ selected.reservations }}&date_from={{ selected.date_from }}&date_to={{ selected.date_to }}">Siguiente</a>{% endif %}</nav>{% endif %}</section>
+
+  <!-- Filtros -->
+  <section class="ops-card" aria-label="Búsqueda y filtros de clientes">
+    <h2>Buscar y filtrar</h2>
+    <form method="get" class="reservations-filter-form">
+      <div class="filters-grid">
+        <div class="form-group">
+          <label class="form-label">Nombre o email normalizado</label>
+          <input name="q" value="{{ selected.q }}" maxlength="120" placeholder="Ej. juan@correo.com" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cuenta</label>
+          <select name="active" class="form-input">
+            <option value="">Todas</option>
+            <option value="active" {% if selected.active == 'active' %}selected{% endif %}>Activa</option>
+            <option value="inactive" {% if selected.active == 'inactive' %}selected{% endif %}>Inactiva</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Consentimiento</label>
+          <select name="consent" class="form-input">
+            <option value="">Todos</option>
+            <option value="active" {% if selected.consent == 'active' %}selected{% endif %}>Activo</option>
+            <option value="inactive" {% if selected.consent == 'inactive' %}selected{% endif %}>Inactivo</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reservas</label>
+          <select name="reservations" class="form-input">
+            <option value="">Todas</option>
+            <option value="with" {% if selected.reservations == 'with' %}selected{% endif %}>Con reservas</option>
+            <option value="without" {% if selected.reservations == 'without' %}selected{% endif %}>Sin reservas</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Alta desde</label>
+          <input type="date" name="date_from" value="{{ selected.date_from }}" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Alta hasta</label>
+          <input type="date" name="date_to" value="{{ selected.date_to }}" class="form-input">
+        </div>
+      </div>
+      <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.75rem;">
+        <button type="submit" class="ops-button">Aplicar filtros</button>
+        <a href="{% url 'panel:customer_list' %}" class="ops-button secondary">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <!-- Listado -->
+  <section class="ops-card" aria-label="Listado de clientes">
+    <h2>{{ total }} resultado{{ total|pluralize }}</h2>
+    <div class="table-scroll">
+      <table class="table-audit" style="width: 100%;">
+        <thead>
+          <tr>
+            <th scope="col">Cliente</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Consentimiento</th>
+            <th scope="col">Reservas</th>
+            <th scope="col">Alta</th>
+            <th scope="col">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for customer in page.object_list %}
+          <tr>
+            <td>
+              <strong>{{ customer.user.get_full_name|default:'Sin nombre' }}</strong><br>
+              <span class="muted font-mono" style="font-size: 0.8125rem;">{{ customer.normalized_email }}</span>
+            </td>
+            <td>
+              <span class="badge {% if not customer.user.is_active %}badge-status-cancelled{% else %}badge-status-confirmed{% endif %}">
+                {{ customer.user.is_active|yesno:'Activa,Inactiva' }}
+              </span>
+            </td>
+            <td>
+              {% if customer.current_consent %}
+                <span class="badge badge-status-confirmed">Activo</span>
+              {% else %}
+                <span class="badge badge-status-released">Inactivo</span>
+              {% endif %}
+            </td>
+            <td style="text-align: center;" class="font-mono">{{ customer.reservation_count }}</td>
+            <td>{{ customer.created_at|date:'d/m/Y H:i' }}</td>
+            <td>
+              <a href="{% url 'panel:customer_detail' customer.pk %}" class="ops-button secondary small">Ver detalle</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="empty-state" style="text-align: center; padding: 2rem;">No hay clientes con estos filtros.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page.has_other_pages %}
+    <nav class="pagination" aria-label="Paginación" style="margin-top: 1.25rem; display: flex; justify-content: space-between; align-items: center;">
+      <span class="muted" style="font-size: 0.875rem;">Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+      <div style="display: flex; gap: 0.5rem;">
+        {% if page.has_previous %}
+          <a href="?page={{ page.previous_page_number }}&q={{ selected.q|urlencode }}&active={{ selected.active }}&consent={{ selected.consent }}&reservations={{ selected.reservations }}&date_from={{ selected.date_from }}&date_to={{ selected.date_to }}" class="ops-button secondary small">Anterior</a>
+        {% endif %}
+        {% if page.has_next %}
+          <a href="?page={{ page.next_page_number }}&q={{ selected.q|urlencode }}&active={{ selected.active }}&consent={{ selected.consent }}&reservations={{ selected.reservations }}&date_from={{ selected.date_from }}&date_to={{ selected.date_to }}" class="ops-button secondary small">Siguiente</a>
+        {% endif %}
+      </div>
+    </nav>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

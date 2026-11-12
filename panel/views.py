@@ -95,13 +95,13 @@ def dashboard(request):
             pending_transfers = pending_transfers.filter(booking__seller=request.user)
         pending_transfers_count = pending_transfers.count()
 
-        from .report_services import COMMISSION_PER_TICKET
-        from sales.models import AssignmentStatus, SeatAssignment
-        commissionable_units = SeatAssignment.objects.filter(
-            leg__booking_id__in=confirmed_payments.values("booking_id"),
-            status=AssignmentStatus.CONFIRMED,
-            price__gt=Decimal("0.00"),
-        ).count()
+        from .report_services import COMMISSION_PER_TICKET, get_commissionable_assignments
+        seller_id = request.user.pk if not (request.user.is_superuser or request.user.groups.filter(name="Administrador").exists()) else None
+        commissionable_qs = get_commissionable_assignments(
+            confirmed_payments.values("booking_id"),
+            seller_id=seller_id,
+        )
+        commissionable_units = commissionable_qs.count()
         commission_total = COMMISSION_PER_TICKET * commissionable_units
     else:
         commissionable_units = 0

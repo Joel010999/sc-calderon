@@ -4,13 +4,14 @@ from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import OuterRef, Prefetch, Subquery
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from operations.models import Bus, Route, Trip, TripFare, TripStop
 from .operations_views import render_operations
-from .permissions import can_manage_reservations, operations_access, reservations_access
+from .permissions import can_manage_operations, operations_access
 from .trip_forms import TripFareForm, TripScheduleForm, TripSelectionForm, TripStopScheduleForm
 from .trip_services import (
     FARE_ERROR,
@@ -56,10 +57,11 @@ def trip_detail(request, pk):
         Prefetch("fares", queryset=TripFare.objects.order_by("seat_category", "pk")),
     )
     trip = get_object_or_404(queryset, pk=pk)
-    pending = trip_pending_summary(trip.pk)
+    is_ops_admin = can_manage_operations(request.user)
+    pending = trip_pending_summary(trip.pk) if is_ops_admin else {"held_bookings": 0, "pending_payments": 0}
     return render_operations(request, "trip_detail", title=f"Viaje {trip.pk}",
                              trip=trip, display_timezone=settings.TIME_ZONE,
-                             can_access_manifest=can_manage_reservations(request.user),
+                             can_access_manifest=is_ops_admin,
                              can_modify_fares=can_modify_trip_fares(trip),
                              can_modify_schedules=can_modify_trip_schedules(trip),
                              pending_summary=pending)
@@ -92,7 +94,7 @@ def trip_stops_schedule(request, trip_pk):
 
 
 @require_POST
-@reservations_access()
+@operations_access(write=True)
 def trip_start(request, trip_pk):
     try:
         _, changed = start_trip(actor=request.user, trip_pk=trip_pk)
@@ -104,7 +106,7 @@ def trip_start(request, trip_pk):
 
 
 @require_GET
-@reservations_access()
+@operations_access(write=True)
 def trip_start_confirm(request, trip_pk):
     trip = get_object_or_404(Trip.objects.select_related("route", "bus"), pk=trip_pk)
     pending = trip_pending_summary(trip.pk)
@@ -116,7 +118,7 @@ def trip_start_confirm(request, trip_pk):
 
 
 @require_POST
-@reservations_access()
+@operations_access(write=True)
 def trip_complete(request, trip_pk):
     try:
         _, changed = complete_trip(actor=request.user, trip_pk=trip_pk)
@@ -205,3 +207,16 @@ def fare_state(request, trip_pk, pk, active):
     else:
         messages.success(request, "Estado de la tarifa actualizado." if changed else "La tarifa ya tenía ese estado.")
     return redirect("panel:trip_detail", pk=trip_pk)
+
+
+@operations_access(write=True)
+@require_GET
+def trip_passenger_list_pdf(request, trip_pk):
+    trip = get_object_or_404(Trip.objects.select_related("route", "bus"), pk=trip_pk)
+    from .passenger_list_pdf import generate_passenger_list_pdf
+
+    pdf_bytes = generate_passenger_list_pdf(trip)
+    filename = f"listado-pasajeros-viaje-{trip.pk}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response

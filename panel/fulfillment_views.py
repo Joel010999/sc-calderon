@@ -17,10 +17,20 @@ from .permissions import reservations_access
 logger = logging.getLogger(__name__)
 
 
+def _is_admin(user):
+    return user.is_authenticated and user.is_active and (
+        user.is_superuser or user.groups.filter(name="Administrador").exists()
+    )
+
+
 @reservations_access()
 @require_GET
 def fulfillment_list(request):
+    is_admin = _is_admin(request.user)
     qs = TicketFulfillment.objects.select_related("booking").prefetch_related("booking__payments").order_by("-updated_at", "pk")
+    if not is_admin:
+        qs = qs.filter(booking__seller=request.user)
+
     status = request.GET.get("status", "").strip()
     date_filter = request.GET.get("date", "").strip()
     query = request.GET.get("q", "").strip()
@@ -44,7 +54,10 @@ def fulfillment_list(request):
         except ValueError:
             pass
         qs = qs.filter(filters)
+
     missing = Booking.objects.filter(status=BookingStatus.CONFIRMED, ticket_fulfillment__isnull=True).select_related("seller").order_by("-confirmed_at")
+    if not is_admin:
+        missing = missing.filter(seller=request.user)
     if query:
         missing = missing.filter(Q(email__icontains=query))
     if date_filter:
@@ -66,6 +79,7 @@ def fulfillment_list(request):
 @reservations_access()
 @require_POST
 def fulfillment_reconcile(request):
+    is_admin = _is_admin(request.user)
     ids = request.POST.getlist("fulfillment_ids")[:20]
     processed = 0
     failed = 0
@@ -73,14 +87,20 @@ def fulfillment_reconcile(request):
         try:
             if value.startswith("booking:"):
                 booking = Booking.objects.get(pk=int(value.split(":", 1)[1]), status=BookingStatus.CONFIRMED)
+                if not is_admin and booking.seller_id != request.user.id:
+                    failed += 1
+                    continue
                 job, _ = TicketFulfillment.objects.get_or_create(booking=booking)
             else:
-                job = TicketFulfillment.objects.get(pk=int(value))
+                job = TicketFulfillment.objects.select_related("booking").get(pk=int(value))
+                if not is_admin and job.booking.seller_id != request.user.id:
+                    failed += 1
+                    continue
             if job.booking.status != BookingStatus.CONFIRMED:
                 continue
             process_booking_fulfillment(job.pk, retry=True, actor=request.user)
             processed += 1
-        except (ValueError, TicketFulfillment.DoesNotExist):
+        except (ValueError, TicketFulfillment.DoesNotExist, Booking.DoesNotExist):
             failed += 1
             continue
         except Exception as exc:

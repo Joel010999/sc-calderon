@@ -12,7 +12,7 @@ from .services import validate_payment_agent
 def download_voucher(request, public_id):
     """Descarga autenticada y autorizada de comprobante de pago como adjunto.
 
-    No expone rutas físicas del servidor y valida permisos de Administrador/Vendedor/superuser.
+    No expone rutas físicas del servidor y valida permisos con aislamiento server-side para vendedores.
     """
     if not request.user.is_authenticated:
         return redirect("panel:login")
@@ -22,7 +22,11 @@ def download_voucher(request, public_id):
     except Exception:
         return HttpResponseForbidden("No tenés permiso para acceder a este comprobante.")
 
-    payment = get_object_or_404(Payment, public_id=public_id)
+    is_admin = getattr(request.user, "is_superuser", False) or request.user.groups.filter(name="Administrador").exists()
+    if is_admin:
+        payment = get_object_or_404(Payment, public_id=public_id)
+    else:
+        payment = get_object_or_404(Payment, public_id=public_id, booking__seller=request.user)
 
     if not payment.voucher:
         raise Http404("El pago no posee comprobante adjunto.")

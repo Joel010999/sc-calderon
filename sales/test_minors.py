@@ -9,9 +9,10 @@ from django.utils import timezone
 
 from cash_register.models import CashSession
 from panel.report_services import build_sales_report
-from payments.services import calculate_booking_total, register_cash_payment
+from payments.models import Payment, PaymentMethod, PaymentStatus
+from payments.services import calculate_booking_total
 from sales.minors import MINOR_FREE_AGE_YEARS, is_free_lap_infant, required_seat_count
-from sales.models import AssignmentStatus, Booking, BookingStatus
+from sales.models import AssignmentStatus, Booking, BookingStatus, SeatAssignment
 from sales.services import confirm_booking, create_manual_booking, create_online_booking, get_trip_availability
 from sales.tests import SalesBaseTestCase
 
@@ -108,9 +109,21 @@ class MinorPassengerPolicyTests(SalesBaseTestCase):
         )
         self.assertEqual(avail_after["occupied_seat_count"], avail_before["occupied_seat_count"] + 1)
 
-        # Confirmar mediante pago en efectivo y verificar precio cero y comisión cero para el menor
-        CashSession.objects.create(opened_by=self.seller_user, opening_amount=Decimal("0.00"))
-        payment = register_cash_payment(booking_or_id=booking, seller=self.seller_user, now=purchase_at)
+        # Confirmar reserva y registrar pago histórico para verificar precio cero y comisión cero para el menor
+        booking.status = BookingStatus.CONFIRMED
+        booking.confirmed_at = purchase_at
+        booking.save(update_fields=["status", "confirmed_at", "updated_at"])
+        SeatAssignment.objects.filter(leg__booking=booking).update(status=AssignmentStatus.CONFIRMED, updated_at=purchase_at)
+        payment = Payment.objects.create(
+            booking=booking,
+            method=PaymentMethod.CASH,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("12000.00"),
+            currency="ARS",
+            registered_by=self.seller_user,
+            reviewed_by=self.seller_user,
+            reviewed_at=purchase_at,
+        )
         self.assertEqual(payment.amount, Decimal("12000.00"))
 
         report = build_sales_report({}, actor=self.admin_user)
@@ -331,9 +344,21 @@ class MinorPassengerPolicyTests(SalesBaseTestCase):
         historical_child.is_lap_infant = False
         historical_child.save(update_fields=["birth_date", "is_lap_infant", "updated_at"])
 
-        # Confirmar y cobrar la reserva histórica no recalcula is_lap_infant ni elimina su butaca ni su precio
-        CashSession.objects.create(opened_by=self.seller_user, opening_amount=Decimal("0.00"))
-        payment = register_cash_payment(booking_or_id=historical_booking, seller=self.seller_user, now=purchase_at)
+        # Confirmar y registrar pago para la reserva histórica no recalcula is_lap_infant ni elimina su butaca ni su precio
+        historical_booking.status = BookingStatus.CONFIRMED
+        historical_booking.confirmed_at = purchase_at
+        historical_booking.save(update_fields=["status", "confirmed_at", "updated_at"])
+        SeatAssignment.objects.filter(leg__booking=historical_booking).update(status=AssignmentStatus.CONFIRMED, updated_at=purchase_at)
+        payment = Payment.objects.create(
+            booking=historical_booking,
+            method=PaymentMethod.CASH,
+            status=PaymentStatus.APPROVED,
+            amount=Decimal("21500.00"),
+            currency="ARS",
+            registered_by=self.seller_user,
+            reviewed_by=self.seller_user,
+            reviewed_at=purchase_at,
+        )
         historical_child.refresh_from_db()
         self.assertFalse(historical_child.is_lap_infant)
         self.assertEqual(historical_child.seat_assignments.filter(status=AssignmentStatus.CONFIRMED).count(), 1)
@@ -457,8 +482,16 @@ class MinorPassengerPolicyTests(SalesBaseTestCase):
         panel_booking = Booking.objects.get(email="panel-menor4@correo.com")
         confirm_booking(panel_booking)
 
+        manifest_url = reverse("panel:trip_manifest", kwargs={"trip_pk": self.trip_outbound.pk})
+        manifest_seller_resp = panel_client.get(
+            manifest_url,
+            secure=True,
+        )
+        self.assertEqual(manifest_seller_resp.status_code, 403)
+
+        panel_client.force_login(self.admin_user)
         manifest_resp = panel_client.get(
-            reverse("panel:trip_manifest", kwargs={"trip_pk": self.trip_outbound.pk}),
+            manifest_url,
             secure=True,
         )
         self.assertEqual(manifest_resp.status_code, 200)

@@ -1,1 +1,32 @@
-{% extends "panel/base.html" %}{% block content %}<h1>Establecer contraseña</h1><form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><label>Contraseña<input type="password" name="password" minlength="8" required></label><button>Guardar contraseña</button></form>{% endblock %}
+{% extends "panel/base.html" %}
+{% load l10n %}
+
+{% block content %}
+<div class="container operations" style="max-width: 500px; margin: 3rem auto;">
+  <header class="ops-header">
+    <div>
+      <p class="ops-eyebrow">Bienvenido a SC Viajes</p>
+      <h1 class="dashboard-title">Establecer contraseña</h1>
+    </div>
+  </header>
+
+  <p class="ops-intro">Definí una contraseña segura de al menos 8 caracteres para activar tu cuenta de panel interno.</p>
+
+  <section class="ops-card">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ token }}">
+
+      <div class="form-group" style="margin-bottom: 1.5rem;">
+        <label class="form-label" for="id_password">Nueva contraseña *</label>
+        <input type="password" name="password" id="id_password" minlength="8" required class="form-input" placeholder="Mínimo 8 caracteres">
+        <small class="muted" style="display: block; margin-top: 0.25rem;">Usá una combinación de letras, números y símbolos.</small>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="ops-button" style="width: 100%;">Guardar contraseña y continuar</button>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

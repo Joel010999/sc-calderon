@@ -7,7 +7,7 @@ from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
 
-from cash_register.services import open_cash
+from cash_register.models import CashSession
 
 from .models import AuditEvent
 from .audit_views import _csv_safe
@@ -55,7 +55,15 @@ class AuditExplorerTests(TestCase):
         self.assertNotIn("audit-admin", body)
 
     def test_cash_audit_is_reused_without_exposing_amounts(self):
-        open_cash(operator=self.seller, opening_amount=Decimal("125.00"))
+        session = CashSession.objects.create(opened_by=self.seller, opening_amount=Decimal("125.00"))
+        AuditEvent.objects.create(
+            actor=self.seller,
+            action=AuditEvent.Action.CREATE,
+            entity_type=session._meta.label,
+            entity_id=str(session.pk),
+            description="Apertura de caja",
+            after={"opening_amount": "125.00"},
+        )
         self.client.login(username="audit-admin", password="pass")
         response = self.client.get(reverse("panel:audit_list"), {"modulo": "cash_register"})
         self.assertEqual(response.status_code, 200)

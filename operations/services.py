@@ -7,7 +7,8 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
 
-from .models import Bus, Route, Trip, TripStop
+from django.db import models
+from .models import Bus, Route, RouteStop, Trip, TripStop
 from .validators import validate_aware_datetime
 
 
@@ -228,3 +229,182 @@ def validate_no_trip_fare_conflicts(fare_records):
             "Resolvé manualmente la ambigüedad antes de consolidar tarifas por salida."
         )
     return []
+
+
+def validate_route_stops(stops_data):
+    """Valida la consistencia de una secuencia de paradas para un recorrido.
+
+    stops_data: iterable de dicts o tuplas con (stop, sequence, allows_boarding, allows_alighting).
+    Verifica:
+    - Al menos dos paradas (origen y destino distintos).
+    - Orden secuencial estrictamente positivo y correlativo (1..N).
+    - Paradas no repetidas en el mismo recorrido.
+    - Primera parada debe permitir subir.
+    - Última parada debe permitir bajar.
+    - Cada parada debe permitir subir o bajar.
+    - Al menos un tramo interprovincial válido (origen y destino en diferentes provincias,
+      donde origen permite subir y destino permite bajar).
+    """
+    if not stops_data or len(stops_data) < 2:
+        raise ValidationError("El recorrido debe tener al menos dos paradas (origen y destino).")
+
+    normalized = []
+    seen_stops = set()
+    seen_sequences = set()
+
+    for item in stops_data:
+        if isinstance(item, Mapping):
+            stop = item["stop"]
+            sequence = int(item["sequence"])
+            boarding = bool(item.get("allows_boarding", False))
+            alighting = bool(item.get("allows_alighting", False))
+        else:
+            stop, sequence, boarding, alighting = item
+            sequence = int(sequence)
+            boarding = bool(boarding)
+            alighting = bool(alighting)
+
+        if stop is None or getattr(stop, "pk", None) is None:
+            raise ValidationError("Cada parada debe ser válida y estar guardada.")
+        if sequence < 1:
+            raise ValidationError("El orden de cada parada debe ser mayor o igual a 1.")
+        if stop.pk in seen_stops:
+            raise ValidationError(f"La parada {stop.name} no se puede repetir en el mismo recorrido.")
+        if sequence in seen_sequences:
+            raise ValidationError(f"El orden {sequence} está repetido en el recorrido.")
+        if not boarding and not alighting:
+            raise ValidationError(f"La parada {stop.name} debe permitir al menos subir o bajar pasajeros.")
+
+        seen_stops.add(stop.pk)
+        seen_sequences.add(sequence)
+        normalized.append({
+            "stop": stop,
+            "sequence": sequence,
+            "allows_boarding": boarding,
+            "allows_alighting": alighting,
+        })
+
+    normalized.sort(key=lambda s: s["sequence"])
+
+    expected_sequences = list(range(1, len(normalized) + 1))
+    actual_sequences = [s["sequence"] for s in normalized]
+    if actual_sequences != expected_sequences:
+        raise ValidationError("El orden de las paradas debe ser correlativo y comenzar en 1.")
+
+    first = normalized[0]
+    last = normalized[-1]
+
+    if not first["allows_boarding"]:
+        raise ValidationError(f"La primera parada ({first['stop'].name}) debe permitir subir pasajeros.")
+    if not last["allows_alighting"]:
+        raise ValidationError(f"La última parada ({last['stop'].name}) debe permitir bajar pasajeros.")
+
+    has_interprovincial = False
+    for i, origin in enumerate(normalized):
+        if not origin["allows_boarding"]:
+            continue
+        for destination in normalized[i + 1:]:
+            if not destination["allows_alighting"]:
+                continue
+            if origin["stop"].province != destination["stop"].province:
+                has_interprovincial = True
+                break
+        if has_interprovincial:
+            break
+
+    if not has_interprovincial:
+        raise ValidationError(
+            "El recorrido debe permitir al menos un tramo interprovincial válido "
+            "(origen y destino en diferentes provincias con permisos de subida y bajada)."
+        )
+
+    return normalized
+
+
+@transaction.atomic
+def save_route_configuration(*, code, name, stops_data, route=None, is_active=True, force_new_version=False):
+    """Crea, edita o versiona un recorrido junto con sus paradas de forma atómica.
+
+    - Si route es None: crea un nuevo Route (versión 1) y sus RouteStops.
+    - Si route existe y no tiene viajes asociados y not force_new_version:
+      edita el Route existente y actualiza sus RouteStops.
+    - Si route existe y tiene viajes asociados (o force_new_version=True):
+      preserva el Route existente (y sus RouteStops y viajes históricos),
+      desactiva el recorrido anterior y crea una NUEVA VERSIÓN del recorrido
+      con version = max_version + 1, parent_route = route, y las nuevas paradas.
+    """
+    code = (code or "").strip().upper()
+    name = (name or "").strip()
+    if not code:
+        raise ValidationError("El código de recorrido no puede estar vacío.")
+    if not name:
+        raise ValidationError("El nombre de recorrido no puede estar vacío.")
+
+    validated_stops = validate_route_stops(stops_data)
+
+    if route is None:
+        new_route = Route(code=code, name=name, version=1, is_active=is_active)
+        new_route.full_clean()
+        new_route.save()
+        for item in validated_stops:
+            rs = RouteStop(
+                route=new_route,
+                stop=item["stop"],
+                sequence=item["sequence"],
+                allows_boarding=item["allows_boarding"],
+                allows_alighting=item["allows_alighting"],
+            )
+            rs.full_clean()
+            rs.save()
+        return new_route, False
+
+    route = Route.objects.select_for_update().get(pk=route.pk)
+    has_trips = route.trips.exists()
+
+    if has_trips or force_new_version:
+        max_v = Route.objects.filter(code=code).aggregate(m=models.Max("version"))["m"] or route.version
+        new_version = max_v + 1
+        if route.is_active:
+            route.is_active = False
+            route.save(update_fields=["is_active", "updated_at"])
+
+        new_route = Route(
+            code=code,
+            name=name,
+            version=new_version,
+            parent_route=route,
+            is_active=is_active,
+        )
+        new_route.full_clean()
+        new_route.save()
+        for item in validated_stops:
+            rs = RouteStop(
+                route=new_route,
+                stop=item["stop"],
+                sequence=item["sequence"],
+                allows_boarding=item["allows_boarding"],
+                allows_alighting=item["allows_alighting"],
+            )
+            rs.full_clean()
+            rs.save()
+        return new_route, True
+
+    route.code = code
+    route.name = name
+    route.is_active = is_active
+    route.full_clean()
+    route.save(update_fields=["code", "name", "is_active", "updated_at"])
+
+    # Reemplazo atómico de paradas para recorrido sin viajes
+    route.route_stops.all().delete()
+    for item in validated_stops:
+        rs = RouteStop(
+            route=route,
+            stop=item["stop"],
+            sequence=item["sequence"],
+            allows_boarding=item["allows_boarding"],
+            allows_alighting=item["allows_alighting"],
+        )
+        rs.full_clean()
+        rs.save()
+    return route, False

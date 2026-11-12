@@ -21,3 +21,4 @@ staticfiles/
 *.manifest.json
 *.sha256
 .backup-*
+exports/

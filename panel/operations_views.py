@@ -1,12 +1,11 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
-from django.utils import timezone
 
-from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Trip
+from operations.models import Bus, Seat, SeatCategory
 from .forms import BusForm, SeatForm
 from .permissions import can_manage_operations, operations_access
 from .services import WRITE_ERROR, save_configuration, set_configuration_active
@@ -28,38 +27,24 @@ def counted_buses():
 @operations_access()
 @require_GET
 def overview(request):
-    seats = Seat.objects.filter(is_active=True).aggregate(
-        total=Count("pk"), cama=Count("pk", filter=Q(category=SeatCategory.CAMA)),
-        semicama=Count("pk", filter=Q(category=SeatCategory.SEMI_CAMA)),
-    )
-    metrics = [
-        ("Recorridos activos", Route.objects.filter(is_active=True).count()),
-        ("Colectivos activos", Bus.objects.filter(is_active=True).count()),
-        ("Butacas activas", seats["total"]),
-        ("Butacas cama activas", seats["cama"]),
-        ("Butacas semicama activas", seats["semicama"]),
-        ("Viajes programados futuros", Trip.objects.filter(status=Trip.Status.SCHEDULED, departure_at__gt=timezone.now()).count()),
-        ("Viajes en embarque", Trip.objects.filter(status=Trip.Status.BOARDING).count()),
-    ]
-    return render_operations(request, "overview", title="Operaciones", metrics=metrics)
+    """Acceso de resumen Operaciones eliminado; redirige directamente a Viajes."""
+    return redirect("panel:trips")
 
 
 @operations_access()
 @require_GET
 def routes(request):
-    queryset = Route.objects.order_by("code").prefetch_related(Prefetch(
-        "route_stops", queryset=RouteStop.objects.select_related("stop").order_by("sequence")
-    ))
-    return render_operations(request, "routes", title="Recorridos", routes=queryset)
+    from .route_views import route_list
+    return route_list(request)
 
 
-@operations_access()
+@operations_access(write=True)
 @require_GET
 def buses(request):
     return render_operations(request, "buses", title="Colectivos", buses=counted_buses())
 
 
-@operations_access()
+@operations_access(write=True)
 @require_GET
 def bus_detail(request, pk):
     bus = get_object_or_404(counted_buses(), pk=pk)

@@ -1,17 +1,124 @@
 {% extends 'panel/operations/base.html' %}
+{% block actions %}
+{% if can_manage %}
+<a class="ops-button" href="{% url 'panel:route_create' %}">Nuevo recorrido</a>
+<a class="ops-button secondary" href="{% url 'panel:stop_create' %}">Nueva parada</a>
+{% endif %}
+{% endblock %}
 {% block operations_content %}
-<p class="ops-intro">Los recorridos y sus paradas son de solo lectura en esta etapa.</p>
+<p><a href="{% url 'panel:trips' %}">← Volver a viajes</a></p>
+<p class="ops-intro">Gestión de recorridos y paradas. Las modificaciones en recorridos con viajes asociados crean una nueva versión para futuras salidas.</p>
 {% for route in routes %}
 <article class="ops-card route-card">
-    <header class="ops-header"><h2>{{ route.code }} · {{ route.name }}</h2><span class="badge {% if not route.is_active %}inactive{% endif %}">{{ route.is_active|yesno:'Activo,Inactivo' }}</span></header>
+    <header class="ops-header">
+        <div>
+            <h2>{{ route.code }} · {{ route.name }}</h2>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                <span class="badge">Versión {{ route.version }}</span>
+                {% if route.parent_route %}<small class="muted">(derivada de v{{ route.parent_route.version }})</small>{% endif %}
+                <span class="badge {% if not route.is_active %}inactive{% endif %}">{{ route.is_active|yesno:'Activo,Inactivo' }}</span>
+                {% if route.trip_count > 0 %}
+                    <span class="badge info">{{ route.trip_count }} viaje{{ route.trip_count|pluralize:'s' }}</span>
+                {% else %}
+                    <span class="badge">Sin viajes</span>
+                {% endif %}
+            </div>
+        </div>
+        {% if can_manage %}
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            {% if route.trip_count > 0 %}
+            <a class="ops-button small" href="{% url 'panel:route_new_version' route.pk %}">Nueva versión</a>
+            <a class="ops-button small secondary" href="{% url 'panel:route_edit' route.pk %}">Editar</a>
+            {% else %}
+            <a class="ops-button small" href="{% url 'panel:route_edit' route.pk %}">Editar</a>
+            {% endif %}
+            <form method="post" action="{% if route.is_active %}{% url 'panel:route_deactivate' route.pk %}{% else %}{% url 'panel:route_activate' route.pk %}{% endif %}" style="display: inline; margin: 0;">
+                {% csrf_token %}
+                <button class="ops-button small {% if route.is_active %}danger{% endif %}" type="submit">{% if route.is_active %}Desactivar{% else %}Activar{% endif %}</button>
+            </form>
+        </div>
+        {% endif %}
+    </header>
     <div class="table-scroll" tabindex="0" role="region" aria-label="Paradas de {{ route.name }}">
-        <table><caption>Paradas en orden del recorrido {{ route.code }}</caption>
-            <thead><tr><th scope="col">Orden</th><th scope="col">Parada</th><th scope="col">Subida</th><th scope="col">Bajada</th></tr></thead>
-            <tbody>{% for item in route.route_stops.all %}
+        <table>
+            <caption>Paradas en orden del recorrido {{ route.code }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Orden</th>
+                    <th scope="col">Parada</th>
+                    <th scope="col">Subida</th>
+                    <th scope="col">Bajada</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in route.route_stops.all %}
                 <tr><td>{{ item.sequence }}</td><th scope="row">{{ item.stop.name }} <small>{{ item.stop.code }}</small></th><td>{{ item.allows_boarding|yesno:'Sí,No' }}</td><td>{{ item.allows_alighting|yesno:'Sí,No' }}</td></tr>
-            {% empty %}<tr><td colspan="4">Este recorrido todavía no tiene paradas configuradas.</td></tr>{% endfor %}</tbody>
+                {% empty %}
+                <tr><td colspan="4">Este recorrido todavía no tiene paradas configuradas.</td></tr>
+                {% endfor %}
+            </tbody>
         </table>
     </div>
 </article>
-{% empty %}<div class="empty-state"><h2>Todavía no hay recorridos</h2><p>Los recorridos aparecerán cuando se cargue la configuración inicial.</p></div>{% endfor %}
+{% empty %}
+<div class="empty-state">
+    <h2>Todavía no hay recorridos</h2>
+    <p>{% if can_manage %}Creá un recorrido para comenzar a configurar sus paradas.{% else %}Los recorridos aparecerán cuando se cargue la configuración inicial.{% endif %}</p>
+</div>
+{% endfor %}
+
+<section class="ops-card" style="margin-top: 2rem;">
+    <header class="ops-header">
+        <div>
+            <h2>Paradas registradas</h2>
+            <p class="ops-intro" style="margin: 0;">Paradas disponibles para la configuración de recorridos y control interprovincial.</p>
+        </div>
+        {% if can_manage %}
+        <a class="ops-button secondary" href="{% url 'panel:stop_create' %}">Nueva parada</a>
+        {% endif %}
+    </header>
+    {% if all_stops %}
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Lista de paradas">
+        <table>
+            <caption>Paradas del sistema</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Código</th>
+                    <th scope="col">Nombre</th>
+                    <th scope="col">Ciudad</th>
+                    <th scope="col">Provincia</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Uso en viajes</th>
+                    {% if can_manage %}<th scope="col">Acciones</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for stop in all_stops %}
+                <tr>
+                    <th scope="row">{{ stop.code }}</th>
+                    <td>{{ stop.name }}</td>
+                    <td>{{ stop.city }}</td>
+                    <td>{{ stop.province }}</td>
+                    <td><span class="badge {% if not stop.is_active %}inactive{% endif %}">{{ stop.is_active|yesno:'Activa,Inactiva' }}</span></td>
+                    <td>
+                        {% if stop.has_historical_trips %}
+                        <span class="badge info">Con viajes</span>
+                        {% else %}
+                        <span class="badge">Sin viajes</span>
+                        {% endif %}
+                    </td>
+                    {% if can_manage %}
+                    <td>
+                        <a class="ops-button small secondary" href="{% url 'panel:stop_edit' stop.pk %}">Editar</a>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No hay paradas registradas en el sistema.</p>
+    {% endif %}
+</section>
 {% endblock %}

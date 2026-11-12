@@ -5,7 +5,7 @@ from decimal import Decimal
 import uuid
 
 from django.contrib import messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db.models import CharField, Q
 from django.db.models.functions import Cast
@@ -42,7 +42,7 @@ def _reservation_admin(user):
 
 
 def _visible_bookings(user):
-    queryset = Booking.objects
+    queryset = Booking.objects.all()
     if not _reservation_admin(user):
         queryset = queryset.filter(seller=user)
     return queryset
@@ -325,6 +325,11 @@ def booking_create(request):
     # Parámetros básicos
     trip_type = request.POST.get("trip_type") if request.method == "POST" else request.GET.get("trip_type", "oneway")
     is_roundtrip = (trip_type == "roundtrip")
+    sale_type = request.POST.get("sale_type") if request.method == "POST" else request.GET.get("sale_type", "")
+    if not sale_type and request.GET.get("type") in ("transfer", "internal", "internal_sale"):
+        sale_type = "transfer"
+    if not _reservation_admin(request.user):
+        sale_type = "transfer"
 
     passenger_count_raw = request.POST.get("passengers_count") if request.method == "POST" else request.GET.get("passengers_count", "1")
     try:
@@ -510,20 +515,138 @@ def booking_create(request):
                 })
 
             try:
-                booking = create_panel_manual_booking(
-                    actor=request.user,
-                    email=contact_email,
-                    phone=contact_phone,
-                    internal_note=internal_note,
-                    legs=legs,
-                    passengers_data=passengers_data,
+                from sales.internal_transfer import (
+                    create_immediate_transfer_sale,
+                    create_internal_transfer_booking,
+                    validate_internal_sale_timing,
                 )
-                messages.success(
-                    request,
-                    f"Reserva manual {booking.public_id} creada exitosamente. La butaca queda retenida hasta completar la venta."
-                )
+
+                trips = [outbound_trip]
+                if is_roundtrip:
+                    trips.append(return_trip)
+
+                earliest_dep, is_last_hour = validate_internal_sale_timing(trips, now=now)
+                voucher_file = request.FILES.get("voucher")
+                payment_verified = request.POST.get("payment_verified") in ("1", "true", "on", "yes")
+                transfer_reference = (request.POST.get("transfer_reference") or "").strip()
+                is_admin = _reservation_admin(request.user)
+
+                if not is_admin:
+                    # Regla (8): Última hora antes de salida inicial exige comprobante y declaración de pago verificado
+                    if is_last_hour:
+                        if not voucher_file or not payment_verified:
+                            raise ValidationError(
+                                "Dentro de la última hora previa a la salida inicial, solo se admiten "
+                                "operaciones confirmadas con datos completos, comprobante y declaración de pago verificado."
+                            )
+                        booking = create_immediate_transfer_sale(
+                            seller=request.user,
+                            email=contact_email,
+                            phone=contact_phone,
+                            internal_note=internal_note,
+                            legs=legs,
+                            passengers_data=passengers_data,
+                            voucher=voucher_file,
+                            payment_verified=True,
+                            reference=transfer_reference,
+                            now=now,
+                        )
+                        messages.success(
+                            request,
+                            f"Venta inmediata por transferencia confirmada exitosamente (Reserva {booking.public_id})."
+                        )
+                    else:
+                        if voucher_file and payment_verified:
+                            booking = create_immediate_transfer_sale(
+                                seller=request.user,
+                                email=contact_email,
+                                phone=contact_phone,
+                                internal_note=internal_note,
+                                legs=legs,
+                                passengers_data=passengers_data,
+                                voucher=voucher_file,
+                                payment_verified=True,
+                                reference=transfer_reference,
+                                now=now,
+                            )
+                            messages.success(
+                                request,
+                                f"Venta por transferencia confirmada exitosamente (Reserva {booking.public_id})."
+                            )
+                        else:
+                            # Regla (2) y (3): Compra pendiente por transferencia con retención temporal
+                            booking = create_internal_transfer_booking(
+                                seller=request.user,
+                                email=contact_email,
+                                phone=contact_phone,
+                                internal_note=internal_note,
+                                legs=legs,
+                                passengers_data=passengers_data,
+                                voucher=voucher_file,
+                                reference=transfer_reference,
+                                now=now,
+                            )
+                            messages.success(
+                                request,
+                                f"Compra pendiente por transferencia registrada (Reserva {booking.public_id}). "
+                                f"Butaca retenida hasta el vencimiento ({timezone.localtime(booking.expires_at).strftime('%d/%m/%Y %H:%M')})."
+                            )
+                else:
+                    # Administrador: puede crear manual sin vencimiento o con flujo de transferencia
+                    if voucher_file and payment_verified:
+                        booking = create_immediate_transfer_sale(
+                            seller=request.user,
+                            email=contact_email,
+                            phone=contact_phone,
+                            internal_note=internal_note,
+                            legs=legs,
+                            passengers_data=passengers_data,
+                            voucher=voucher_file,
+                            payment_verified=True,
+                            reference=transfer_reference,
+                            now=now,
+                        )
+                        messages.success(
+                            request,
+                            f"Venta confirmada exitosamente (Reserva {booking.public_id})."
+                        )
+                    elif sale_type == "transfer" or voucher_file or is_last_hour:
+                        if is_last_hour and not payment_verified:
+                            raise ValidationError(
+                                "Dentro de la última hora previa a la salida inicial, solo se admiten "
+                                "operaciones confirmadas con datos completos, comprobante y declaración de pago verificado."
+                            )
+                        booking = create_internal_transfer_booking(
+                            seller=request.user,
+                            email=contact_email,
+                            phone=contact_phone,
+                            internal_note=internal_note,
+                            legs=legs,
+                            passengers_data=passengers_data,
+                            voucher=voucher_file,
+                            reference=transfer_reference,
+                            now=now,
+                        )
+                        messages.success(
+                            request,
+                            f"Compra por transferencia registrada (Reserva {booking.public_id})."
+                        )
+                    else:
+                        booking = create_panel_manual_booking(
+                            actor=request.user,
+                            email=contact_email,
+                            phone=contact_phone,
+                            internal_note=internal_note,
+                            legs=legs,
+                            passengers_data=passengers_data,
+                            now=now,
+                        )
+                        messages.success(
+                            request,
+                            f"Reserva manual {booking.public_id} creada exitosamente. La butaca queda retenida sin vencimiento automático."
+                        )
                 return redirect("panel:booking_detail", public_id=booking.public_id)
-            except (ValidationError, SeatUnavailableError, InvalidBookingError) as exc:
+            except (ValidationError, SeatUnavailableError, InvalidBookingError, PermissionDenied) as exc:
                 if hasattr(exc, "message_dict"):
                     for field, errs in exc.message_dict.items():
                         for err in errs:
@@ -563,4 +686,6 @@ def booking_create(request):
         "contact_email": contact_email,
         "contact_phone": contact_phone,
         "internal_note": internal_note,
+        "is_seller": not _reservation_admin(request.user),
+        "sale_type": sale_type,
     })

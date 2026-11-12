@@ -75,14 +75,20 @@ function readBrowserSecrets() {
 async function createManualBookingFromPanel(page) {
   await page.goto('/panel/reservas/nueva/');
   const trip = page.locator('#id_outbound_trip option:not([value=""])').first();
-  await page.locator('#id_outbound_trip').selectOption(await trip.getAttribute('value'));
-  await page.waitForLoadState('networkidle');
+  await Promise.all([
+    page.waitForNavigation(),
+    page.locator('#id_outbound_trip').selectOption(await trip.getAttribute('value')),
+  ]);
   const origin = page.locator('#id_outbound_origin option:not([value=""])').first();
-  await page.locator('#id_outbound_origin').selectOption(await origin.getAttribute('value'));
-  await page.waitForLoadState('networkidle');
+  await Promise.all([
+    page.waitForNavigation(),
+    page.locator('#id_outbound_origin').selectOption(await origin.getAttribute('value')),
+  ]);
   const destination = page.locator('#id_outbound_destination option:not([value=""])').last();
-  await page.locator('#id_outbound_destination').selectOption(await destination.getAttribute('value'));
-  await page.waitForLoadState('networkidle');
+  await Promise.all([
+    page.waitForNavigation(),
+    page.locator('#id_outbound_destination').selectOption(await destination.getAttribute('value')),
+  ]);
   await page.locator('input[name="outbound_seats"]:not([disabled])').first().check();
   await page.locator('#id_contact_email').fill(`cash-${Date.now()}@demo.scviajes.invalid`);
   await page.locator('#id_contact_phone').fill('3515550000');
@@ -90,8 +96,10 @@ async function createManualBookingFromPanel(page) {
   await page.locator('#id_p_1_last_name').fill('Sintética');
   await page.locator('#id_p_1_document_number').fill(`9900${Date.now().toString().slice(-6)}`);
   await page.locator('#id_p_1_birth_date').fill('1990-01-01');
-  await page.getByRole('button', { name: /crear reserva manual/i }).click();
-  await page.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//);
+  await Promise.all([
+    page.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//),
+    page.getByRole('button', { name: /confirmar venta interna|confirmar y crear reserva manual|crear reserva manual/i }).click(),
+  ]);
   return page.url();
 }
 
@@ -149,10 +157,12 @@ test.describe('aceptación pública y panel interno', () => {
   test('vendedor accede al panel operativo y no al explorador de auditoría', async ({ page }) => {
     await panelLogin(page);
     await expect(page.getByText('Dashboard General')).toBeVisible();
-    await page.goto('/panel/caja/');
-    await expect(page.getByText(/Mi caja abierta|No tenés una caja abierta/)).toBeVisible();
-    await page.goto('/panel/embarques/');
-    await expect(page.getByRole('heading', { name: 'Validar embarque' })).toBeVisible();
+    await expect(page.locator('#main-sidebar')).not.toContainText(/Caja/i);
+    await expect(page.locator('#main-sidebar')).not.toContainText(/Embarque/i);
+    const cajaResponse = await page.goto('/panel/caja/');
+    expect(cajaResponse.status()).toBe(404);
+    const embarquesResponse = await page.goto('/panel/embarques/');
+    expect(embarquesResponse.status()).toBe(404);
     const response = await page.goto('/panel/auditoria/');
     expect(response.status()).toBe(403);
   });
@@ -207,70 +217,63 @@ test.describe('aceptación pública y panel interno', () => {
     }
   });
 
-  test('pantalla de embarque expone selector y control de escaneo', async ({ page }) => {
+  test('pantalla de embarque y control de escaneo están retirados', async ({ page }) => {
     await panelLogin(page);
-    await page.goto('/panel/embarques/');
-    await expect(page.getByRole('heading', { name: 'Validar embarque' })).toBeVisible();
-    await expect(page.locator('select[name="trip"]')).toBeVisible();
-    await expect(page.locator('input[name="scan_value"]')).toHaveAttribute('autocomplete', 'off');
+    await expect(page.locator('#main-sidebar')).not.toContainText(/Embarque/i);
+    const response = await page.goto('/panel/embarques/');
+    expect(response.status()).toBe(404);
+    await expect(page.locator('body')).not.toContainText('Validar embarque');
   });
 
-  test('vendedor consulta su caja sin ver ajustes administrativos', async ({ page }) => {
+  test('vendedor no visualiza caja y sus rutas operativas están retiradas', async ({ page }) => {
     await panelLogin(page);
-    await page.goto('/panel/caja/');
-    await expect(page.getByRole('heading', { name: 'Caja diaria' })).toBeVisible();
-    await expect(page.getByText('Ajuste excepcional')).toHaveCount(0);
-    await expect(page.getByText(/Mi caja abierta/)).toBeVisible();
+    await expect(page.locator('#main-sidebar')).not.toContainText(/Caja/i);
+    const cajaResp = await page.goto('/panel/caja/');
+    expect(cajaResp.status()).toBe(404);
+    const reportResp = await page.goto('/panel/caja/reporte-diario/');
+    expect(reportResp.status()).toBe(404);
+    await expect(page.locator('body')).not.toContainText('Caja diaria');
   });
 
-  test('caja completa con reserva manual, idempotencia, cierre y conciliación', async ({ browser }) => {
+  test('caja y cobro en efectivo retirados en reserva manual y reportes', async ({ browser }) => {
     const sellerContext = await browser.newContext({ locale: 'es-AR' });
     const adminContext = await browser.newContext({ locale: 'es-AR' });
     const otherContext = await browser.newContext({ locale: 'es-AR' });
     try {
       const sellerPage = await sellerContext.newPage();
       await panelLogin(sellerPage, cashSellerUser);
-      await sellerPage.goto('/panel/caja/');
-      if (await sellerPage.getByRole('button', { name: 'Abrir caja' }).count()) {
-        await sellerPage.locator('input[name="opening_amount"]').fill('0');
-        await sellerPage.getByRole('button', { name: 'Abrir caja' }).click();
-        await sellerPage.waitForURL(/\/panel\/caja\/$/);
-      }
-      const bookingUrl = await createManualBookingFromPanel(sellerPage);
-      await expect(sellerPage.getByRole('button', { name: /Confirmar cobro en efectivo/i })).toBeVisible();
-      sellerPage.once('dialog', (dialog) => dialog.accept());
-      await sellerPage.getByRole('button', { name: /Confirmar cobro en efectivo/i }).click();
-      await sellerPage.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//);
-      await expect(sellerPage.locator('body')).toContainText(/confirmada|confirmado/i);
-      await expect(sellerPage.getByRole('button', { name: /Confirmar cobro en efectivo/i })).toHaveCount(0);
+      // Rutas operativas de caja no están disponibles (404)
+      const cajaResp = await sellerPage.goto('/panel/caja/');
+      expect(cajaResp.status()).toBe(404);
 
-      await sellerPage.goto('/panel/caja/');
-      await sellerPage.locator('input[name="closing_amount"]').fill('0');
-      await sellerPage.getByRole('button', { name: 'Cerrar caja' }).click();
-      await sellerPage.waitForURL(/\/panel\/caja\/$/);
+      // Crear reserva manual desde panel operativo conservando permisos de vendedor
+      await createManualBookingFromPanel(sellerPage);
+      await expect(sellerPage.locator('body')).not.toContainText(/cobro en efectivo/i);
+      await expect(sellerPage.getByRole('button', { name: /cobro en efectivo/i })).toHaveCount(0);
 
+      // Flujo vigente: pago por transferencia bancaria con comprobante
+      const voucherInput = sellerPage.locator('input[type="file"][name="voucher"]');
+      await expect(voucherInput).toBeVisible();
+      await voucherInput.setInputFiles(onePixelPng);
+      await Promise.all([
+        sellerPage.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//),
+        sellerPage.getByRole('button', { name: /Registrar transferencia/i }).click(),
+      ]);
+      await expect(sellerPage.getByText(/Transferencia en revisión|registrada una transferencia/i)).toBeVisible();
+
+      // Reportes de caja retirados (404) para administradores
       const adminPage = await adminContext.newPage();
       await panelLogin(adminPage, adminUser);
-      await adminPage.goto('/panel/reportes/caja/?estado=CLOSED');
-      const detailLink = adminPage.getByRole('link', { name: 'Ver detalle' }).first();
-      await expect(detailLink).toBeVisible();
-      const detailUrl = await detailLink.getAttribute('href');
-      await detailLink.click();
-      await expect(adminPage.locator('body')).toContainText(/Total esperado:/);
-      await expect(adminPage.locator('body')).toContainText(/Importe contado:/);
-      await expect(adminPage.locator('body')).toContainText(/Diferencia:/);
-      await expect(adminPage.getByRole('cell', { name: 'Cobro en efectivo' })).toHaveCount(1);
-      await adminPage.locator('textarea[name="note"]').fill('Conciliación sintética E2E');
-      await adminPage.getByRole('button', { name: 'Revisar cierre' }).click();
-      await adminPage.waitForURL(/\/panel\/reportes\/caja\/[0-9]+\//);
-      await expect(adminPage.locator('p[role="status"]')).toContainText(/revisado/i);
-      await expect(adminPage.locator('body')).not.toContainText('cash-');
+      const reportClosedResp = await adminPage.goto('/panel/reportes/caja/?estado=CLOSED');
+      expect(reportClosedResp.status()).toBe(404);
+      const reportRootResp = await adminPage.goto('/panel/reportes/caja/');
+      expect(reportRootResp.status()).toBe(404);
 
+      // Aislamiento: vendedor no accede a auditoría central ni reportes restringidos
       const otherPage = await otherContext.newPage();
       await panelLogin(otherPage);
-      const forbidden = await otherPage.goto(new URL(detailUrl, 'http://127.0.0.1').pathname);
+      const forbidden = await otherPage.goto('/panel/auditoria/');
       expect(forbidden.status()).toBe(403);
-      await sellerPage.goto(bookingUrl);
     } finally {
       await sellerContext.close();
       await adminContext.close();
@@ -330,80 +333,62 @@ test.describe('aceptación pública y panel interno', () => {
     }
   });
 
-  test('embarque válido, repetición idempotente y manifiesto', async ({ browser }) => {
+  test('embarque retirado de rutas y manifiesto sin contadores de embarque', async ({ browser }) => {
     const customerContext = await browser.newContext({ locale: 'es-AR' });
     const operatorContext = await browser.newContext({ locale: 'es-AR' });
+    const sellerContext = await browser.newContext({ locale: 'es-AR' });
     try {
       const customerPage = await customerContext.newPage();
       await customerLogin(customerPage, customerHome);
+      await expect(customerPage.getByText(/Mis viajes y pasajes/)).toBeVisible();
+      await expect(customerPage.getByRole('link', { name: 'Descargar PDF' }).first()).toBeVisible();
+
       const secrets = readBrowserSecrets();
-      const ticketCode = secrets.boarding_ticket_code;
-      const unboardedTicketCode = secrets.qr_ticket_code;
       const tripId = String(secrets.boarding_trip_id);
 
       const operatorPage = await operatorContext.newPage();
       await panelLogin(operatorPage, adminUser);
+
+      // Manifiesto accesible para admin sin contadores de embarque obsoletos
       await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
-      await expect(operatorPage.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 0');
-      await expect(operatorPage.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [2-9]/);
-      await operatorPage.goto('/panel/embarques/');
-      await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
-      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
+      await expect(operatorPage.getByRole('heading', { name: /Manifiesto de pasajeros/i, level: 2 })).toBeVisible();
+      await expect(operatorPage.getByRole('heading', { name: /Resumen por parada/i, level: 3 })).toBeVisible();
+      await expect(operatorPage.getByRole('heading', { name: /Pasajeros confirmados/i, level: 3 })).toBeVisible();
+      await expect(operatorPage.locator('body')).not.toContainText(/Embarcados:/i);
+      await expect(operatorPage.locator('body')).not.toContainText(/Pendientes de embarque/i);
 
-      if (await operatorPage.getByRole('button', { name: 'Revertir embarque' }).count()) {
-        await operatorPage.locator('textarea[name="reason"]').fill('Corrección de prueba sintética');
-        await operatorPage.getByRole('button', { name: 'Revertir embarque' }).click();
-        await operatorPage.waitForURL(/\/panel\/embarques\/$/);
-        await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-        await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
-        await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-        await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
-        await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
-        await expect(operatorPage.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 0');
-        await expect(operatorPage.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [2-9]/);
-      }
+      // Ruta de embarques retirada (404)
+      const embarqueResp = await operatorPage.goto('/panel/embarques/');
+      expect(embarqueResp.status()).toBe(404);
 
-      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
-      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/ya fue embarcado|ya fue utilizado/i);
-      await expect(operatorPage.getByRole('button', { name: 'Revertir embarque' })).toBeVisible();
-      await operatorPage.locator('textarea[name="reason"]').fill('Reversión sintética de prueba');
-      await operatorPage.getByRole('button', { name: 'Revertir embarque' }).click();
-      await operatorPage.waitForURL(/\/panel\/embarques\/$/);
-      await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
-      await expect(operatorPage.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 0');
-      await expect(operatorPage.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [2-9]/);
-
-      await operatorPage.goto('/panel/embarques/');
-      await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
-      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/embarque registrado/i);
-      await operatorPage.locator('input[name="scan_value"]').fill(ticketCode.trim());
-      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/ya fue embarcado|ya fue utilizado/i);
-
+      // Detalle del viaje: sin acciones de embarque, pero permite descarga de listado y gestión del viaje
       await operatorPage.goto(`/panel/operaciones/viajes/${tripId}/`);
+      await expect(operatorPage.locator('body')).not.toContainText('Validar embarque');
+      await expect(operatorPage.getByRole('link', { name: 'Descargar listado de pasajeros' })).toBeVisible();
+
+      // Ciclo operativo de viaje ejecutable por administrador
       await operatorPage.getByRole('link', { name: 'Iniciar viaje' }).click();
       await operatorPage.getByRole('button', { name: 'Confirmar e iniciar viaje' }).click();
       await operatorPage.waitForURL(new RegExp(`/panel/operaciones/viajes/${tripId}/$`));
       await operatorPage.getByRole('button', { name: 'Finalizar viaje' }).click();
       await operatorPage.waitForURL(new RegExp(`/panel/operaciones/viajes/${tripId}/$`));
-      await operatorPage.goto('/panel/embarques/');
-      await operatorPage.locator('select[name="trip"]').selectOption(tripId);
-      await operatorPage.locator('input[name="scan_value"]').fill(unboardedTicketCode.trim());
-      await operatorPage.getByRole('button', { name: 'Validar pasaje' }).click();
-      await expect(operatorPage.locator('[aria-live="polite"]')).toContainText(/pasaje no|no es .*lido/i);
+
+      // Permisos: vendedor no puede acceder al manifiesto ni al listado de pasajeros (403)
+      const sellerPage = await sellerContext.newPage();
+      await panelLogin(sellerPage);
+      const manifestResp = await sellerPage.goto(`/panel/operaciones/viajes/${tripId}/manifiesto/`);
+      expect(manifestResp.status()).toBe(403);
+      const pdfResp = await sellerPage.goto(`/panel/operaciones/viajes/${tripId}/listado-pasajeros.pdf`);
+      expect(pdfResp.status()).toBe(403);
     } finally {
       await customerContext.close();
       await operatorContext.close();
+      await sellerContext.close();
     }
   });
 
-  test.describe('QR pÃºblico sintÃ©tico', () => {
-    test('QR vÃ¡lido es de solo consulta y el token manipulado es rechazado', async ({ page }) => {
+  test.describe('QR público sintético', () => {
+    test('QR válido es de solo consulta y el token manipulado es rechazado', async ({ page }) => {
       const secrets = readBrowserSecrets();
       await page.goto(secrets.qr_verification_url);
       await expect(page.getByText(/Pasaje V/)).toBeVisible();
@@ -414,8 +399,10 @@ test.describe('aceptación pública y panel interno', () => {
 
       await panelLogin(page, adminUser);
       await page.goto(`/panel/operaciones/viajes/${secrets.qr_trip_id}/manifiesto/`);
-      await expect(page.locator('p').filter({ hasText: 'Embarcados:' })).toContainText('Embarcados: 1');
-      await expect(page.locator('p').filter({ hasText: 'Pendientes:' })).toHaveText(/Pendientes: [1-9]/);
+      await expect(page.getByRole('heading', { name: /Manifiesto de pasajeros/i, level: 2 })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /Pasajeros confirmados/i, level: 3 })).toBeVisible();
+      await expect(page.locator('body')).not.toContainText(/Embarcados:/i);
+      await expect(page.locator('body')).not.toContainText(/Pendientes de embarque/i);
     });
   });
 });
