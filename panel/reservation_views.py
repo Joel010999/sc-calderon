@@ -188,6 +188,11 @@ def booking_detail(request, public_id):
     fulfillment = TicketFulfillment.objects.filter(booking=booking).first()
     from notifications.models import TransactionalNotification
     notifications = TransactionalNotification.objects.filter(booking=booking).order_by("-created_at")
+    tickets = (
+        booking.tickets.filter(status="ISSUED")
+        .select_related("leg")
+        .order_by("leg__sequence", "passenger__position")
+    )
 
     return render(request, "panel/reservations/detail.html", {
         "booking": booking,
@@ -198,6 +203,7 @@ def booking_detail(request, public_id):
         "payment_history": payment_history,
         "fulfillment": fulfillment,
         "notifications": notifications,
+        "tickets": tickets,
     })
 
 

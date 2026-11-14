@@ -30,6 +30,7 @@ from sales.models import (
     normalize_document,
 )
 from sales.services import create_manual_booking, get_trip_availability
+from tickets.models import Ticket
 
 User = get_user_model()
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -398,6 +399,74 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
 
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, BookingStatus.CONFIRMED)
+
+    def _confirm_booking(self):
+        self.booking.status = BookingStatus.CONFIRMED
+        self.booking.confirmed_at = timezone.now()
+        self.booking.save(update_fields=["status", "confirmed_at", "updated_at"])
+
+    def _issued_ticket(self):
+        leg = self.booking.legs.get()
+        assignment = leg.seat_assignments.get()
+        return Ticket.objects.create(
+            booking=self.booking,
+            leg=leg,
+            passenger=self.booking.passengers.get(),
+            seat_assignment=assignment,
+            ticket_code="AAA-TEST-001",
+            verification_token_hash="hash_v_test_detail",
+            download_token_hash="hash_d_test_detail",
+            status="ISSUED",
+            passenger_name="Carlos Romero",
+            passenger_document_masked="DNI ***6789",
+            origin_stop_name=leg.origin_stop_name,
+            destination_stop_name=leg.destination_stop_name,
+            departure_at=leg.departure_at,
+            arrival_at=leg.arrival_at,
+            seat_number=assignment.seat_number,
+            seat_category=assignment.category,
+            price=assignment.price,
+            currency="ARS",
+            booking_public_id=self.booking.public_id,
+        )
+
+    def test_detail_shows_ticket_pdf_link_only_when_issued(self):
+        detail_url = reverse("panel:booking_detail", kwargs={"public_id": self.booking.public_id})
+        # Reserva retenida sin pasajes: no se muestra el enlace
+        content = self.client.get(detail_url, secure=True).content.decode("utf-8")
+        self.assertNotIn("Descargar PDF", content)
+        # Confirmada pero sin pasajes emitidos: tampoco
+        self._confirm_booking()
+        content = self.client.get(detail_url, secure=True).content.decode("utf-8")
+        self.assertNotIn("Descargar PDF", content)
+        self.assertNotIn("Pasajes emitidos", content)
+        # Con pasaje emitido: enlace con pasajero, tramo y butaca
+        ticket = self._issued_ticket()
+        response = self.client.get(detail_url, secure=True)
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        download_url = reverse("tickets:download", kwargs={"public_id": ticket.public_id})
+        self.assertIn("Descargar PDF", content)
+        self.assertIn(download_url, content)
+        self.assertIn("Pasajes emitidos", content)
+        self.assertIn("Carlos Romero", content)
+        self.assertIn("Tramo 1", content)
+        self.assertIn("AAA-TEST-001", content)
+        self.assertIn("Butaca 1", content)
+
+    def test_ticket_download_link_scoped_to_owning_seller(self):
+        self._confirm_booking()
+        ticket = self._issued_ticket()
+        download_url = reverse("tickets:download", kwargs={"public_id": ticket.public_id})
+        # Otro vendedor no ve el detalle ni puede descargar el pasaje
+        other_seller = User.objects.create_user(username="seller_other", password="password123")
+        other_seller.groups.add(self.group_seller)
+        self.client.force_login(other_seller)
+        detail_response = self.client.get(
+            reverse("panel:booking_detail", kwargs={"public_id": self.booking.public_id}), secure=True)
+        self.assertEqual(detail_response.status_code, 404)
+        download_response = self.client.get(download_url, secure=True)
+        self.assertEqual(download_response.status_code, 404)
 
 
 class ReservationCreationTests(ReservationPanelBaseTestCase):
