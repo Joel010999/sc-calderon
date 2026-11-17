@@ -3,9 +3,9 @@
 <div class="container operations">
     <nav class="ops-nav" aria-label="Navegación del panel">
         <a href="{% url 'panel:dashboard' %}">Dashboard</a>
-        <a href="{% url 'panel:operations' %}">Operaciones</a>
-        <a href="{% url 'panel:routes' %}">Recorridos</a>
+        {% if can_manage %}
         <a href="{% url 'panel:buses' %}">Colectivos</a>
+        {% endif %}
         <a href="{% url 'panel:trips' %}">Viajes</a>
     </nav>
     <header class="ops-header">

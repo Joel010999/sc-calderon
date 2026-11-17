@@ -1,7 +1,144 @@
 {% extends "panel/base.html" %}
+{% load l10n %}
+
 {% block content %}
-<div class="container"><h1 class="dashboard-title">Auditoría central</h1>
-<p class="muted">Consulta de sólo lectura. No se muestran PII, secretos, tokens ni snapshots.</p>
-<form method="get" class="reservations-filter-form"><label>Desde <input type="date" name="desde" value="{{ request.GET.desde }}"></label><label>Hasta <input type="date" name="hasta" value="{{ request.GET.hasta }}"></label><label>Actor <input name="actor" value="{{ request.GET.actor }}" maxlength="80"></label><label>Módulo <select name="modulo"><option value="">Todos</option>{% for item in modules %}<option value="{{ item }}"{% if request.GET.modulo == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label><label>Acción <select name="accion"><option value="">Todas</option>{% for code,label in actions %}<option value="{{ code }}"{% if request.GET.accion == code %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><label>Resultado <select name="resultado"><option value="">Todos</option>{% for item in results %}<option value="{{ item }}"{% if request.GET.resultado == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label><label>Referencia pública <input name="referencia" value="{{ request.GET.referencia }}" maxlength="64"></label><button class="ops-button" type="submit">Filtrar</button><a class="ops-button secondary" href="{% url 'panel:audit_csv' %}?{{ request.GET.urlencode }}">CSV</a></form>
-<section class="ops-card"><h2>{{ total }} evento{{ total|pluralize }}</h2><p class="muted">Contadores por módulo: {% for key,value in module_counter_items %}{{ key }} ({{ value }}){% if not forloop.last %} · {% endif %}{% empty %}—{% endfor %}</p><div class="table-scroll"><table class="table-audit"><thead><tr><th>Fecha</th><th>Actor</th><th>Módulo</th><th>Acción</th><th>Resultado</th><th>Referencia</th><th></th></tr></thead><tbody>{% for row in page.object_list %}<tr><td>{{ row.created_at|date:'d/m/Y H:i:s' }}</td><td>{{ row.actor }}</td><td>{{ row.module }}</td><td>{{ row.action_label }}</td><td>{{ row.result }}</td><td>{{ row.reference|default:'—' }}</td><td><a href="{% url 'panel:audit_detail' row.token %}">Detalle</a></td></tr>{% empty %}<tr><td colspan="7">No hay eventos para estos filtros.</td></tr>{% endfor %}</tbody></table></div>{% if page.paginator.num_pages > 1 %}<nav aria-label="Paginación">{% if page.has_previous %}<a href="?pagina={{ page.previous_page_number }}{% if query_string %}&amp;{{ query_string }}{% endif %}">Anterior</a>{% endif %} Página {{ page.number }} de {{ page.paginator.num_pages }} {% if page.has_next %}<a href="?pagina={{ page.next_page_number }}{% if query_string %}&amp;{{ query_string }}{% endif %}">Siguiente</a>{% endif %}</nav>{% endif %}</section></div>
+<div class="container operations">
+  <header class="ops-header">
+    <div>
+      <p class="ops-eyebrow">Seguridad y control</p>
+      <h1 class="dashboard-title">Auditoría central</h1>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <a class="ops-button secondary" href="{% url 'panel:audit_csv' %}?{{ request.GET.urlencode }}">Descargar CSV</a>
+    </div>
+  </header>
+
+  <p class="ops-intro">Consulta de sólo lectura. No se muestran PII, secretos, tokens ni snapshots.</p>
+
+  <!-- Filtros -->
+  <section class="ops-card" aria-label="Filtros de auditoría">
+    <h2>Filtros de búsqueda</h2>
+    <form method="get" class="reservations-filter-form">
+      <div class="filters-grid">
+        <div class="form-group">
+          <label class="form-label">Desde</label>
+          <input type="date" name="desde" value="{{ request.GET.desde }}" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hasta</label>
+          <input type="date" name="hasta" value="{{ request.GET.hasta }}" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Actor</label>
+          <input name="actor" value="{{ request.GET.actor }}" maxlength="80" placeholder="Usuario actor" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Módulo</label>
+          <select name="modulo" class="form-input">
+            <option value="">Todos</option>
+            {% for item in modules %}
+              <option value="{{ item }}"{% if request.GET.modulo == item %} selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Acción</label>
+          <select name="accion" class="form-input">
+            <option value="">Todas</option>
+            {% for code,label in actions %}
+              <option value="{{ code }}"{% if request.GET.accion == code %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Resultado</label>
+          <select name="resultado" class="form-input">
+            <option value="">Todos</option>
+            {% for item in results %}
+              <option value="{{ item }}"{% if request.GET.resultado == item %} selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Referencia pública</label>
+          <input name="referencia" value="{{ request.GET.referencia }}" maxlength="64" placeholder="ID de reserva o pago" class="form-input">
+        </div>
+      </div>
+
+      <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.75rem;">
+        <button class="ops-button" type="submit">Filtrar</button>
+        <a href="{% url 'panel:audit_list' %}" class="ops-button secondary">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <!-- Listado de Eventos -->
+  <section class="ops-card" aria-label="Eventos de auditoría">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.75rem;">
+      <h2 style="margin: 0;">{{ total }} evento{{ total|pluralize }}</h2>
+    </div>
+
+    <div style="background: var(--bg-surface-secondary); padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.8125rem;">
+      <strong>Contadores por módulo:</strong>
+      {% for key,value in module_counter_items %}
+        <span class="badge" style="margin: 0.125rem 0.25rem;">{{ key }} ({{ value }})</span>
+      {% empty %}
+        <span class="muted">—</span>
+      {% endfor %}
+    </div>
+
+    <div class="table-scroll">
+      <table class="table-audit" style="width: 100%;">
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Actor</th>
+            <th scope="col">Módulo</th>
+            <th scope="col">Acción</th>
+            <th scope="col">Resultado</th>
+            <th scope="col">Referencia</th>
+            <th scope="col">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in page.object_list %}
+          <tr>
+            <td style="white-space: nowrap;">{{ row.created_at|date:'d/m/Y H:i:s' }}</td>
+            <td><strong>{{ row.actor }}</strong></td>
+            <td><span class="badge">{{ row.module }}</span></td>
+            <td>{{ row.action_label }}</td>
+            <td>
+              <span class="badge {% if row.result == 'SUCCESS' or row.result == 'EXITO' %}badge-status-confirmed{% else %}badge-status-held{% endif %}">
+                {{ row.result }}
+              </span>
+            </td>
+            <td class="font-mono">{{ row.reference|default:'—' }}</td>
+            <td>
+              <a href="{% url 'panel:audit_detail' row.token %}" class="ops-button secondary small">Detalle</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="empty-state" style="text-align: center; padding: 2rem;">No hay eventos para estos filtros.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page.paginator.num_pages > 1 %}
+    <nav aria-label="Paginación" style="margin-top: 1.25rem; display: flex; justify-content: space-between; align-items: center;">
+      <span class="muted" style="font-size: 0.875rem;">Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+      <div style="display: flex; gap: 0.5rem;">
+        {% if page.has_previous %}
+          <a href="?pagina={{ page.previous_page_number }}{% if query_string %}&amp;{{ query_string }}{% endif %}" class="ops-button secondary small">Anterior</a>
+        {% endif %}
+        {% if page.has_next %}
+          <a href="?pagina={{ page.next_page_number }}{% if query_string %}&amp;{{ query_string }}{% endif %}" class="ops-button secondary small">Siguiente</a>
+        {% endif %}
+      </div>
+    </nav>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}

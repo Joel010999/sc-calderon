@@ -3,7 +3,7 @@
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 
-from operations.models import Bus, Seat, Trip, TripFare
+from operations.models import Bus, Route, Seat, Stop, Trip, TripFare
 from .forms import BusForm, SeatForm
 from .models import AuditEvent
 from .permissions import require_operations_manager
@@ -34,6 +34,20 @@ def snapshot(instance):
             "seat_category": instance.seat_category, "amount": format(instance.amount, ".2f"),
             "currency": instance.currency, "is_active": instance.is_active,
         }
+    if isinstance(instance, Route):
+        stops = list(instance.route_stops.order_by("sequence").values(
+            "stop_id", "sequence", "allows_boarding", "allows_alighting"
+        ))
+        return {
+            "code": instance.code, "name": instance.name, "version": instance.version,
+            "is_active": instance.is_active, "parent_route_id": instance.parent_route_id,
+            "stops": stops,
+        }
+    if isinstance(instance, Stop):
+        return {
+            "code": instance.code, "name": instance.name, "city": instance.city,
+            "province": instance.province, "is_active": instance.is_active,
+        }
     fields = BUS_FIELDS if isinstance(instance, Bus) else SEAT_FIELDS
     return {field: getattr(instance, field) for field in fields}
 
@@ -43,6 +57,10 @@ def record_event(actor, instance, action, before):
         label = f"Viaje {instance.pk} del recorrido {instance.route_id}"
     elif isinstance(instance, TripFare):
         label = f"Tarifa {instance.pk} del viaje {instance.trip_id}"
+    elif isinstance(instance, Route):
+        label = f"Recorrido {instance.code} (v{instance.version})"
+    elif isinstance(instance, Stop):
+        label = f"Parada {instance.code}"
     elif isinstance(instance, Bus):
         label = f"Colectivo {instance.code}"
     else:

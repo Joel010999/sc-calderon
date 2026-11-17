@@ -18,6 +18,9 @@ class CustomerPanelTests(TestCase):
         self.group = Group.objects.create(name="Vendedor")
         self.seller = User.objects.create_user(username="vendedor", password="x", email="vendedor@example.com")
         self.seller.groups.add(self.group)
+        self.admin_group = Group.objects.create(name="Administrador")
+        self.admin = User.objects.create_user(username="admin_user", password="x", email="admin@example.com")
+        self.admin.groups.add(self.admin_group)
         self.customer_user = User.objects.create_user(
             username="cliente", password="x", email="cliente@example.com", first_name="Ana", last_name="Pérez"
         )
@@ -29,6 +32,9 @@ class CustomerPanelTests(TestCase):
         self.staff = User.objects.create_user(username="staff", password="x", is_staff=True)
         self.url = reverse("panel:customer_list")
 
+    def login_admin(self):
+        self.client.force_login(self.admin)
+
     def login_seller(self):
         self.client.force_login(self.seller)
 
@@ -39,6 +45,8 @@ class CustomerPanelTests(TestCase):
         self.client.force_login(self.staff)
         self.assertEqual(self.client.get(self.url).status_code, 403)
         self.login_seller()
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.login_admin()
         self.assertEqual(self.client.get(self.url).status_code, 200)
 
     def test_list_search_filter_consent_and_metrics_use_explicit_associations(self):
@@ -56,7 +64,7 @@ class CustomerPanelTests(TestCase):
             expires_at=timezone.now() + timedelta(hours=1),
         )
         CustomerBooking.objects.create(customer=self.customer, booking=booking)
-        self.login_seller()
+        self.login_admin()
         response = self.client.get(self.url, {"q": "CLIENTE@EXAMPLE.COM", "consent": "active", "reservations": "with"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["total"], 1)
@@ -78,7 +86,7 @@ class CustomerPanelTests(TestCase):
             email=self.customer.email,
             expires_at=timezone.now() + timedelta(hours=1),
         )
-        self.login_seller()
+        self.login_admin()
         response = self.client.get(reverse("panel:customer_detail", args=[self.customer.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, str(booking.public_id))
@@ -91,6 +99,6 @@ class CustomerPanelTests(TestCase):
         )
 
     def test_all_customer_views_are_get_only(self):
-        self.login_seller()
+        self.login_admin()
         self.assertEqual(self.client.post(self.url).status_code, 405)
         self.assertEqual(self.client.post(reverse("panel:customer_detail", args=[self.customer.pk])).status_code, 405)

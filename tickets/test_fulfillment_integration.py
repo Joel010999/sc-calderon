@@ -41,9 +41,27 @@ class TicketFulfillmentIntegrationTests(TicketBaseMixin, TransactionTestCase):
         booking.legs.first().seat_assignments.update(status=AssignmentStatus.CONFIRMED)
         return booking
 
+    def _voucher(self):
+        return SimpleUploadedFile("comprobante.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+
+    def _confirm_booking_with_transfer(self, booking):
+        payment = register_transfer_payment(
+            booking_or_id=booking,
+            seller=self.seller_user,
+            voucher=self._voucher(),
+        )
+        review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True)
+        return payment
+
+    def test_cash_payment_rejected_for_new_operations(self):
+        booking = self._held_booking()
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            register_cash_payment(booking_or_id=booking, seller=self.seller_user)
+
     def test_cash_confirmation_creates_one_durable_fulfillment_and_tickets(self):
         booking = self._held_booking()
-        register_cash_payment(booking_or_id=booking, seller=self.seller_user)
+        self._confirm_booking_with_transfer(booking)
 
         booking.refresh_from_db()
         job = TicketFulfillment.objects.get(booking=booking)
@@ -58,7 +76,7 @@ class TicketFulfillmentIntegrationTests(TicketBaseMixin, TransactionTestCase):
     def test_pdf_failure_keeps_payment_and_reconcile_recovers(self):
         booking = self._held_booking()
         with patch("tickets.services.build_ticket_pdf", side_effect=OSError("pdf unavailable")):
-            register_cash_payment(booking_or_id=booking, seller=self.seller_user)
+            self._confirm_booking_with_transfer(booking)
 
         booking.refresh_from_db()
         job = TicketFulfillment.objects.get(booking=booking)
@@ -73,7 +91,7 @@ class TicketFulfillmentIntegrationTests(TicketBaseMixin, TransactionTestCase):
     def test_email_failure_is_recoverable_without_new_tickets(self):
         booking = self._held_booking()
         with patch("django.core.mail.EmailMessage.send", side_effect=OSError("smtp down")):
-            register_cash_payment(booking_or_id=booking, seller=self.seller_user)
+            self._confirm_booking_with_transfer(booking)
         job = TicketFulfillment.objects.get(booking=booking)
         self.assertEqual(job.email_status, FulfillmentEmailStatus.FAILED)
         ticket_count = Ticket.objects.filter(booking=booking).count()

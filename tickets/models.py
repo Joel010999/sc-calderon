@@ -138,6 +138,12 @@ class Ticket(models.Model):
     seat_number = models.PositiveIntegerField("número de butaca", null=True, blank=True, validators=[MinValueValidator(1)])
     seat_category = models.CharField("categoría de butaca", max_length=20, blank=True, default="")
     seat_category_display = models.CharField("descripción de categoría", max_length=50, blank=True, default="")
+    companion_seat_reference = models.CharField(
+        "butaca de referencia del acompañante",
+        max_length=20,
+        blank=True,
+        default="",
+    )
     price = models.DecimalField(
         "precio histórico",
         max_digits=12,

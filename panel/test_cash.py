@@ -2,16 +2,17 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import Client, TestCase
-from django.urls import reverse
+from django.core.exceptions import ValidationError
+from django.test import Client, RequestFactory, TestCase
 
-from cash_register.models import CashSession
-from cash_register.services import open_cash
+from cash_register.models import CashMovement, CashSession
+from cash_register.services import close_cash, current_cash, open_cash, record_adjustment, record_cash_sale
+from panel.cash_views import cash_adjustment, cash_close, cash_open
 
 
-class CashPanelTests(TestCase):
+class CashDisabledPanelTests(TestCase):
     def setUp(self):
-        self.client = Client(enforce_csrf_checks=True)
+        self.client = Client()
         admin_group, _ = Group.objects.get_or_create(name="Administrador")
         seller_group, _ = Group.objects.get_or_create(name="Vendedor")
         user_model = get_user_model()
@@ -20,33 +21,87 @@ class CashPanelTests(TestCase):
         self.seller = user_model.objects.create_user("seller-cash", password="x")
         self.seller.groups.add(seller_group)
         self.common = user_model.objects.create_user("common-cash", password="x")
-        self.session = open_cash(operator=self.seller, opening_amount=Decimal("50.00"))
 
-    def test_permissions_and_own_scope(self):
-        url = reverse("panel:cash_detail")
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 302)
-        self.client.force_login(self.common)
-        self.assertEqual(self.client.get(url).status_code, 403)
-        self.client.force_login(self.seller)
-        self.assertEqual(self.client.get(url).status_code, 200)
-        admin_session = open_cash(operator=self.admin)
-        self.assertEqual(
-            self.client.get(reverse("panel:cash_session_detail", args=[admin_session.pk])).status_code,
-            403,
+        # Registro histórico creado por ORM
+        self.session = CashSession.objects.create(
+            opened_by=self.seller,
+            opening_amount=Decimal("50.00"),
+            status=CashSession.Status.OPEN,
         )
 
-    def test_admin_can_list_and_filter_all_sessions(self):
-        admin_session = open_cash(operator=self.admin)
-        self.client.force_login(self.admin)
-        response = self.client.get(reverse("panel:cash_detail"), {"status": "OPEN", "seller": "admin-cash"})
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, str(admin_session.pk))
-        self.assertNotContains(response, "seller-cash")
+    def test_retired_cash_routes_return_404(self):
+        urls = [
+            "/panel/caja/",
+            f"/panel/caja/{self.session.pk}/",
+            "/panel/caja/abrir/",
+            "/panel/caja/cerrar/",
+            "/panel/caja/ajuste/",
+        ]
+        for user in [self.common, self.seller, self.admin]:
+            self.client.force_login(user)
+            for url in urls:
+                self.assertEqual(self.client.get(url).status_code, 404)
+                self.assertEqual(self.client.post(url, {}).status_code, 404)
 
-    def test_mutating_actions_require_post_and_csrf(self):
-        self.client.force_login(self.seller)
-        response = self.client.post(reverse("panel:cash_close"), {"closing_amount": "50.00"})
-        self.assertEqual(response.status_code, 403)
-        self.session.refresh_from_db()
-        self.assertEqual(self.session.status, CashSession.Status.OPEN)
+    def test_direct_cash_view_calls_raise_validation_error(self):
+        factory = RequestFactory()
+
+        req_open = factory.post("/panel/caja/abrir/", {"opening_amount": "100.00"})
+        req_open.user = self.seller
+        with self.assertRaises(ValidationError) as ctx:
+            cash_open(req_open)
+        self.assertIn("deshabilitada", str(ctx.exception).lower())
+
+        req_close = factory.post("/panel/caja/cerrar/", {"closing_amount": "100.00"})
+        req_close.user = self.seller
+        with self.assertRaises(ValidationError) as ctx:
+            cash_close(req_close)
+        self.assertIn("deshabilitado", str(ctx.exception).lower())
+
+        req_adj = factory.post("/panel/caja/ajuste/", {
+            "session_id": self.session.pk,
+            "amount": "10.00",
+            "kind": "ADJUSTMENT_IN",
+            "reason": "Ajuste prueba",
+        })
+        req_adj.user = self.admin
+        with self.assertRaises(ValidationError) as ctx:
+            cash_adjustment(req_adj)
+        self.assertIn("deshabilitad", str(ctx.exception).lower())
+
+    def test_cash_services_raise_validation_error(self):
+        with self.assertRaises(ValidationError) as ctx:
+            open_cash(operator=self.seller, opening_amount=Decimal("100.00"))
+        self.assertIn("deshabilitada", str(ctx.exception).lower())
+
+        with self.assertRaises(ValidationError) as ctx:
+            close_cash(operator=self.seller, closing_amount=Decimal("50.00"))
+        self.assertIn("deshabilitado", str(ctx.exception).lower())
+
+        with self.assertRaises(ValidationError) as ctx:
+            record_adjustment(
+                operator=self.admin,
+                session_id=self.session.pk,
+                amount=Decimal("10.00"),
+                kind="ADJUSTMENT_IN",
+                reason="Test",
+            )
+        self.assertIn("deshabilitado", str(ctx.exception).lower())
+
+        with self.assertRaises(ValidationError) as ctx:
+            record_cash_sale(payment=None, operator=self.seller)
+        self.assertIn("deshabilitado", str(ctx.exception).lower())
+
+        self.assertIsNone(current_cash(operator=self.seller))
+
+    def test_historical_cash_records_preserved(self):
+        movement = CashMovement.objects.create(
+            session=self.session,
+            kind=CashMovement.Kind.OPENING,
+            amount=Decimal("50.00"),
+            created_by=self.seller,
+            reference="Fondo inicial histórico",
+            idempotency_key=f"hist-opening:{self.session.pk}",
+        )
+        self.assertEqual(CashSession.objects.filter(pk=self.session.pk).count(), 1)
+        self.assertEqual(CashMovement.objects.filter(pk=movement.pk).count(), 1)

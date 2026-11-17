@@ -1,0 +1,130 @@
+{% extends 'panel/operations/base.html' %}
+{% block operations_content %}
+<p><a href="{% url 'panel:routes' %}">← Volver a recorridos</a></p>
+
+<section class="ops-card">
+    <header class="ops-header">
+        <h2>{{ title }}</h2>
+    </header>
+
+    {% if is_versioning %}
+    <div style="background: #eef6ff; border-left: 4px solid #2563eb; padding: 1rem; margin-bottom: 1.5rem; border-radius: 4px;">
+        <p style="margin: 0; color: #1e40af;"><strong>Versionado automático de recorrido en uso:</strong> Este recorrido ya cuenta con salidas programadas. Al guardar, se creará automáticamente una <strong>nueva versión</strong> para las futuras salidas. Todos los viajes, reservas y pasajes históricos existentes se preservarán intactos con la versión previa.</p>
+    </div>
+    {% endif %}
+
+    {% if form.non_field_errors %}
+    <div class="form-errors" style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 1rem; margin-bottom: 1.5rem; border-radius: 4px; color: #991b1b;">
+        {% for error in form.non_field_errors %}
+        <p style="margin: 0;">{{ error }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem; margin-bottom: 1.5rem;">
+            <div>
+                <label for="id_code"><strong>Código del recorrido</strong></label>
+                {{ form.code }}
+                {% if form.code.errors %}<span style="color: #dc2626;">{{ form.code.errors.0 }}</span>{% endif %}
+                <small class="muted" style="display: block; margin-top: 0.25rem;">Ej: CBA-JUJ, JUJ-CBA</small>
+            </div>
+            <div>
+                <label for="id_name"><strong>Nombre del recorrido</strong></label>
+                {{ form.name }}
+                {% if form.name.errors %}<span style="color: #dc2626;">{{ form.name.errors.0 }}</span>{% endif %}
+                <small class="muted" style="display: block; margin-top: 0.25rem;">Ej: Córdoba → Jujuy (por Güemes)</small>
+            </div>
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                {{ form.is_active }}
+                <strong>Recorrido activo para programar salidas</strong>
+            </label>
+        </div>
+
+        <div style="margin-top: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="margin: 0;">Paradas del recorrido (orden secuencial)</h3>
+                <a href="{% url 'panel:stop_create' %}" target="_blank" class="ops-button small" style="text-decoration: none;">+ Crear nueva parada</a>
+            </div>
+            <p class="ops-intro" style="margin-bottom: 1rem;">
+                Requisitos obligatorios: mínimo 2 paradas, orden correlativo 1..N, la primera parada debe permitir subir, la última parada debe permitir bajar, y debe existir al menos un tramo entre provincias diferentes.
+            </p>
+
+            <div class="table-scroll" tabindex="0">
+                <table id="stops-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">Orden</th>
+                            <th>Parada</th>
+                            <th style="width: 140px; text-align: center;">Permite subir</th>
+                            <th style="width: 140px; text-align: center;">Permite bajar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if existing_stops %}
+                            {% for stop_row in existing_stops %}
+                            <tr>
+                                <td>
+                                    <input type="number" name="sequence_{{ forloop.counter }}" value="{{ stop_row.sequence }}" min="1" class="form-input" style="width: 70px;" required>
+                                </td>
+                                <td>
+                                    <select name="stop_id_{{ forloop.counter }}" class="form-input" style="width: 100%;" required>
+                                        <option value="">Seleccioná una parada</option>
+                                        {% for s in available_stops %}
+                                        <option value="{{ s.pk }}" {% if s.pk == stop_row.stop_id %}selected{% endif %}>
+                                            {{ s.name }} ({{ s.code }} — {{ s.province }})
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td style="text-align: center;">
+                                    <input type="checkbox" name="allows_boarding_{{ forloop.counter }}" {% if stop_row.allows_boarding %}checked{% endif %}>
+                                </td>
+                                <td style="text-align: center;">
+                                    <input type="checkbox" name="allows_alighting_{{ forloop.counter }}" {% if stop_row.allows_alighting %}checked{% endif %}>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            {% for i in "123456" %}
+                            <tr>
+                                <td>
+                                    <input type="number" name="sequence_{{ forloop.counter }}" value="{{ forloop.counter }}" min="1" class="form-input" style="width: 70px;">
+                                </td>
+                                <td>
+                                    <select name="stop_id_{{ forloop.counter }}" class="form-input" style="width: 100%;">
+                                        <option value="">Seleccioná una parada</option>
+                                        {% for s in available_stops %}
+                                        <option value="{{ s.pk }}">{{ s.name }} ({{ s.code }} — {{ s.province }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td style="text-align: center;">
+                                    <input type="checkbox" name="allows_boarding_{{ forloop.counter }}" {% if forloop.first %}checked{% endif %}>
+                                </td>
+                                <td style="text-align: center;">
+                                    <input type="checkbox" name="allows_alighting_{{ forloop.counter }}" {% if not forloop.first %}checked{% endif %}>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            <small class="muted" style="display: block; margin-top: 0.5rem;">Dejá en blanco las filas de paradas no utilizadas.</small>
+        </div>
+
+        <div style="margin-top: 2rem; display: flex; gap: 1rem;">
+            <button type="submit" class="ops-button">
+                {% if is_versioning %}Crear nueva versión del recorrido{% else %}Guardar recorrido{% endif %}
+            </button>
+            <a href="{% url 'panel:routes' %}" class="ops-button secondary" style="text-decoration: none;">Cancelar</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

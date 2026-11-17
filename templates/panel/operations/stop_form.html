@@ -1,0 +1,58 @@
+{% extends 'panel/operations/base.html' %}
+{% block operations_content %}
+<p><a href="{% url 'panel:routes' %}">← Volver a recorridos</a></p>
+
+<section class="ops-card" style="max-width: 600px;">
+    <header class="ops-header">
+        <h2>{{ title }}</h2>
+    </header>
+
+    {% if form.non_field_errors %}
+    <div class="form-errors" style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 1rem; margin-bottom: 1.5rem; border-radius: 4px; color: #991b1b;">
+        {% for error in form.non_field_errors %}
+        <p style="margin: 0;">{{ error }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div style="margin-bottom: 1rem;">
+            <label for="id_code"><strong>Código de la parada</strong></label>
+            {{ form.code }}
+            {% if form.code.errors %}<span style="color: #dc2626; display: block;">{{ form.code.errors.0 }}</span>{% endif %}
+            <small class="muted" style="display: block; margin-top: 0.25rem;">Código único de hasta 20 caracteres (Ej: CBA, JMA, GUE, SSJ).</small>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label for="id_name"><strong>Nombre de la parada</strong></label>
+            {{ form.name }}
+            {% if form.name.errors %}<span style="color: #dc2626; display: block;">{{ form.name.errors.0 }}</span>{% endif %}
+            <small class="muted" style="display: block; margin-top: 0.25rem;">Ej: Terminal de Córdoba, Terminal de Güemes.</small>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label for="id_city"><strong>Ciudad</strong></label>
+            {{ form.city }}
+            {% if form.city.errors %}<span style="color: #dc2626; display: block;">{{ form.city.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label for="id_province"><strong>Provincia</strong></label>
+            {{ form.province }}
+            {% if form.province.errors %}<span style="color: #dc2626; display: block;">{{ form.province.errors.0 }}</span>{% endif %}
+            {% if form.province.help_text %}
+            <small style="color: #b45309; display: block; margin-top: 0.25rem;">{{ form.province.help_text }}</small>
+            {% else %}
+            <small class="muted" style="display: block; margin-top: 0.25rem;">Obligatoria para la validación estricta de tramos interprovinciales.</small>
+            {% endif %}
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button type="submit" class="ops-button">Guardar parada</button>
+            <a href="{% url 'panel:routes' %}" class="ops-button secondary" style="text-decoration: none;">Cancelar</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

@@ -1,6 +1,7 @@
 """Servicios de dominio para la emisión, entrega y anulación de pasajes."""
 
 import hashlib
+import logging
 import secrets
 import uuid
 from datetime import timedelta
@@ -37,6 +38,8 @@ from .models import (
 from .rendering import TicketData, build_ticket_pdf
 from .rendering.data import PENDING_SANDRO_VALUE
 from .storage import get_ticket_storage
+
+logger = logging.getLogger(__name__)
 
 
 def _format_money(currency: str, amount: Decimal) -> str:
@@ -283,10 +286,45 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         else f"Tarifa {price_display}"
                     )
                     companion_name = ""
-                    if passenger.accompanied_by_id and passenger.accompanied_by:
+                    companion_seat = ""
+                    if passenger.is_lap_infant:
+                        if not passenger.accompanied_by_id or not passenger.accompanied_by:
+                            logger.warning(
+                                "Falta acompañante declarado para el menor gratuito en posición %s en el tramo %s (reserva %s).",
+                                passenger.position,
+                                leg.sequence,
+                                booking.public_id,
+                            )
+                            raise InvalidTicketError(
+                                f"Falta asignación válida de butaca para el acompañante del menor gratuito en el tramo {leg.sequence}."
+                            )
+
+                        companion_assignment = next(
+                            (a for a in assignments if a.leg_id == leg.id and a.passenger_id == passenger.accompanied_by_id),
+                            None,
+                        )
+                        if not companion_assignment or not companion_assignment.seat_number:
+                            logger.warning(
+                                "Falta asignación válida de butaca para el acompañante (ID %s) del menor gratuito en posición %s en el tramo %s (reserva %s).",
+                                passenger.accompanied_by_id,
+                                passenger.position,
+                                leg.sequence,
+                                booking.public_id,
+                            )
+                            raise InvalidTicketError(
+                                f"Falta asignación válida de butaca para el acompañante del menor gratuito en el tramo {leg.sequence}."
+                            )
+
+                        companion_seat = str(companion_assignment.seat_number)
                         companion_name = (
                             f"{passenger.accompanied_by.first_name} {passenger.accompanied_by.last_name}".strip()
                         )
+
+                    seat_display_str = (
+                        f"Sin asiento propio. Butaca de referencia del acompañante: {companion_seat}"
+                        if passenger.is_lap_infant
+                        else (str(assignment.seat_number) if assignment else "Sin butaca")
+                    )
 
                     # Preparar estructura desacoplada de datos para el PDF
                     ticket_data = TicketData(
@@ -300,7 +338,7 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         departure_time=local_departure.strftime("%H:%M"),
                         boarding_place=leg.origin_stop_name,
                         arrival_time=local_arrival.strftime("%H:%M"),
-                        seat_number=str(assignment.seat_number) if assignment else "Sin butaca",
+                        seat_number=seat_display_str,
                         category_display=cat_display,
                         price_display=price_display,
                         issued_at=local_issued_at.strftime("%d/%m/%Y %H:%M"),
@@ -315,6 +353,7 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         total_amount_display=price_display,
                         is_lap_infant=passenger.is_lap_infant,
                         companion_name=companion_name,
+                        companion_seat_number=companion_seat,
                         **fixed_config,
                     )
 
@@ -344,6 +383,7 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                         seat_number=assignment.seat_number if assignment else None,
                         seat_category=assignment.category if assignment else "LAP_INFANT",
                         seat_category_display=cat_display,
+                        companion_seat_reference=companion_seat if passenger.is_lap_infant else "",
                         price=ticket_price,
                         currency=ticket_currency,
                         booking_public_id=booking.public_id,
@@ -354,6 +394,8 @@ def issue_tickets_for_booking(booking_or_id, now=None) -> list[Ticket]:
                     # Conservar tokens en memoria exclusivamente para el llamador inmediato
                     ticket._raw_verification_token = raw_verification_token
                     ticket._raw_download_token = raw_download_token
+                    if passenger.is_lap_infant:
+                        ticket.companion_seat_reference = companion_seat
 
                     issued_tickets.append(ticket)
 

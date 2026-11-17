@@ -19,11 +19,12 @@ django.setup()
 
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.contrib.auth.models import Group  # noqa: E402
+from django.core.files.uploadedfile import SimpleUploadedFile  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
 from core.demo_scenario import DEMO_DOMAIN, DEMO_PREFIX, seed_demo  # noqa: E402
 from operations.models import Trip  # noqa: E402
-from payments.services import register_cash_payment  # noqa: E402
+from payments.services import register_transfer_payment, review_transfer_payment  # noqa: E402
 from sales.models import BookingStatus  # noqa: E402
 from sales.services import create_manual_booking  # noqa: E402
 from tickets.services import issue_tickets_for_booking  # noqa: E402
@@ -78,7 +79,24 @@ def _boarding_ticket(seller):
         }],
         now=timezone.now(),
     )
-    register_cash_payment(booking_or_id=booking, seller=seller, reference="browser-e2e")
+    voucher = SimpleUploadedFile(
+        "voucher-e2e.png",
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82",
+        content_type="image/png",
+    )
+    payment = register_transfer_payment(
+        booking_or_id=booking,
+        seller=seller,
+        voucher=voucher,
+        reference="browser-e2e",
+        now=timezone.now(),
+    )
+    review_transfer_payment(
+        payment_or_id=payment,
+        reviewer=seller,
+        approved=True,
+        now=timezone.now(),
+    )
     booking.refresh_from_db()
     if booking.status != BookingStatus.CONFIRMED:
         raise RuntimeError("El servicio de pago sintético no confirmó la reserva E2E.")

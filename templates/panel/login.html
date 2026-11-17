@@ -1,8 +1,12 @@
 {% extends 'panel/base.html' %}
+{% load static %}
+
+{% block title %}Ingreso al Panel — SC Viajes{% endblock %}
 
 {% block content %}
 <div class="login-wrapper">
     <div class="login-header">
+        <img src="{% static 'assets/scviajes-logo.png' %}" alt="SC Viajes" class="login-brand-logo">
         <h2>Ingreso al Panel</h2>
         <p>Solo personal autorizado de SC Viajes</p>
     </div>
@@ -13,16 +17,16 @@
 
             <div class="form-group">
                 <label for="id_username" class="form-label">Usuario</label>
-                <input id="id_username" name="username" type="text" required class="form-input">
+                <input id="id_username" name="username" type="text" required class="form-input" autocomplete="username">
             </div>
 
             <div class="form-group">
                 <label for="id_password" class="form-label">Contraseña</label>
-                <input id="id_password" name="password" type="password" required class="form-input">
+                <input id="id_password" name="password" type="password" required class="form-input" autocomplete="current-password">
             </div>
 
-            <div>
-                <button type="submit" class="btn-primary">Ingresar</button>
+            <div style="margin-top: 1.5rem;">
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Ingresar</button>
             </div>
         </form>
     </div>

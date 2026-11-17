@@ -1,8 +1,136 @@
 {% extends 'panel/base.html' %}
+
+{% block title %}Bandeja operativa — SC Viajes{% endblock %}
+{% block breadcrumb %}Bandeja operativa{% endblock %}
+
 {% block content %}
-<div class="container"><h1 class="dashboard-title">Bandeja operativa</h1>
-<p>Actualizada {{ updated_at|date:"d/m/Y H:i" }} (hora de Buenos Aires). Total filtrado: {{ total }}.</p>
-<form method="get" class="panel-filters"><label>Tipo <select name="type"><option value="">Todos</option>{% for value,label in categories %}<option value="{{ value }}" {% if selected.type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><label>Prioridad <select name="priority"><option value="">Todas</option>{% for value,label in priorities %}<option value="{{ value }}" {% if selected.priority == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><label>Estado <input name="status" value="{{ selected.status|default:'' }}" maxlength="40"></label><label>Referencia segura <input name="q" value="{{ selected.q|default:'' }}" maxlength="80"></label><label>Desde <input type="date" name="date_from" value="{{ selected.date_from|default:'' }}"></label><label>Hasta <input type="date" name="date_to" value="{{ selected.date_to|default:'' }}"></label><label>Viaje <input type="number" min="1" name="trip" value="{{ selected.trip|default:'' }}"></label><button type="submit">Filtrar</button></form>
-<table class="data-table"><thead><tr><th>Tipo</th><th>Prioridad</th><th>Estado</th><th>Referencia</th><th>Fecha relevante</th><th>Plazo</th><th>Detalle</th></tr></thead><tbody>{% for item in page.object_list %}<tr><td>{{ item.category_label }}</td><td>{{ item.priority_label }}</td><td>{{ item.status }}</td><td>{{ item.public_ref }}</td><td>{{ item.relevant_at|date:"d/m/Y H:i" }}</td><td>{{ item.timing }}</td><td><a href="{{ item.detail_url }}">Ver detalle</a></td></tr>{% empty %}<tr><td colspan="7">No hay pendientes para estos filtros.</td></tr>{% endfor %}</tbody></table>
-{% if page.paginator.num_pages > 1 %}<nav aria-label="Paginación">{% if previous_url %}<a href="{{ previous_url }}">Anterior</a>{% endif %} Página {{ page.number }} de {{ page.paginator.num_pages }} {% if next_url %}<a href="{{ next_url }}">Siguiente</a>{% endif %}</nav>{% endif %}</div>
+<div class="container">
+    <div class="page-header">
+        <div>
+            <p class="page-eyebrow">Operaciones internas</p>
+            <h1 class="page-title">Bandeja operativa</h1>
+            <p class="page-subtitle">Actualizada {{ updated_at|date:"d/m/Y H:i" }} (hora de Buenos Aires). Total filtrado: {{ total }}.</p>
+        </div>
+    </div>
+
+    <!-- Filtros de Bandeja -->
+    <section class="form-card" aria-label="Filtros de la bandeja operativa">
+        <form method="get" class="filters-grid">
+            <div class="form-group">
+                <label for="id_type" class="form-label">Tipo</label>
+                <select name="type" id="id_type" class="form-select">
+                    <option value="">Todos los tipos</option>
+                    {% for value, label in categories %}
+                        <option value="{{ value }}" {% if selected.type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="id_priority" class="form-label">Prioridad</label>
+                <select name="priority" id="id_priority" class="form-select">
+                    <option value="">Todas las prioridades</option>
+                    {% for value, label in priorities %}
+                        <option value="{{ value }}" {% if selected.priority == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="id_status" class="form-label">Estado</label>
+                <input name="status" id="id_status" value="{{ selected.status|default:'' }}" maxlength="40" class="form-input" placeholder="Ej. Retenida, En revisión">
+            </div>
+
+            <div class="form-group">
+                <label for="id_q" class="form-label">Referencia segura</label>
+                <input name="q" id="id_q" value="{{ selected.q|default:'' }}" maxlength="80" class="form-input" placeholder="ID de reserva o pago">
+            </div>
+
+            <div class="form-group">
+                <label for="id_date_from" class="form-label">Desde</label>
+                <input type="date" name="date_from" id="id_date_from" value="{{ selected.date_from|default:'' }}" class="form-input">
+            </div>
+
+            <div class="form-group">
+                <label for="id_date_to" class="form-label">Hasta</label>
+                <input type="date" name="date_to" id="id_date_to" value="{{ selected.date_to|default:'' }}" class="form-input">
+            </div>
+
+            <div class="form-group">
+                <label for="id_trip" class="form-label">Viaje</label>
+                <input type="number" min="1" name="trip" id="id_trip" value="{{ selected.trip|default:'' }}" class="form-input" placeholder="ID de salida">
+            </div>
+
+            <div class="form-actions full-width">
+                <button type="submit" class="btn btn-primary btn-sm">Filtrar pendientes</button>
+                <a href="{% url 'panel:operational_inbox' %}" class="btn btn-secondary btn-sm">Limpiar filtros</a>
+            </div>
+        </form>
+    </section>
+
+    <!-- Tabla de Pendientes -->
+    <section class="card" aria-label="Listado de pendientes operativos">
+        <div class="table-container">
+            <table class="data-table">
+                <caption>Pendientes que requieren acción o seguimiento</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Tipo</th>
+                        <th scope="col">Prioridad</th>
+                        <th scope="col">Estado</th>
+                        <th scope="col">Referencia</th>
+                        <th scope="col">Fecha relevante</th>
+                        <th scope="col">Plazo</th>
+                        <th scope="col">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in page.object_list %}
+                    <tr>
+                        <td><strong>{{ item.category_label }}</strong></td>
+                        <td>
+                            {% if item.priority_label == 'Urgente' %}
+                                <span class="badge badge-danger">● {{ item.priority_label }}</span>
+                            {% elif item.priority_label == 'Alta' %}
+                                <span class="badge badge-warning">● {{ item.priority_label }}</span>
+                            {% else %}
+                                <span class="badge badge-info">{{ item.priority_label }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge badge-warning">{{ item.status }}</span>
+                        </td>
+                        <td class="font-mono">
+                            <strong>{{ item.public_ref }}</strong>
+                        </td>
+                        <td>{{ item.relevant_at|date:"d/m/Y H:i" }}</td>
+                        <td><span class="muted">{{ item.timing }}</span></td>
+                        <td>
+                            <a href="{{ item.detail_url }}" class="btn btn-sm btn-secondary">Ver detalle</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="empty-state">No hay pendientes para estos filtros.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page.paginator.num_pages > 1 %}
+        <nav class="pagination" aria-label="Paginación de bandeja">
+            <div class="pagination-container">
+                {% if previous_url %}
+                    <a href="{{ previous_url }}" class="btn btn-sm btn-secondary">« Anterior</a>
+                {% endif %}
+                <span class="pagination-info">Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+                {% if next_url %}
+                    <a href="{{ next_url }}" class="btn btn-sm btn-secondary">Siguiente »</a>
+                {% endif %}
+            </div>
+        </nav>
+        {% endif %}
+    </section>
+</div>
 {% endblock %}

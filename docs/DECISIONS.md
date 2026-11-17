@@ -18,10 +18,11 @@ Este documento registra las decisiones confirmadas, los antecedentes históricos
 | **Transferencias bancarias** | Revisión de transferencias exclusiva de Administradores activos. Rechazos preservan el intento fallido y retienen la butaca para nuevo comprobante. Aprobación terminal con fulfillment durable. | [Pagos](PROJECT_SPEC.md#pagos-transferencias-y-comisiones) |
 | **Balance y comisiones** | Comisión fija de `Decimal("5000.00")` por cada asignación confirmada con precio positivo (por pasajero y tramo). Muestra ventas brutas, unidades comisionables, comisión y neto operativo. | [Balance](PROJECT_SPEC.md#pagos-transferencias-y-comisiones) |
 | **Pasaje PDF oficial y serie AAA** | Plantilla de 1 página con dos talones (empresa y pasajero) con logo oficial. Eliminación total de QR y códigos de barras visuales en el PDF. Numeración secuencial persistente `AAA-000000001` con `TicketSequence`. | [Pasajes](PROJECT_SPEC.md#pasajes-y-emisión) |
-| **Validación de embarque** | Registro durable en `tickets.BoardingRecord` validado internamente en `/panel/embarques/` por Administrador y Vendedor. Tokens criptográficos preservados internamente en base de datos. | [Arquitectura embarque](ARCHITECTURE.md#módulo-de-pasajes-y-embarque-tickets) |
+| **Validación de embarque (superada)** | Retirada operativamente de interfaces y endpoints; operaciones programáticas lanzan ValidationError. Registros y auditoría históricos preservados; viajes inician y finalizan sin exigir embarque. | [Retiro embarque](STATUS_CAJA_EMBARQUE_LISTADO_PDF_20261105.md) |
 | **Cortes de venta** | Corte de venta online a 60 minutos de la subida. Corte de venta manual a 30 minutos de la subida; rechazo a 29 minutos. Bloqueo total tras inicio del viaje. | [Cortes](PROJECT_SPEC.md#disponibilidad-vencimientos-y-cortes) |
-| **Caja diaria** | Módulo `cash_register` con restricción PostgreSQL de 1 sesión abierta por vendedor. Movimientos inmutables vinculados a cobros en efectivo aprobados. | [Caja diaria](ARCHITECTURE.md#caja-diaria-cash_register) |
+| **Caja diaria (superada)** | Retirada operativamente de interfaces y endpoints; apertura, cierre y pagos en efectivo deshabilitados (ValidationError). Modelos, migraciones y registros históricos preservados para auditoría. | [Retiro caja](STATUS_CAJA_EMBARQUE_LISTADO_PDF_20261105.md) |
 | **Mantenimiento y outbox** | Outbox transaccional `notifications.TransactionalNotification`. Worker de mantenimiento con advisory locks PostgreSQL (`pg_try_advisory_lock`). | [Mantenimiento](ARCHITECTURE.md#notificaciones-y-mantenimiento-notifications-core) |
+| **Listado provisional de pasajeros en PDF** | Descarga en detalle de viajes exclusiva para Administradores y Superusuarios. PDF A4 horizontal con ReportLab, paginado, encabezados repetidos por página, deduplicación de joins, menores en falda vinculados a butaca de la madre y rotulado provisional no CNRT. | [Listado provisional](STATUS_CAJA_EMBARQUE_LISTADO_PDF_20261105.md) |
 
 ---
 
@@ -46,6 +47,12 @@ Los siguientes puntos correspondieron a definiciones o implementaciones provisio
    - *Estado actual*: la revisión, aprobación y rechazo de comprobantes de transferencia quedó restringida con exclusividad a usuarios del grupo `Administrador` activos.
 
 ---
+6. **Operación de Caja y pagos en efectivo**:
+   - *Antecedente*: Módulo operativo de caja diaria con cobro presencial en efectivo en el panel.
+   - *Estado actual*: Retirado operativamente; nuevas operaciones y pagos en efectivo deshabilitados (ValidationError). Se mantiene histórico contable y trazabilidad de auditoría.
+7. **Control operativo de embarque**:
+   - *Antecedente*: Validación y reversión de embarque en /panel/embarques/ con contadores en manifiestos.
+   - *Estado actual*: Retirado de pantallas activas y endpoints; inicio y cierre de viajes desacoplados de embarque. Se preserva base histórica.
 
 ## 3. Decisiones comerciales pendientes de Sandro
 

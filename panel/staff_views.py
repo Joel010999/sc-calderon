@@ -1,50 +1,139 @@
-from django.contrib import messages
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.db.models import Q
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
+from core.abuse import consume, request_identifier
 from .permissions import can_create_administrator, staff_management_access
 from .staff_services import ROLES, accept_invitation, invite_staff, update_staff
-from core.abuse import consume, request_identifier
+
 
 @staff_management_access()
 def staff_list(request):
-    User=get_user_model(); q=request.GET.get("q","").strip(); role=request.GET.get("role","")
-    qs=User.objects.filter(is_superuser=False,groups__name__in=ROLES).distinct().prefetch_related("groups").order_by("email")
-    if q: qs=qs.filter(email__icontains=q)
-    if role in ROLES: qs=qs.filter(groups__name=role)
-    roles = ROLES if can_create_administrator(request.user) else ("Vendedor",)
-    return render(request,"panel/staff/list.html",{"users":Paginator(qs,25).get_page(request.GET.get("page")),"q":q,"role":role,"roles":roles,"can_create_administrator":can_create_administrator(request.user)})
+    User = get_user_model()
+    q = request.GET.get("q", "").strip()
+    role = request.GET.get("role", "").strip()
+
+    if request.user.is_superuser:
+        qs = (
+            User.objects.filter(Q(groups__name__in=["Administrador", "Vendedor"]) | Q(is_superuser=True))
+            .distinct()
+            .prefetch_related("groups")
+            .order_by("email")
+        )
+        roles = ROLES
+    else:
+        # Administradores gestionan vendedores pero no admins ni superusuarios
+        qs = (
+            User.objects.filter(is_superuser=False, groups__name="Vendedor")
+            .exclude(groups__name="Administrador")
+            .distinct()
+            .prefetch_related("groups")
+            .order_by("email")
+        )
+        roles = ("Vendedor",)
+
+    if q:
+        qs = qs.filter(email__icontains=q)
+    if role in roles:
+        if role == "Superusuario":
+            qs = qs.filter(is_superuser=True)
+        else:
+            qs = qs.filter(groups__name=role, is_superuser=False)
+
+    return render(
+        request,
+        "panel/staff/list.html",
+        {
+            "users": Paginator(qs, 25).get_page(request.GET.get("page")),
+            "q": q,
+            "role": role,
+            "roles": roles,
+            "can_create_administrator": can_create_administrator(request.user),
+        },
+    )
+
 
 @staff_management_access()
 def staff_invite(request):
-    if request.method=="POST":
-        if not consume(request, scope="panel.staff_invitation", limit=settings.ABUSE_STAFF_INVITATION_LIMIT,
-                       window_seconds=settings.ABUSE_STAFF_INVITATION_WINDOW_SECONDS,
-                       identifier=request_identifier(request, request.POST.get("email", "").strip().lower())):
-            messages.error(request, "No pudimos procesar la invitación en este momento. Intentá nuevamente más tarde.")
-            return render(request,"panel/staff/invite.html",{"roles":ROLES})
-        try: invite_staff(actor=request.user,email=request.POST.get("email",""),role=request.POST.get("role","")); messages.success(request,"Invitación enviada."); return redirect("panel:staff_list")
-        except ValidationError as exc: messages.error(request,str(exc))
     roles = ROLES if can_create_administrator(request.user) else ("Vendedor",)
-    return render(request,"panel/staff/invite.html",{"roles":roles,"can_create_administrator":can_create_administrator(request.user)})
+    if request.method == "POST":
+        role_param = request.POST.get("role", "").strip()
+        if not request.user.is_superuser and role_param != "Vendedor":
+            messages.error(request, "Los administradores solo pueden invitar vendedores.")
+            return render(
+                request,
+                "panel/staff/invite.html",
+                {"roles": roles, "can_create_administrator": False},
+            )
+        if not consume(
+            request,
+            scope="panel.staff_invitation",
+            limit=settings.ABUSE_STAFF_INVITATION_LIMIT,
+            window_seconds=settings.ABUSE_STAFF_INVITATION_WINDOW_SECONDS,
+            identifier=request_identifier(request, request.POST.get("email", "").strip().lower()),
+        ):
+            messages.error(
+                request,
+                "No pudimos procesar la invitación en este momento. Intentá nuevamente más tarde.",
+            )
+            return render(
+                request,
+                "panel/staff/invite.html",
+                {"roles": roles, "can_create_administrator": can_create_administrator(request.user)},
+            )
+        try:
+            invite_staff(actor=request.user, email=request.POST.get("email", ""), role=role_param)
+            messages.success(request, "Invitación enviada.")
+            return redirect("panel:staff_list")
+        except ValidationError as exc:
+            messages.error(request, str(exc))
+
+    return render(
+        request,
+        "panel/staff/invite.html",
+        {"roles": roles, "can_create_administrator": can_create_administrator(request.user)},
+    )
+
 
 @require_POST
 @staff_management_access()
-def staff_update(request,user_id):
-    try: update_staff(actor=request.user,user_id=user_id,role=request.POST.get("role") or None,active=request.POST.get("active")=="1",first_name=request.POST.get("first_name"),last_name=request.POST.get("last_name"),dni=request.POST.get("dni"),whatsapp=request.POST.get("whatsapp")); messages.success(request,"Usuario actualizado.")
-    except ValidationError as exc: messages.error(request,str(exc))
+def staff_update(request, user_id):
+    try:
+        update_staff(
+            actor=request.user,
+            user_id=user_id,
+            role=request.POST.get("role") or None,
+            active=request.POST.get("active") == "1",
+            first_name=request.POST.get("first_name"),
+            last_name=request.POST.get("last_name"),
+            dni=request.POST.get("dni"),
+            whatsapp=request.POST.get("whatsapp"),
+        )
+        messages.success(request, "Usuario actualizado.")
+    except ValidationError as exc:
+        messages.error(request, str(exc))
     return redirect("panel:staff_list")
 
-def staff_accept(request,token):
-    if request.method=="POST":
-        if not consume(request, scope="panel.staff_invitation_accept", limit=settings.ABUSE_STAFF_INVITATION_LIMIT,
-                       window_seconds=settings.ABUSE_STAFF_INVITATION_WINDOW_SECONDS,
-                       identifier=request_identifier(request, token)):
+
+def staff_accept(request, token):
+    if request.method == "POST":
+        if not consume(
+            request,
+            scope="panel.staff_invitation_accept",
+            limit=settings.ABUSE_STAFF_INVITATION_LIMIT,
+            window_seconds=settings.ABUSE_STAFF_INVITATION_WINDOW_SECONDS,
+            identifier=request_identifier(request, token),
+        ):
             messages.error(request, "El enlace es inválido o venció.")
-            return render(request,"panel/staff/accept.html",{"token":token})
-        try: accept_invitation(token,request.POST.get("password","")); messages.success(request,"Contraseña establecida."); return redirect("panel:login")
-        except ValidationError as exc: messages.error(request,str(exc))
-    return render(request,"panel/staff/accept.html",{"token":token})
+            return render(request, "panel/staff/accept.html", {"token": token})
+        try:
+            accept_invitation(token, request.POST.get("password", ""))
+            messages.success(request, "Contraseña establecida.")
+            return redirect("panel:login")
+        except ValidationError as exc:
+            messages.error(request, str(exc))
+    return render(request, "panel/staff/accept.html", {"token": token})

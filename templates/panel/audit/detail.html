@@ -1,2 +1,55 @@
 {% extends "panel/base.html" %}
-{% block content %}<div class="container"><p><a href="{% url 'panel:audit_list' %}">← Volver a auditoría</a></p><h1 class="dashboard-title">Detalle seguro de auditoría</h1><section class="ops-card"><dl><dt>Fecha</dt><dd>{{ record.created_at|date:'d/m/Y H:i:s T' }}</dd><dt>Actor</dt><dd>{{ record.actor }}</dd><dt>Módulo</dt><dd>{{ record.module }}</dd><dt>Acción</dt><dd>{{ record.action_label }}</dd><dt>Resultado</dt><dd>{{ record.result }}</dd><dt>Referencia pública</dt><dd>{{ record.reference|default:'No disponible' }}</dd><dt>Descripción sanitizada</dt><dd>{{ record.description }}</dd></dl><p class="muted">Los datos internos, snapshots, PII, secretos, tokens y archivos privados se excluyen deliberadamente.</p></section></div>{% endblock %}
+{% load l10n %}
+
+{% block content %}
+<div class="container operations">
+  <header class="ops-header">
+    <div>
+      <p class="ops-eyebrow"><a href="{% url 'panel:audit_list' %}">← Volver a auditoría</a></p>
+      <h1 class="dashboard-title">Detalle seguro de auditoría</h1>
+    </div>
+  </header>
+
+  <section class="ops-card" aria-label="Información del evento de auditoría">
+    <h2>Registro de auditoría</h2>
+    <dl class="bus-data">
+      <div>
+        <dt>Fecha y hora</dt>
+        <dd>{{ record.created_at|date:'d/m/Y H:i:s T' }}</dd>
+      </div>
+      <div>
+        <dt>Usuario actor</dt>
+        <dd><strong>{{ record.actor }}</strong></dd>
+      </div>
+      <div>
+        <dt>Módulo</dt>
+        <dd><span class="badge">{{ record.module }}</span></dd>
+      </div>
+      <div>
+        <dt>Acción</dt>
+        <dd>{{ record.action_label }}</dd>
+      </div>
+      <div>
+        <dt>Resultado</dt>
+        <dd>
+          <span class="badge {% if record.result == 'SUCCESS' or record.result == 'EXITO' %}badge-status-confirmed{% else %}badge-status-held{% endif %}">
+            {{ record.result }}
+          </span>
+        </dd>
+      </div>
+      <div>
+        <dt>Referencia pública</dt>
+        <dd class="font-mono">{{ record.reference|default:'No disponible' }}</dd>
+      </div>
+      <div style="grid-column: 1 / -1;">
+        <dt>Descripción sanitizada</dt>
+        <dd>{{ record.description }}</dd>
+      </div>
+    </dl>
+
+    <p class="muted" style="margin-top: 1.5rem; font-size: 0.8125rem;">
+      Los datos internos, snapshots, PII, secretos, tokens y archivos privados se excluyen deliberadamente de esta vista por razones de privacidad y seguridad.
+    </p>
+  </section>
+</div>
+{% endblock %}

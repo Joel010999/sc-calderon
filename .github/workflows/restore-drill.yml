@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   restore-drill:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -49,6 +49,23 @@ jobs:
         with: {python-version: '3.12'}
       - name: Instalar dependencias
         run: python -m pip install -r requirements.txt
+      - name: Verificar versiones efectivas de herramientas PostgreSQL y servidor en CI
+        run: |
+          echo "=== Versión de pg_dump ==="
+          pg_dump --version
+          echo "=== Versión de pg_restore ==="
+          pg_restore --version
+          echo "=== Versión del servidor PostgreSQL (service) ==="
+          psql -h 127.0.0.1 -U scviajes_ci -d postgres -t -c "SELECT version();"
+          psql -h 127.0.0.1 -U scviajes_ci -d postgres -t -c "SHOW server_version;"
+          DUMP_VER=$(pg_dump --version | grep -oE '[0-9]+' | head -n 1)
+          RESTORE_VER=$(pg_restore --version | grep -oE '[0-9]+' | head -n 1)
+          SERVER_VER=$(psql -h 127.0.0.1 -U scviajes_ci -d postgres -t -c "SHOW server_version;" | tr -d '[:space:]' | cut -d. -f1)
+          echo "pg_dump major: $DUMP_VER | pg_restore major: $RESTORE_VER | server major: $SERVER_VER"
+          if [ "$DUMP_VER" != "16" ] || [ "$RESTORE_VER" != "16" ] || [ "$SERVER_VER" != "16" ]; then
+            echo "Error: incompatibilidad detectada. Se exige PostgreSQL 16 tanto en herramientas cliente como en servidor."
+            exit 1
+          fi
       - name: Crear bases sintéticas aisladas
         run: |
           createdb -h 127.0.0.1 -U scviajes_ci scviajes_restore_drill_source

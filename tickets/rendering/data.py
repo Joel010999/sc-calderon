@@ -36,6 +36,7 @@ class TicketData:
     total_amount_display: str = ""
     is_lap_infant: bool = False
     companion_name: str = ""
+    companion_seat_number: str = ""
     agency_name: str = "SC VIAJES"
     carrier_name: str = PENDING_SANDRO_VALUE
     carrier_legal_name: str = PENDING_SANDRO_VALUE

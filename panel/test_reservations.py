@@ -7,6 +7,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -14,8 +15,10 @@ from django.utils import timezone
 from operations.models import Bus, Route, RouteStop, Seat, SeatCategory, Stop, Trip, TripFare, TripStop
 from panel.models import AuditEvent
 from panel.permissions import can_manage_operations, can_manage_reservations
+from panel.reservation_services import create_panel_manual_booking
 from sales.conf import get_manual_hold_hours, get_max_passengers_per_booking
 from sales.exceptions import InvalidBookingError, SeatUnavailableError
+from sales.internal_transfer import create_immediate_transfer_sale, create_internal_transfer_booking
 from sales.models import (
     AssignmentStatus,
     Booking,
@@ -27,6 +30,7 @@ from sales.models import (
     normalize_document,
 )
 from sales.services import create_manual_booking, get_trip_availability
+from tickets.models import Ticket
 
 User = get_user_model()
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -395,6 +399,74 @@ class ReservationDetailAndReleaseTests(ReservationPanelBaseTestCase):
 
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, BookingStatus.CONFIRMED)
+
+    def _confirm_booking(self):
+        self.booking.status = BookingStatus.CONFIRMED
+        self.booking.confirmed_at = timezone.now()
+        self.booking.save(update_fields=["status", "confirmed_at", "updated_at"])
+
+    def _issued_ticket(self):
+        leg = self.booking.legs.get()
+        assignment = leg.seat_assignments.get()
+        return Ticket.objects.create(
+            booking=self.booking,
+            leg=leg,
+            passenger=self.booking.passengers.get(),
+            seat_assignment=assignment,
+            ticket_code="AAA-TEST-001",
+            verification_token_hash="hash_v_test_detail",
+            download_token_hash="hash_d_test_detail",
+            status="ISSUED",
+            passenger_name="Carlos Romero",
+            passenger_document_masked="DNI ***6789",
+            origin_stop_name=leg.origin_stop_name,
+            destination_stop_name=leg.destination_stop_name,
+            departure_at=leg.departure_at,
+            arrival_at=leg.arrival_at,
+            seat_number=assignment.seat_number,
+            seat_category=assignment.category,
+            price=assignment.price,
+            currency="ARS",
+            booking_public_id=self.booking.public_id,
+        )
+
+    def test_detail_shows_ticket_pdf_link_only_when_issued(self):
+        detail_url = reverse("panel:booking_detail", kwargs={"public_id": self.booking.public_id})
+        # Reserva retenida sin pasajes: no se muestra el enlace
+        content = self.client.get(detail_url, secure=True).content.decode("utf-8")
+        self.assertNotIn("Descargar PDF", content)
+        # Confirmada pero sin pasajes emitidos: tampoco
+        self._confirm_booking()
+        content = self.client.get(detail_url, secure=True).content.decode("utf-8")
+        self.assertNotIn("Descargar PDF", content)
+        self.assertNotIn("Pasajes emitidos", content)
+        # Con pasaje emitido: enlace con pasajero, tramo y butaca
+        ticket = self._issued_ticket()
+        response = self.client.get(detail_url, secure=True)
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        download_url = reverse("tickets:download", kwargs={"public_id": ticket.public_id})
+        self.assertIn("Descargar PDF", content)
+        self.assertIn(download_url, content)
+        self.assertIn("Pasajes emitidos", content)
+        self.assertIn("Carlos Romero", content)
+        self.assertIn("Tramo 1", content)
+        self.assertIn("AAA-TEST-001", content)
+        self.assertIn("Butaca 1", content)
+
+    def test_ticket_download_link_scoped_to_owning_seller(self):
+        self._confirm_booking()
+        ticket = self._issued_ticket()
+        download_url = reverse("tickets:download", kwargs={"public_id": ticket.public_id})
+        # Otro vendedor no ve el detalle ni puede descargar el pasaje
+        other_seller = User.objects.create_user(username="seller_other", password="password123")
+        other_seller.groups.add(self.group_seller)
+        self.client.force_login(other_seller)
+        detail_response = self.client.get(
+            reverse("panel:booking_detail", kwargs={"public_id": self.booking.public_id}), secure=True)
+        self.assertEqual(detail_response.status_code, 404)
+        download_response = self.client.get(download_url, secure=True)
+        self.assertEqual(download_response.status_code, 404)
 
 
 class ReservationCreationTests(ReservationPanelBaseTestCase):
@@ -856,3 +928,310 @@ class ReservationCreationTests(ReservationPanelBaseTestCase):
         finally:
             self.fare_out_cama.amount = Decimal("15000.00")
             self.fare_out_cama.save()
+
+    def _setup_collision_seats(self):
+        # Crear butacas con números temporales y reasignar sus números usando los PKs reales
+        # asignados por la base de datos para garantizar la colisión cruzada (seat_a.number == seat_b.pk
+        # y seat_b.number == seat_a.pk) sin predecir PKs ni reiniciar secuencias.
+        seat_a = Seat.objects.create(
+            bus=self.trip_outbound.bus,
+            number=99001,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=10,
+            position_y=10,
+        )
+        seat_b = Seat.objects.create(
+            bus=self.trip_outbound.bus,
+            number=99002,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=11,
+            position_y=10,
+        )
+        target_num_a = seat_b.pk
+        target_num_b = seat_a.pk
+        seat_a.number = target_num_a
+        seat_b.number = target_num_b
+        seat_a.save()
+        seat_b.save()
+        self.assertEqual(seat_a.number, seat_b.pk)
+        self.assertEqual(seat_b.number, seat_a.pk)
+        return seat_a, seat_b, target_num_a, target_num_b
+
+    def test_http_booking_create_pending_transfer_number_pk_collision(self):
+        """Flujo HTTP real: reserva pendiente por transferencia usa seat.pk sin confundirse con número."""
+        seat_a, seat_b, target_num_a, target_num_b = self._setup_collision_seats()
+
+        create_url = reverse("panel:booking_create")
+        post_data = {
+            "action": "create_booking",
+            "sale_type": "transfer",
+            "trip_type": "oneway",
+            "passengers_count": "1",
+            "outbound_trip": str(self.trip_outbound.pk),
+            "outbound_origin": str(self.ts_out_cba.pk),
+            "outbound_destination": str(self.ts_out_ssj.pk),
+            "outbound_seats": [str(seat_b.pk)],  # Contrato: create.html envía seat.pk (su valor coincide con seat_a.number)
+            "contact_email": "collision_pending_http@correo.com",
+            "contact_phone": "3511112222",
+            "p_1_first_name": "Juan",
+            "p_1_last_name": "Colision",
+            "p_1_document_type": "DNI",
+            "p_1_document_number": "41.555.666",
+            "p_1_birth_date": "1992-04-15",
+            "p_1_nationality": "Argentina",
+        }
+        resp = self.client.post(create_url, post_data, secure=True)
+        self.assertEqual(resp.status_code, 302)
+
+        booking = Booking.objects.get(email="collision_pending_http@correo.com")
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        self.assertIsNotNone(booking.expires_at)
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.seat, seat_b)
+        self.assertEqual(sa.seat_number, target_num_b)
+        self.assertEqual(sa.seat_id, seat_b.pk)
+
+    def test_http_booking_create_immediate_transfer_number_pk_collision(self):
+        """Flujo HTTP real: venta inmediata confirmada por transferencia resuelve seat.pk sin colisión."""
+        seat_a, seat_b, target_num_a, target_num_b = self._setup_collision_seats()
+
+        create_url = reverse("panel:booking_create")
+        voucher = SimpleUploadedFile(
+            "comprobante.pdf",
+            b"%PDF-1.4 fake receipt content",
+            content_type="application/pdf",
+        )
+        post_data = {
+            "action": "create_booking",
+            "sale_type": "transfer",
+            "trip_type": "oneway",
+            "passengers_count": "1",
+            "outbound_trip": str(self.trip_outbound.pk),
+            "outbound_origin": str(self.ts_out_cba.pk),
+            "outbound_destination": str(self.ts_out_ssj.pk),
+            "outbound_seats": [str(seat_a.pk)],  # Contrato: create.html envía seat.pk (su valor coincide con seat_b.number)
+            "voucher": voucher,
+            "payment_verified": "on",
+            "contact_email": "collision_imm_http@correo.com",
+            "contact_phone": "3511113333",
+            "p_1_first_name": "Pedro",
+            "p_1_last_name": "Inmediato",
+            "p_1_document_type": "DNI",
+            "p_1_document_number": "42.555.666",
+            "p_1_birth_date": "1990-05-20",
+            "p_1_nationality": "Argentina",
+        }
+        resp = self.client.post(create_url, post_data, secure=True)
+        self.assertEqual(resp.status_code, 302)
+
+        booking = Booking.objects.get(email="collision_imm_http@correo.com")
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        sa = SeatAssignment.objects.get(leg__booking=booking)
+        self.assertEqual(sa.seat, seat_a)
+        self.assertEqual(sa.seat_number, target_num_a)
+        self.assertEqual(sa.seat_id, seat_a.pk)
+
+    def test_http_booking_create_alien_bus_seat_rejected(self):
+        """Flujo HTTP real: rechaza butaca perteneciente a otro colectivo."""
+        alien_bus = Bus.objects.create(code="BUS-ALIEN-HTTP", display_name="Alien Bus", is_active=True)
+        alien_seat = Seat.objects.create(
+            bus=alien_bus,
+            number=99,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=0,
+            position_y=0,
+        )
+
+        create_url = reverse("panel:booking_create")
+        post_data = {
+            "action": "create_booking",
+            "sale_type": "transfer",
+            "trip_type": "oneway",
+            "passengers_count": "1",
+            "outbound_trip": str(self.trip_outbound.pk),
+            "outbound_origin": str(self.ts_out_cba.pk),
+            "outbound_destination": str(self.ts_out_ssj.pk),
+            "outbound_seats": [str(alien_seat.pk)],
+            "contact_email": "alien_http@correo.com",
+            "contact_phone": "3511114444",
+            "p_1_first_name": "Alien",
+            "p_1_last_name": "Tester",
+            "p_1_document_type": "DNI",
+            "p_1_document_number": "43.555.666",
+            "p_1_birth_date": "1995-01-10",
+            "p_1_nationality": "Argentina",
+        }
+        resp = self.client.post(create_url, post_data, secure=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "colectivo")
+        self.assertFalse(Booking.objects.filter(email="alien_http@correo.com").exists())
+
+    def test_callers_by_id_and_by_seat_numbers(self):
+        """Callers de servicios internos por ID y por seat_numbers respetan el contrato sin ambigüedad."""
+        seat_a, seat_b, target_num_a, target_num_b = self._setup_collision_seats()
+
+        pax = [{
+            "first_name": "Test",
+            "last_name": "Caller",
+            "document_type": "DNI",
+            "document_number": "44.555.666",
+            "birth_date": "1991-03-12",
+            "nationality": "Argentina",
+        }]
+
+        # 1. Caller por ID en create_internal_transfer_booking
+        booking_by_id = create_internal_transfer_booking(
+            seller=self.user_seller,
+            legs=[{
+                "trip": self.trip_outbound,
+                "origin_stop": self.ts_out_cba,
+                "destination_stop": self.ts_out_ssj,
+                "seats": [seat_b.pk],
+            }],
+            email="caller_id@correo.com",
+            phone="3511115555",
+            passengers_data=pax,
+        )
+        sa_id = SeatAssignment.objects.get(leg__booking=booking_by_id)
+        self.assertEqual(sa_id.seat, seat_b)
+        self.assertEqual(sa_id.seat_number, target_num_b)
+        self.assertEqual(sa_id.seat_id, seat_b.pk)
+
+        # 2. Caller por seat_numbers en create_internal_transfer_booking (usando seat_a)
+        booking_by_num = create_internal_transfer_booking(
+            seller=self.user_seller,
+            legs=[{
+                "trip": self.trip_outbound,
+                "origin_stop": self.ts_out_cba,
+                "destination_stop": self.ts_out_ssj,
+                "seat_numbers": [target_num_a],
+            }],
+            email="caller_num@correo.com",
+            phone="3511116666",
+            passengers_data=[{**pax[0], "document_number": "44.555.667"}],
+        )
+        sa_num = SeatAssignment.objects.get(leg__booking=booking_by_num)
+        self.assertEqual(sa_num.seat, seat_a)
+        self.assertEqual(sa_num.seat_number, target_num_a)
+        self.assertEqual(sa_num.seat_id, seat_a.pk)
+
+    def test_callers_alien_bus_seat_rejected(self):
+        """Callers con butaca perteneciente a otro colectivo son rechazados."""
+        alien_bus = Bus.objects.create(code="BUS-ALIEN-CALLER", display_name="Alien Bus Caller", is_active=True)
+        alien_seat = Seat.objects.create(
+            bus=alien_bus,
+            number=98,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=0,
+            position_y=0,
+        )
+
+        pax = [{
+            "first_name": "Test",
+            "last_name": "Caller",
+            "document_type": "DNI",
+            "document_number": "44.555.668",
+            "birth_date": "1991-03-12",
+            "nationality": "Argentina",
+        }]
+
+        # Rechazo por objeto / ID en seats
+        with self.assertRaises(ValidationError):
+            create_internal_transfer_booking(
+                seller=self.user_seller,
+                legs=[{
+                    "trip": self.trip_outbound,
+                    "origin_stop": self.ts_out_cba,
+                    "destination_stop": self.ts_out_ssj,
+                    "seats": [alien_seat.pk],
+                }],
+                email="caller_alien_id@correo.com",
+                phone="3511117777",
+                passengers_data=pax,
+            )
+
+        # Rechazo por número inexistente en seat_numbers
+        with self.assertRaises(ValidationError):
+            create_internal_transfer_booking(
+                seller=self.user_seller,
+                legs=[{
+                    "trip": self.trip_outbound,
+                    "origin_stop": self.ts_out_cba,
+                    "destination_stop": self.ts_out_ssj,
+                    "seat_numbers": [9999],
+                }],
+                email="caller_alien_num@correo.com",
+                phone="3511117778",
+                passengers_data=pax,
+            )
+
+    def test_caller_panel_manual_booking_by_id_collision(self):
+        """create_panel_manual_booking resuelve butacas por ID sin colisión con número."""
+        seat_a, seat_b, target_num_a, target_num_b = self._setup_collision_seats()
+
+        pax = [{
+            "first_name": "Caller",
+            "last_name": "Manual",
+            "document_type": "DNI",
+            "document_number": "44.555.669",
+            "birth_date": "1991-03-12",
+            "nationality": "Argentina",
+        }]
+
+        booking_manual = create_panel_manual_booking(
+            actor=self.user_admin,
+            email="caller_manual@correo.com",
+            phone="3511118888",
+            legs=[{
+                "trip": self.trip_outbound,
+                "origin_stop": self.ts_out_cba,
+                "destination_stop": self.ts_out_ssj,
+                "seats": [seat_b.pk],
+            }],
+            passengers_data=pax,
+            expires_at=None,
+        )
+        sa_manual = SeatAssignment.objects.get(leg__booking=booking_manual)
+        self.assertEqual(sa_manual.seat, seat_b)
+        self.assertEqual(sa_manual.seat_number, target_num_b)
+        self.assertEqual(sa_manual.seat_id, seat_b.pk)
+
+    def test_caller_panel_manual_booking_alien_bus_rejected(self):
+        """create_panel_manual_booking rechaza butacas de colectivos ajenos."""
+        alien_bus = Bus.objects.create(code="BUS-ALIEN-MANUAL", display_name="Alien Bus Manual", is_active=True)
+        alien_seat = Seat.objects.create(
+            bus=alien_bus,
+            number=97,
+            deck=Seat.Deck.LOWER,
+            category=SeatCategory.CAMA,
+            position_x=0,
+            position_y=0,
+        )
+
+        pax = [{
+            "first_name": "Caller",
+            "last_name": "Manual",
+            "document_type": "DNI",
+            "document_number": "44.555.670",
+            "birth_date": "1991-03-12",
+            "nationality": "Argentina",
+        }]
+
+        with self.assertRaises(ValidationError):
+            create_panel_manual_booking(
+                actor=self.user_admin,
+                email="caller_alien_manual@correo.com",
+                phone="3511118889",
+                legs=[{
+                    "trip": self.trip_outbound,
+                    "origin_stop": self.ts_out_cba,
+                    "destination_stop": self.ts_out_ssj,
+                    "seats": [alien_seat.pk],
+                }],
+                passengers_data=pax,
+                expires_at=None,
+            )

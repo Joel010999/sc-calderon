@@ -60,6 +60,35 @@ Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base 
     - Preservación interna de tokens de verificación (`verification_token_hash`) y descarga (`download_token_hash`), manteniendo operativa la validación de embarque interna en `/panel/embarques/` (`tickets.BoardingRecord`).
     - Numeración persistente correlativa mediante el modelo `TicketSequence` con bloqueo `select_for_update()`, formato `AAA-000000001` en adelante para emisiones reales (`AAA-000000000` en plantilla vacía), replicada exactamente en ambos talones.
     - Snapshot inmutable de datos productivos, vendedor (omitido en web), medio de pago, horarios por parada y condiciones generales reproducidas en dos columnas.
+11. **Retiro operativo de Caja y Efectivo**:
+    - Endpoints operativos `/panel/caja/` y `/panel/caja/reporte-diario/` deshabilitados (404).
+    - Nuevas operaciones de apertura, cierre, arqueo y cobros en efectivo rechazadas con `ValidationError`. Opciones de efectivo removidas de ventas.
+    - Modelos históricos, registros contables previos y auditoría preservados para consultas autorizadas. Transferencias bancarias y emisión automática plenamente vigentes.
+12. **Retiro de Control de Embarque**:
+    - Acción "Validar embarque", rutas `/panel/embarques/` y servicios de validación/reversión deshabilitados (`ValidationError`).
+    - Contadores e insignias de estado de embarque removidos de pantallas operativas de viaje.
+    - Datos históricos preservados; inicio y finalización de viajes habilitados para administradores sin requerir embarque.
+13. **Listado Provisional de Pasajeros en PDF**:
+    - Descarga exclusiva para Administradores y Superusuarios desde el detalle del viaje (403 para vendedores).
+    - Generación A4 apaisada con ReportLab, paginación "Página X de Y", cabeceras de tabla repetidas por página (`repeatRows=1`), y encabezado superior desde la página 2.
+    - Inclusión estricta de reservas confirmadas (excluye retenidas, liberadas y vencidas), deduplicación de joins y vinculación de menores en falda con la butaca de la madre.
+    - Rotulado de uso interno provisional (no homologado, no CNRT, sin códigos visuales ni estados de embarque).
+
+14. **Integración Visual del Panel Rojo (UI/UX)**:
+    - Adopción íntegra de la identidad visual roja en las interfaces internas reales: tipografía, jerarquía, superficies, colores de acento y estados de interacción (`panel.css` y `operations.css`).
+    - Layout responsivo con drawer accesible para dispositivos móviles, soporte de cierre con tecla `Escape`, control de foco y breadcrumbs contextuales.
+    - Cobertura completa de vistas: Dashboard, Inbox operativo, Reporte de ventas, Reconciliación de fulfillment, Transferencias pendientes, Clientes, Auditoría y Gestión de Staff.
+    - Sin recursos externos (0 CDN), sin alteraciones de modelos, migraciones o lógica de negocio, con formularios y tokens CSRF preservados.
+
+15. **Consolidación de Navegación Operativa y Pasajes de Menores Gratuitos**:
+    - Retiro visual definitivo del acceso al resumen "Operaciones" en el menú lateral; la URL `/panel/operaciones/` redirige mediante HTTP 302 a `/panel/operaciones/viajes/`.
+    - El menú lateral presenta únicamente "Viajes" (accesible para administradores y en modo sólo lectura/consulta para vendedores) y "Colectivos" (restringido a administración con `can_manage_operations`).
+    - "Gestionar recorridos" vive integrado contextualmente dentro de "Viajes" con navegación de retorno ("← Volver a viajes"), sin enlace lateral independiente y preservando intactas sus rutas HTTP, formularios, creación, edición y versionado.
+    - Emisión de pasajes para menores de 5 años gratuitos (`is_lap_infant = True`): persistencia en base de datos (`Ticket.companion_seat_reference`) de la butaca de referencia del acompañante asociado (`accompanied_by`) de forma específica por tramo (ida y vuelta con butacas distintas).
+    - Migración `tickets.0008_ticket_companion_seat_reference` compatible con históricos preexistentes sin requerir backfill (`blank=True, default=""`), validada con pruebas sobre base temporal con registros históricos (`tickets.test_migration_historical`).
+    - Ambos talones del pasaje PDF ("Talón superior" e inferior) imprimen la leyenda exacta: `Sin asiento propio. Butaca de referencia del acompañante: N`.
+    - Muestras PDF sintéticas ida/vuelta renderizadas a PNG fuera del repo y revisadas/validadas visualmente por el coordinador confirmando ambos talones, leyenda completa y números correctos por tramo.
+    - Sin registros adicionales en `SeatAssignment` para el menor; se mantiene validación estricta y advertencia en logs ante ausencia de butaca válida; recarga desde DB y reenvíos idempotentes no recalculan ni alteran PDFs.
 
 ---
 
@@ -104,9 +133,14 @@ A continuación se detalla la evidencia técnica verificable de las entregas int
 | **PR #46** (Rutas Güemes y menores sin butaca) | `16a6808` | 567 tests OK, 7 skipped. Migraciones `sales.0004` y `tickets.0006` en base efímera. | Quality Gate, Sales Postgres y Tickets Postgres en verde. | Pendiente: ejecución de comando `setup_initial_operations` en base de staging. |
 | **PR #47** (Tarifas salida y prioritarias 51/54) | `1c3e6f1` | 586 tests OK, 7 skipped. Migración `operations.0003` con validación de conflictos históricos. | Concurrencia transaccional verificada en CI de base de datos. | Pendiente: validación de datos tarifarios reales de producción. |
 | **PR #48** (Menores a 5 años, horarios, pasaje AAA) | `69297a5` | 172 tests afectados (169 OK, 3 PostgreSQL skipped). 71 tests de `tickets` al 100% OK. Migración `tickets.0007`. | Workflows de repositorio completados sobre rama integrada. | Pendiente: generación de pasajes con storage S3 real y envío SMTP productivo. |
+| **Etapa Permisos y Navegación** | Rama `Joel010999/scviajes-permisos-navegacion-20261104` | Corrección y alineación de validación tras suite completa (13 fallos y 2 errores resueltos en pruebas y vistas de ventas internas/navegación). Migración `panel.0004`. | Verificación local: Ruff, Django check y makemigrations dry-run en verde. Tests afectados OK. | Pendiente: validación en base PostgreSQL real de staging sin aplicar migraciones destructivas. |
+| **Integración Panel Rojo (UI/UX)** | Rama `Joel010999/panel-rojo-integracion` | 692 tests OK, 6 skipped (PostgreSQL). Ruff (0 errores), Django check (0 problemas), makemigrations dry-run (sin cambios). 23/23 pruebas CDP en Chrome headless (móvil/desktop, contraste, teclado, overflow 0px). | 18 capturas PNG generadas fuera del repo. Cero dependencias externas (sin CDN). Formularios y tokens CSRF intactos. | Pendiente: despliegue e inspección visual en ambiente staging con PostgreSQL. |
+| **Gráficos de Ventas y Comisiones** | Rama `Joel010999/panel-graficos-comisiones-20261106` | Validación final: Found 707, Ran 702, OK (skipped=6): 696 pruebas aprobadas, 6 omitidas (PostgreSQL). Ruff (0 errores), Django check (0 problemas), makemigrations dry-run (sin cambios). Validación CDP en Chrome headless (móvil/desktop, 0 errores JS, overflow 0px, 6 gráficos con porcentajes). | 5 capturas PNG generadas fuera del repo. Importes retirados del reporte y preservados en Dashboard. | Pendiente: validación en base PostgreSQL real de staging. |
+| **Pendientes Navegación y Menores** | Rama `Joel010999/pendientes-nav-menor-20261107` | Found 711, Ran 706 tests OK, 6 skipped (PostgreSQL). Ruff (0 errores), Django check (0 problemas), makemigrations dry-run (sin cambios), git diff --check (0 errores). Logs guardados fuera del repo en `full_test_suite_output.log`. Muestras PDF sintéticas ida/vuelta renderizadas fuera del repo y revisadas/aprobadas por el coordinador. | Migración `tickets.0008` probada sobre base temporal con registros históricos. Reporte técnico sobre `concurrent_cash_payments_serialization` ratificado. | Pendiente: validación en base PostgreSQL real de staging. |
+| **Corrección Fallos CI PR #50** | Rama `Joel010999/pendientes-nav-menor-20261107` | Tests afectados al 100 % OK (`sales.test_internal_transfer` con 32 tests, `panel.test_reservations` con 36 tests, `panel.test_integration_ventas_recorridos` con 12 tests, `core.test_restore_drill` con 8 tests). Django check (0 problemas), git diff --check (0 errores). | Contrato de butacas explícito usando `seat_numbers` en `panel/reservation_views.py`, resolución inequívoca número vs PK y validación de colectivo en `sales/internal_transfer.py` y `panel/reservation_services.py`, regresiones de colisión número/PK cubiertas para ventas pendientes, inmediatas y flujo HTTP. Evidencia verificable de versiones efectivas de `pg_dump`, `pg_restore` y servidor PostgreSQL 16 en `.github/workflows/restore-drill.yml`. | Pendiente: re-ejecución de workflows en GitHub Actions tras actualización del PR. |
 
 ### Validaciones pendientes antes de producción
-1. **Ejecución de suite PostgreSQL completa**: correr los 7 tests de concurrencia y restricciones avanzadas omitidos en SQLite sobre una instancia real de PostgreSQL 16.
+1. **Ejecución de suite PostgreSQL completa**: correr los 6 tests de concurrencia y restricciones avanzadas omitidos en SQLite sobre una instancia real de PostgreSQL 16.
 2. **Validación en Staging**: desplegar la aplicación en Railway Staging con `PRIVATE_STORAGE_BACKEND=s3` y backend SMTP configurado para validar la descarga autenticada de pasajes y el envío transaccional de correos.
 3. **Inspección visual independiente de pasajes**: realizar la validación visual de los PDFs renderizados con un visor PDF independiente y verificar la lectura manual de los datos impresos.
 4. **Drill de backup y restauración**: ejecutar el comando `verify_database_backup` sobre un dump PostgreSQL real en el entorno de staging.
