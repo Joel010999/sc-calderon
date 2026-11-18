@@ -70,7 +70,16 @@ Las siguientes definiciones permanecen abiertas y **no deben resolverse por supo
    - Establecer los porcentajes o montos fijos de penalización por cambio de pasaje, la ventana horaria límite para solicitarlo y el régimen aplicable para devoluciones o saldos a favor cuando la cancelación es imputable a la empresa o al pasajero.
 6. **Datos fijos fiscales, transportista y aseguradora para emisión**:
    - Confirmar razón social, CUIT, condición de IVA, Ingresos Brutos, inicio de actividades, compañía aseguradora, número de póliza, direcciones físicas exactas de paradas y número oficial de WhatsApp de atención al pasajero. Actualmente el sistema expone marcadores explícitos configurables (`Pendiente de confirmación con Sandro`).
-7. **Migración de datos reales de AppSheet / Google Sheets**:
-   - Definir la fecha de corte, estructura de campos definitivos y ejecutar la prueba de importación en staging autorizado antes de habilitar pasarelas de pago.
-8. **Pasarelas de pago automáticas (Mercado Pago QR y Payway)**:
-   - Integración diferida hasta después de la migración de datos históricos.
+7. ~~**Migración de datos reales de AppSheet / Google Sheets**~~: **CANCELADA** (decisión posterior, ver sección 5).
+   - Se conserva el registro histórico: originalmente se preveía definir fecha de corte, estructura de campos y ejecutar una prueba de importación en staging antes de habilitar pasarelas.
+8. **Pasarelas de pago automáticas**:
+   - ~~Mercado Pago QR presencial~~: reemplazado por **Mercado Pago Checkout Pro** (decisión posterior, ver sección 5). El QR presencial (API de QR/órdenes de sucursal/caja) no se implementa ni se confunde con Checkout Pro.
+   - **Payway** (tarjetas de crédito/débito): sigue diferido, pendiente de autorización.
+
+## 4. Decisiones confirmadas posteriores (sesión de continuación)
+
+| Decisión | Detalle | Alcance |
+|---|---|---|
+| **Migración AppSheet / Google Sheets cancelada** | La aplicación opera con su propia base de datos como fuente única de verdad; no depende de recibir exports de AppSheet/Google Sheets. La herramienta `inventory_legacy_exports` queda archivada como utilitario histórico sin uso previsto. | Elimina la etapa de importación y su bloqueo sobre pasarelas; conserva trazabilidad en §2-§3. |
+| **Mercado Pago Checkout Pro autorizado** | Se autoriza implementar **Checkout Pro** (API de preferencias + webhooks firmados) para la compra pública y probarlo en sandbox. Se diferencia expresamente del QR presencial (API de QR/órdenes), que no se implementa. La transferencia bancaria manual se conserva intacta como medio de pago separado. | Implementación en `payments/mercadopago.py`, vista `/webhooks/mercadopago/`, deshabilitada por defecto y con credenciales por entorno. |
+| **Pendientes que se mantienen** | Menores (fecha de referencia, seguro, RENAPER), cambios/cancelaciones/devoluciones, datos fiscales/bancarios reales y Payway continúan pendientes de Sandro. | Sin cambios respecto de §3. |

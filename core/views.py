@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+import json
 import logging
 import uuid
 from urllib.parse import urlencode
@@ -15,6 +16,7 @@ from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonRespo
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from operations.models import Seat, Stop, Trip, TripStop
@@ -46,6 +48,12 @@ from payments.exceptions import (
     PaymentError,
 )
 from payments.models import Payment, PaymentMethod, PaymentStatus
+from payments.mercadopago import (
+    initiate_mercadopago_payment,
+    mercadopago_configured,
+    process_mercadopago_notification,
+    verify_webhook_signature,
+)
 from payments.services import (
     calculate_booking_total,
     initiate_public_transfer_payment,
@@ -900,7 +908,90 @@ def payment_pending(request, public_id):
         "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ),
         "is_held": True,
         "bank_transfer_configured": bank_transfer_configured(),
+        "mercadopago_configured": mercadopago_configured(),
     })
+
+
+@require_POST
+def iniciar_mercadopago(request, public_id):
+    """POST + CSRF para iniciar o reutilizar el pago de Checkout Pro de una reserva ONLINE HELD."""
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    now = timezone.now()
+    if not consume(request, scope="transfer.start", limit=settings.ABUSE_TRANSFER_LIMIT,
+                   window_seconds=settings.ABUSE_TRANSFER_WINDOW_SECONDS,
+                   identifier=request_identifier(request)):
+        messages.error(request, "límite de solicitudes alcanzado; aguardá unos minutos.")
+        return redirect("pago_pendiente", public_id=public_id)
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+
+    if not mercadopago_configured():
+        messages.error(request, "El pago con Mercado Pago no está configurado en este momento.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    try:
+        _, init_point = initiate_mercadopago_payment(booking_or_id=booking, now=now)
+        return redirect(init_point)
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except PaymentDuplicateError as pde:
+        messages.info(request, str(pde))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except (InvalidBookingError, PaymentError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("pago_pendiente", public_id=booking.public_id)
+    except Exception:
+        logger.exception("Error inesperado al iniciar pago con Mercado Pago")
+        messages.error(request, "Ocurrió un error al iniciar el pago. Por favor intentá nuevamente.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+
+@csrf_exempt
+@require_POST
+def mercadopago_webhook(request):
+    """Webhook de notificaciones de Mercado Pago (Checkout Pro).
+
+    Valida la firma x-signature (HMAC-SHA256) antes de procesar; las firmas
+    inválidas se rechazan con 401. El procesamiento consulta el pago de forma
+    autenticada y es idempotente ante duplicados o desorden.
+    """
+    if not mercadopago_configured():
+        return HttpResponseForbidden("La integración de Mercado Pago no está habilitada.")
+
+    try:
+        body = json.loads(request.body.decode("utf-8")) if request.body else {}
+    except (ValueError, UnicodeDecodeError):
+        return HttpResponseBadRequest("Payload inválido.")
+
+    data_id = (
+        request.GET.get("data.id")
+        or str((body.get("data") or {}).get("id") or "")
+    )
+    action = body.get("action") or request.GET.get("type") or ""
+    request_id = request.headers.get("x-request-id", "")
+    x_signature = request.headers.get("x-signature", "")
+
+    if not data_id:
+        return HttpResponseBadRequest("Notificación sin identificador de pago.")
+
+    if not verify_webhook_signature(
+        x_signature=x_signature,
+        x_request_id=request_id,
+        data_id=data_id,
+        now=timezone.now(),
+    ):
+        return JsonResponse({"detail": "Firma inválida."}, status=401)
+
+    outcome, _detail = process_mercadopago_notification(
+        data_id=data_id, action=action, request_id=request_id,
+    )
+    # 200 siempre que la firma sea válida: MP reintenta ante errores y el
+    # procesamiento es idempotente.
+    return JsonResponse({"outcome": outcome})
 
 
 @require_POST

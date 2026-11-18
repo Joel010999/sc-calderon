@@ -171,6 +171,7 @@ class Command(BaseCommand):
                 | ~models.Q(latest_payment_status__in=[
                     PaymentStatus.AWAITING_VOUCHER,
                     PaymentStatus.UNDER_REVIEW,
+                    PaymentStatus.PENDING,
                     PaymentStatus.REJECTED,
                 ])
             ).order_by("pk")
@@ -182,7 +183,7 @@ class Command(BaseCommand):
             qs = Booking.objects.filter(
                 status=BookingStatus.HELD,
                 expires_at__lte=now,
-                payments__status__in=["AWAITING_VOUCHER", "UNDER_REVIEW"],
+                payments__status__in=["AWAITING_VOUCHER", "UNDER_REVIEW", "PENDING"],
             ).order_by("pk").distinct()
             if booking_id:
                 qs = qs.filter(public_id=booking_id)

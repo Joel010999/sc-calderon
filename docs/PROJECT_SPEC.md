@@ -104,7 +104,8 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
   - Los menores gratuitos sin butaca ($0,00) y las ventas web sin vendedor no generan comisión.
   - Los ingresos y comisiones se basan en pagos `APPROVED` de reservas `CONFIRMED`.
   - El sistema muestra ventas brutas, unidades comisionables, comisión total y neto operativo; no realiza transferencias bancarias automáticas ni marca rendiciones automáticamente.
-- Métodos previstos diferidos: pasarelas automáticas (Mercado Pago QR y tarjetas Payway) se encuentran diferidas para después de la migración de datos.
+- **Mercado Pago Checkout Pro**: integración autorizada e implementada para la compra pública (preferencia creada en backend con importe server-side, confirmación por webhook firmado + consulta autenticada; nunca por URL de retorno). Deshabilitada por defecto vía `MERCADO_PAGO_ENABLED` y credenciales por entorno. El QR presencial no forma parte del alcance.
+- Payway (tarjetas) sigue diferido, pendiente de autorización.
 
 ## Pasajes y emisión
 
@@ -135,8 +136,8 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
 ## Migración de datos heredados
 
 - SC Viajes operó históricamente con AppSheet y Google Sheets.
-- Se cuenta con un toolkit seguro de solo lectura para inventario y análisis de archivos exportados (`inventory_legacy_exports`), con datos sintéticos auditados.
-- La migración real de datos históricos se realizará en una etapa controlada previa a la puesta en marcha de pasarelas de pago, sujeta a validación previa de esquemas en staging y autorización comercial expresa.
+- **Decisión posterior (ver `docs/DECISIONS.md` §4)**: la migración fue **cancelada**. La aplicación opera con su propia base de datos como fuente única de verdad y no depende de recibir exports de AppSheet/Google Sheets.
+- Se conserva como utilitario histórico el toolkit de solo lectura `inventory_legacy_exports` (sin uso previsto).
 
 ## Decisiones comerciales pendientes de Sandro
 

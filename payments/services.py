@@ -789,7 +789,7 @@ def expire_public_transfer_if_expired(booking, now=None):
         ).update(status=AssignmentStatus.RELEASED, updated_at=effective_now)
         Payment.objects.filter(
             booking=locked_booking,
-            status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW],
+            status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW, PaymentStatus.PENDING],
         ).update(status=PaymentStatus.EXPIRED, updated_at=effective_now)
         if isinstance(booking, Booking):
             booking.status = locked_booking.status
