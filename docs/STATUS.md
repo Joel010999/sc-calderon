@@ -20,9 +20,9 @@ Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base 
    - El filtro por vendedor autenticado se aplica en el QuerySet base (`sales.Booking.objects.filter(...)` o restricción por actor) antes de cualquier consulta, detalle, filtrado, paginación, dashboard o exportación CSV.
    - Los vendedores sólo visualizan y gestionan sus propias ventas y reservas.
    - La acción de liberación de una reserva manual está permitida exclusivamente al usuario vendedor que la creó.
-3. **Revisión administrativa de transferencias**:
-   - Exclusiva para usuarios pertenecientes al grupo `Administrador` activos (o superusuarios). Los vendedores no tienen permisos para revisar o aprobar transferencias.
-   - **Discrepancia pendiente**: el código vigente permite al vendedor aprobar las transferencias de sus propias ventas internas (`panel/internal_sales_permissions.py`, regla 5; botón visible, verificado en aceptación local C4). No se cambia hasta la definición de Sandro.
+3. **Revisión de transferencias**:
+   - **Compras públicas (ONLINE)**: exclusiva de administradores y superusuarios (decisión confirmada). Regla explícita por canal en servicio, permisos y vistas; vendedores bloqueados por UI, URL, POST y servicio (`payments.tests.PublicTransferReviewPermissionTests`).
+   - **Ventas internas (MANUAL)**: el código permite al vendedor revisar sus propias ventas (regla 5; verificado en aceptación local C4); pendiente de definición. *(Redacción original de esta consolidación: "exclusiva de administradores" para todas las transferencias.)*
    - Los rechazos de comprobantes preservan el intento de pago (`Payment`), registran el motivo obligatorio y mantienen la reserva y la butaca retenidas, habilitando al cliente o vendedor a cargar un nuevo comprobante.
    - La aprobación es terminal e idempotente: confirma atómicamente la reserva, el pago y las butacas, disparando el fulfillment durable de pasajes sin enviar notificaciones redundantes.
 4. **Balance y comisiones de vendedores**:
@@ -103,7 +103,7 @@ Se corrigen de forma expresa las siguientes afirmaciones obsoletas presentes en 
 | **Umbral de menores de 2 años** | El umbral de gratuidad sin butaca aplica a **menores de cinco años** (0 a 4 años cumplidos; `MINOR_FREE_AGE_YEARS = 5`). | PR #48 (`69297a5`) |
 | **Tarifas por tramo / par de paradas** | Las tarifas se definen **por salida y categoría** (`TripFare` único por `trip` y `seat_category`), con precio uniforme en todos los tramos permitidos. | PR #47 (`1c3e6f1`) |
 | **Pasaje provisional con QR visual impreso** | La plantilla oficial aprobada **suprime QR y códigos de barras visuales**, reemplazando la numeración por la serie correlativa `AAA-000000001` y manteniendo los tokens criptográficos de forma interna. | PR #48 (`69297a5`) |
-| **Revisión de transferencias por vendedores** | La revisión, aprobación y rechazo de transferencias está **restringida con exclusividad a Administradores activos**. *(Discrepancia pendiente con la regla 5 del código de ventas internas, ver §"Aceptación funcional local".)* | PR #45 (`2b47af4`) |
+| **Revisión de transferencias por vendedores** | La revisión, aprobación y rechazo de transferencias está **restringida con exclusividad a Administradores activos**. *(Vigente para compras públicas; para ventas internas rige hoy la regla 5, pendiente de definición.)* | PR #45 (`2b47af4`) |
 | **Reserva manual sin vencimiento para todo el panel** | Restringida a administradores y superusuarios; los vendedores operan ventas internas por transferencia con vencimiento. | `d2aa716` |
 | **Caja diaria, cobro en efectivo y validación de embarque** | Retirados operativamente; históricos preservados (ver puntos 11 y 12). | `804ee14` y siguientes |
 
@@ -192,11 +192,11 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 
 #### Defectos o discrepancias por resolver (no modificados en esta tarea)
 
-1. **Aprobación de transferencias por el vendedor titular**: `DECISIONS.md` §1, `PROJECT_SPEC.md` y este documento (§1.3, §2) declaran la revisión exclusiva de administradores, pero `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado C4: botón visible). Definir cuál rige.
+1. **Aprobación de transferencias por el vendedor titular — sólo ventas internas**: para compras públicas quedó resuelto (sólo administración, regla explícita por canal). Para ventas internas, `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado C4). Definir cuál rige.
 2. **Butacas prioritarias 51/54**: el código libera automáticamente a las 00:00 AR dos días antes; el acuerdo vigente es solicitud por correo hasta 48 h antes sin liberación automática acordada (`docs/CONTEXTO_COORDINACION.md` §2). Sin cambios hasta la definición.
 3. ~~**Reservas manuales sin vencimiento**~~: **reconciliado** en `PROJECT_SPEC.md`, `DECISIONS.md` y §1.1 (restricción por rol confirmada, desde `d2aa716`).
 4. ~~**Documentación de embarque y efectivo desactualizada**~~: **reconciliado** (§1.10, `PROJECT_SPEC.md` y `DECISIONS.md` §2.4).
-6. **La emisión exige `PUBLIC_BASE_URL` HTTPS aunque la URL de verificación no se imprime**: `build_verification_url` se calcula para cada pasaje (sólo se guarda el hash del token) y falla con `http://`. Definir si se mantiene el endpoint `/tickets/verify/` o se retira junto con el QR; no se cambió.
+6. **La emisión exige `PUBLIC_BASE_URL` HTTPS aunque la URL de verificación no se imprime**: `build_verification_url` se calcula para cada pasaje (sólo se guarda el hash del token) y falla con `http://`. `/tickets/verify/` **se conserva** como consulta de solo lectura (decisión); queda pendiente sólo si en el futuro la URL se imprime en el pasaje. La exigencia HTTPS no se cambió.
 5. El checkout móvil con 60 butacas resulta muy extenso (~17.000 px de alto); usable, mejora de UX opcional.
 
 #### Enlaces en pasajes y correos (verificado 19/11/2026)
@@ -208,7 +208,7 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 | Notificaciones transaccionales | Sin enlaces (texto + referencia de reserva) | n/a | Requiere SMTP real |
 | Restablecer contraseña de cliente | `request.build_absolute_uri` (host de la petición) | **Navegable** (`http://127.0.0.1:8000/cliente/recuperar-clave/…`, 200) | Depende de `ALLOWED_HOSTS` y `SECURE_PROXY_SSL_HEADER` (ya configurado) detrás del proxy |
 | Invitación de personal | `public_url()` → `PUBLIC_BASE_URL` | Apunta a `https://scviajes.test` (**no navegable**); la misma ruta en localhost responde 200 | Requiere `PUBLIC_BASE_URL` del dominio final |
-| URL de verificación de pasaje | `build_verification_url` → `TICKETS_VERIFICATION_BASE_URL`/`PUBLIC_BASE_URL` | Se calcula pero no se imprime ni se envía; sólo se guarda el hash del token | Ver discrepancia 6 |
+| URL de verificación de pasaje | `build_verification_url` → `TICKETS_VERIFICATION_BASE_URL`/`PUBLIC_BASE_URL` | Se calcula pero no se imprime ni se envía; sólo se guarda el hash del token. El endpoint `/tickets/verify/` se conserva (solo lectura) | Requiere el dominio final si se publica la URL |
 | Descarga de pasajes desde la web/panel | Rutas relativas (`/tickets/guest/…`, `/tickets/download/…`) | Navegables (verificado B4, B5) | Sin dependencia del dominio |
 
 `PUBLIC_BASE_URL=https://scviajes.test` sólo habilita la emisión local; no demuestra la navegabilidad de enlaces absolutos (invitaciones), que requieren el dominio final.
@@ -217,7 +217,7 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 
 - Credenciales de prueba de Mercado Pago (cuenta dueña de la aplicación) para completar el sandbox Checkout Pro.
 - Butacas prioritarias 51/54 (procedimiento, horario límite, liberación).
-- Quién aprueba transferencias internas (administrador exclusivo vs. vendedor titular).
+- Quién aprueba transferencias de **ventas internas** (administrador exclusivo vs. vendedor titular). Las de compras públicas ya están definidas: sólo administración.
 - Menores: fecha de referencia de edad, seguro y documentación/RENAPER.
 - Cambios, cancelaciones y devoluciones.
 - Datos reales fiscales, bancarios, aseguradora y paradas; Payway.

@@ -67,13 +67,19 @@ def validate_payment_agent(user):
 
 
 def validate_payment_reviewer(user, payment=None):
-    """Regla (5): Pago requiere comprobante PDF/imagen válido; vendedor verifica externamente y
-    aprueba solo sus ventas; admin/superuser global.
+    """Valida quién puede aprobar o rechazar una transferencia.
+
+    - Administrador / superusuario: cualquier transferencia.
+    - Compras públicas (canal ONLINE): exclusivamente administración (decisión confirmada).
+    - Ventas internas (canal MANUAL), regla (5) vigente y pendiente de definición: el
+      vendedor sólo revisa sus propias ventas.
     """
     if not user or not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
         raise ValidationError("El usuario debe estar autenticado y activo.")
     if user.is_superuser or user.groups.filter(name="Administrador").exists():
         return True
+    if payment is not None and payment.booking.channel == BookingChannel.ONLINE:
+        raise ValidationError("Las transferencias de compras públicas solo pueden revisarlas administradores o superusuarios.")
     if user.groups.filter(name="Vendedor").exists():
         if payment is not None:
             seller_id = getattr(payment.booking, "seller_id", None)

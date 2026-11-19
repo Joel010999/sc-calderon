@@ -25,6 +25,7 @@ from payments.services import (
 from sales.exceptions import BookingExpiredError, InvalidBookingError
 from sales.models import Booking, BookingStatus, normalize_document
 from .models import AuditEvent
+from .internal_sales_permissions import is_public_purchase
 from .permissions import payments_access
 
 
@@ -184,6 +185,7 @@ def payment_detail(request, public_id):
 
     can_review = _payment_admin(request.user) or (
         request.user.groups.filter(name="Vendedor").exists()
+        and not is_public_purchase(payment)
         and payment.booking.seller_id == request.user.pk
     )
     return render(request, "panel/payments/detail.html", {
@@ -198,8 +200,11 @@ def payment_detail(request, public_id):
 def transfer_review(request, public_id):
     """Revisa una transferencia bancaria en revisión: aprueba o rechaza."""
     payment = get_object_or_404(_visible_payments(request.user).select_related("booking"), public_id=public_id)
-    if not _payment_admin(request.user) and payment.booking.seller_id != request.user.pk:
-        raise PermissionDenied("Los vendedores solo pueden revisar y aprobar sus propias ventas.")
+    if not _payment_admin(request.user):
+        if is_public_purchase(payment):
+            raise PermissionDenied("Las transferencias de compras públicas solo pueden revisarlas administradores o superusuarios.")
+        if payment.booking.seller_id != request.user.pk:
+            raise PermissionDenied("Los vendedores solo pueden revisar y aprobar sus propias ventas.")
     action = request.POST.get("action", "").strip().lower()
 
     if action == "approve":

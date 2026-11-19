@@ -95,9 +95,12 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
   - Transferencia bancaria manual, con comprobante subido por el cliente o vendedor.
   - Mercado Pago Checkout Pro para la compra pública (ver más abajo; deshabilitado por defecto).
 - **Efectivo y caja diaria (retirados)**: el cobro en efectivo con sesión de caja fue retirado operativamente; nuevos registros son rechazados y los históricos se conservan para auditoría.
-- **Revisión administrativa de transferencias**:
-  - La revisión, aprobación y rechazo de comprobantes de transferencia corresponde con exclusividad a usuarios del grupo `Administrador` activos. Los vendedores no pueden revisar transferencias de otros ni aprobar las propias.
-  - **Discrepancia pendiente de decisión**: el código vigente (`panel/internal_sales_permissions.py`, regla 5) permite al vendedor aprobar las transferencias de sus propias ventas internas. No se modifica hasta que Sandro confirme cuál rige (ver `docs/CONTEXTO_COORDINACION.md` §2).
+- **Revisión de transferencias — compras públicas (canal ONLINE)** *(decisión confirmada)*:
+  - Sólo administradores y superusuarios activos pueden aprobar o rechazar transferencias de compras realizadas desde la página web.
+  - Los vendedores no pueden revisarlas por interfaz, URL directa, POST manipulado ni servicio de aplicación (`payments.services.validate_payment_reviewer`, `panel/internal_sales_permissions.py`, `panel/payment_views.py`), aun cuando un dato manipulado los asocie al pago.
+- **Revisión de transferencias — ventas internas (canal MANUAL)** *(pendiente de definición)*:
+  - Regla vigente en el código (regla 5): administradores y superusuarios revisan cualquier venta interna; el vendedor puede revisar únicamente sus propias ventas internas. Otro vendedor no ve ni opera ventas ajenas.
+  - La documentación histórica (PR #45) declaraba revisión exclusiva de administradores; queda pendiente que Sandro confirme cuál rige para ventas internas.
   - El rechazo de un comprobante preserva el registro del intento y su motivo, manteniendo la butaca retenida para permitir la carga de un nuevo comprobante.
   - La aprobación confirma de forma atómica y terminal el pago, la reserva y las butacas, disparando el fulfillment durable de pasajes.
 - **Balance y comisiones de vendedores**:
@@ -117,7 +120,7 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
   - Logo oficial incrustado en ambos talones (`static/assets/scviajes-logo.png`).
 - **Supresión de códigos visuales**:
   - No se imprimen códigos QR ni códigos de barras visuales en ninguno de los talones.
-  - Los tokens criptográficos (`verification_token_hash`, `download_token_hash`) se conservan internamente en la base de datos. La validación de embarque en `/panel/embarques/` fue retirada; la URL de verificación (`/tickets/verify/`) se sigue calculando al emitir pero no se imprime en el pasaje.
+  - Los tokens criptográficos (`verification_token_hash`, `download_token_hash`) se conservan internamente en la base de datos. La validación de embarque en `/panel/embarques/` fue retirada; la verificación del pasaje en `/tickets/verify/` **se conserva** como consulta pública de solo lectura con sus permisos actuales (retirar el embarque no retira la verificación). Su URL se calcula al emitir pero hoy no se imprime en el pasaje.
 - **Numeración persistente correlativa (serie AAA)**:
   - Numeración única y consecutiva gestionada mediante el modelo transaccional `TicketSequence` con bloqueo `select_for_update()`.
   - Formato `AAA-000000001` en adelante para pasajes reales emitidos (`AAA-000000000` reservado para plantilla vacía). El mismo código se imprime en ambos talones.

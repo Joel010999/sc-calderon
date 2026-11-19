@@ -109,6 +109,31 @@ class TicketFulfillmentIntegrationTests(TicketBaseMixin, TransactionTestCase):
             self.assertNotIn(leaked, rendered)
             self.assertNotIn(leaked, " ".join(logs.output))
 
+    def test_public_transfer_admin_approval_issues_tickets_once(self):
+        from payments.models import Payment
+        from payments.services import initiate_public_transfer_payment, upload_public_transfer_voucher
+
+        booking = create_online_booking(
+            email="publico@scviajes.com.ar",
+            phone="3511234567",
+            legs=[{"trip": self.trip_ida, "origin_stop": self.ts_cba, "destination_stop": self.ts_jujuy, "seats": [self.seat_1]}],
+            passengers_data=[{"first_name": "Pasajera", "last_name": "Web", "document_type": "DNI", "document_number": "40999888", "birth_date": "1994-04-04", "nationality": "Argentina"}],
+        )
+        initiate_public_transfer_payment(booking_or_id=booking)
+        payment = upload_public_transfer_voucher(booking_or_id=booking, voucher_file=self._voucher())
+
+        review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True)
+        review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True)
+
+        booking.refresh_from_db()
+        job = TicketFulfillment.objects.get(booking=booking)
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        self.assertEqual(Payment.objects.filter(booking=booking).count(), 1)
+        self.assertEqual(Ticket.objects.filter(booking=booking).count(), 1)
+        self.assertEqual(job.issue_status, FulfillmentIssueStatus.SUCCEEDED)
+        process_booking_fulfillment(job.pk, retry=True)
+        self.assertEqual(Ticket.objects.filter(booking=booking).count(), 1)
+
     def test_email_failure_is_recoverable_without_new_tickets(self):
         booking = self._held_booking()
         with patch("django.core.mail.EmailMessage.send", side_effect=OSError("smtp down")):

@@ -31,7 +31,13 @@ no se resuelve por suposición.
   `require_can_create_manual_unexpired_reservation`; coacción `sale_type`
   en `panel/reservation_views.py`).
 - Venta interna por transferencia con comprobante y aprobación según
-  permisos; aislamiento por vendedor (otro vendedor recibe 404).
+  permisos (regla 5, pendiente de definición); aislamiento por vendedor
+  (otro vendedor recibe 404).
+- Transferencias de compras públicas (web): sólo administradores y
+  superusuarios las aprueban o rechazan (decisión confirmada; bloqueo por
+  UI, URL, POST y servicio).
+- `/tickets/verify/`: consulta de solo lectura conservada con sus permisos
+  actuales; el retiro del embarque no la alcanza.
 - Vencimiento interno: `min(medianoche AR del día de compra, salida
   inicial - 1h)` — `sales/internal_transfer.py:88-100`. En la última hora
   rige el flujo inmediato ya implementado (comprobante + pago verificado).
@@ -74,7 +80,8 @@ no se resuelve por suposición.
 | Punto | Acuerdo conversado | Lo que el código hace hoy | Acción |
 |---|---|---|---|
 | Butacas 51/54 | Solicitud por correo hasta 48 h antes; **sin liberación automática acordada** | `sales/priority_seats.py` **sí libera automáticamente** a las 00:00 AR dos días calendario antes de la salida | Reconciliar con Sandro: ¿se retira la liberación automática, se reemplaza por solicitud manual, o conviven? |
-| Revisión de transferencias internas | `DECISIONS.md`/`PROJECT_SPEC.md`: exclusiva de administradores | `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado en aceptación local C4) | Confirmar con Sandro cuál rige |
+| Revisión de transferencias de **ventas internas** | Documentación histórica: exclusiva de administradores | `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas internas (verificado en aceptación local C4) | Confirmar con Sandro cuál rige |
+| ~~Revisión de transferencias de compras públicas~~ | Sólo administradores y superusuarios | Regla explícita por canal en servicio, permisos y vistas | **Resuelto**: decisión confirmada e implementada |
 | ~~Reservas manuales sin vencimiento~~ | `DECISIONS.md` §1 / `STATUS.md` §1.1 decían que los vendedores las crean sin vencimiento | Sólo administradores; el vendedor obtiene venta interna con vencimiento `min(medianoche AR, salida − 1 h)` | **Reconciliado**: decisión confirmada, documentos actualizados |
 
 ## 3. Estado técnico y evidencia

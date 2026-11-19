@@ -944,3 +944,131 @@ class PublicTransferPaymentTests(PaymentsBaseTestCase):
         self.assertEqual(p2.status, PaymentStatus.EXPIRED)
         sa2 = SeatAssignment.objects.get(leg__booking=b2)
         self.assertEqual(sa2.status, AssignmentStatus.RELEASED)
+
+
+class PublicTransferReviewPermissionTests(PaymentsBaseTestCase):
+    """Decisión confirmada: las transferencias de compras públicas (ONLINE) sólo
+    las revisan administradores y superusuarios, por UI, URL, POST y servicio."""
+
+    def setUp(self):
+        super().setUp()
+        self.tickets_root = tempfile.mkdtemp()
+        tickets_override = override_settings(TICKETS_STORAGE_ROOT=self.tickets_root)
+        tickets_override.enable()
+        self.addCleanup(tickets_override.disable)
+        self.addCleanup(shutil.rmtree, self.tickets_root, ignore_errors=True)
+        self.booking = self.create_held_online_booking()
+        initiate_public_transfer_payment(booking_or_id=self.booking)
+        self.payment = upload_public_transfer_voucher(
+            booking_or_id=self.booking, voucher_file=self.sample_pdf_voucher(),
+        )
+        self.assertEqual(self.payment.status, PaymentStatus.UNDER_REVIEW)
+
+    def _assert_untouched(self):
+        self.payment.refresh_from_db()
+        self.booking.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.UNDER_REVIEW)
+        self.assertIsNone(self.payment.reviewed_by_id)
+        self.assertEqual(self.booking.status, BookingStatus.HELD)
+
+    def test_seller_cannot_approve_or_reject_public_transfer_via_service(self):
+        for approved in (True, False):
+            with self.subTest(approved=approved), self.assertRaises(ValidationError):
+                review_transfer_payment(
+                    payment_or_id=self.payment, reviewer=self.seller_user,
+                    approved=approved, rejection_reason="" if approved else "ilegible",
+                )
+        self._assert_untouched()
+
+    def test_seller_denied_even_if_registered_as_payment_agent(self):
+        """Aunque un dato manipulado asocie al vendedor al pago ONLINE, no puede revisarlo."""
+        from panel.internal_sales_permissions import can_review_transfer_payment, can_view_payment_voucher
+
+        Payment.objects.filter(pk=self.payment.pk).update(registered_by=self.seller_user)
+        self.payment.refresh_from_db()
+        self.assertFalse(can_review_transfer_payment(self.seller_user, self.payment))
+        self.assertFalse(can_view_payment_voucher(self.seller_user, self.payment))
+        for approved in (True, False):
+            with self.subTest(approved=approved), self.assertRaises(ValidationError) as ctx:
+                review_transfer_payment(
+                    payment_or_id=self.payment, reviewer=self.seller_user,
+                    approved=approved, rejection_reason="" if approved else "ilegible",
+                )
+            self.assertIn("compras públicas", str(ctx.exception))
+        self._assert_untouched()
+
+    def test_seller_cannot_review_public_transfer_via_url_or_post(self):
+        from django.urls import reverse
+
+        Payment.objects.filter(pk=self.payment.pk).update(registered_by=self.seller_user)
+        self.client.force_login(self.seller_user)
+        detail = reverse("panel:payment_detail", args=[self.payment.public_id])
+        review = reverse("panel:transfer_review", args=[self.payment.public_id])
+        voucher = reverse("panel:payment_voucher", args=[self.payment.public_id])
+        self.assertEqual(self.client.get(detail, secure=True).status_code, 404)
+        self.assertEqual(self.client.get(voucher, secure=True).status_code, 404)
+        pending = self.client.get(reverse("panel:pending_transfers"), secure=True)
+        self.assertNotContains(pending, str(self.payment.public_id))
+        for data in ({"action": "approve"}, {"action": "reject", "rejection_reason": "ilegible"}):
+            with self.subTest(action=data["action"]):
+                self.assertEqual(self.client.post(review, data, secure=True).status_code, 404)
+        self._assert_untouched()
+
+    def test_admin_approves_public_transfer_once_with_single_emission(self):
+        from django.urls import reverse
+        from tickets.models import TicketFulfillment
+
+        self.client.force_login(self.admin_user)
+        review = reverse("panel:transfer_review", args=[self.payment.public_id])
+        detail = self.client.get(reverse("panel:payment_detail", args=[self.payment.public_id]), secure=True)
+        self.assertContains(detail, 'value="approve"')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(review, {"action": "approve"}, secure=True)
+        self.assertEqual(response.status_code, 302)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(review, {"action": "approve"}, secure=True)
+            review_transfer_payment(payment_or_id=self.payment, reviewer=self.admin_user, approved=True)
+
+        self.payment.refresh_from_db()
+        self.booking.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.APPROVED)
+        self.assertEqual(self.payment.reviewed_by, self.admin_user)
+        self.assertEqual(self.booking.status, BookingStatus.CONFIRMED)
+        self.assertEqual(Payment.objects.filter(booking=self.booking).count(), 1)
+        # La emisión efectiva se verifica en tickets.test_fulfillment_integration
+        # (TransactionTestCase); aquí se garantiza un único trabajo durable.
+        self.assertEqual(TicketFulfillment.objects.filter(booking=self.booking).count(), 1)
+
+    def test_superuser_rejects_public_transfer_via_service_and_admin_via_post(self):
+        from django.urls import reverse
+
+        review_transfer_payment(
+            payment_or_id=self.payment, reviewer=self.superuser,
+            approved=False, rejection_reason="Comprobante ilegible",
+        )
+        self.payment.refresh_from_db()
+        self.booking.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.REJECTED)
+        self.assertEqual(self.payment.reviewed_by, self.superuser)
+        self.assertEqual(self.booking.status, BookingStatus.HELD)
+
+        # Nuevo intento del cliente y rechazo por administrador vía POST.
+        initiate_public_transfer_payment(booking_or_id=self.booking)
+        retry = upload_public_transfer_voucher(
+            booking_or_id=self.booking, voucher_file=self.sample_pdf_voucher(),
+        )
+        self.client.force_login(self.admin_user)
+        response = self.client.post(
+            reverse("panel:transfer_review", args=[retry.public_id]),
+            {"action": "reject", "rejection_reason": "Importe distinto"}, secure=True,
+        )
+        self.assertEqual(response.status_code, 302)
+        retry.refresh_from_db()
+        self.assertEqual(retry.status, PaymentStatus.REJECTED)
+        self.assertEqual(retry.reviewed_by, self.admin_user)
+
+    def test_superuser_approves_public_transfer_via_service(self):
+        review_transfer_payment(payment_or_id=self.payment, reviewer=self.superuser, approved=True)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.APPROVED)
+        self.assertEqual(self.payment.reviewed_by, self.superuser)
