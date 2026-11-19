@@ -14,11 +14,13 @@ from .storage import get_voucher_storage, voucher_upload_path
 class PaymentMethod(models.TextChoices):
     CASH = "CASH", "Efectivo"
     BANK_TRANSFER = "BANK_TRANSFER", "Transferencia bancaria"
+    MERCADO_PAGO = "MERCADO_PAGO", "Mercado Pago"
 
 
 class PaymentStatus(models.TextChoices):
     AWAITING_VOUCHER = "AWAITING_VOUCHER", "Esperando comprobante"
     UNDER_REVIEW = "UNDER_REVIEW", "En revisión"
+    PENDING = "PENDING", "Pendiente en pasarela"
     APPROVED = "APPROVED", "Aprobado"
     REJECTED = "REJECTED", "Rechazado"
     EXPIRED = "EXPIRED", "Expirado"
@@ -112,6 +114,25 @@ class Payment(models.Model):
         blank=True,
         default="",
     )
+    external_preference_id = models.CharField(
+        "preferencia externa de pasarela",
+        max_length=64,
+        blank=True,
+        default="",
+    )
+    external_payment_id = models.CharField(
+        "identificador externo de pago",
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+    conflict_reason = models.CharField(
+        "conflicto pendiente de resolución",
+        max_length=255,
+        blank=True,
+        default="",
+    )
     created_at = models.DateTimeField("fecha de creación", auto_now_add=True)
     updated_at = models.DateTimeField("última actualización", auto_now=True)
 
@@ -126,6 +147,7 @@ class Payment(models.Model):
                     status__in=[
                         PaymentStatus.AWAITING_VOUCHER,
                         PaymentStatus.UNDER_REVIEW,
+                        PaymentStatus.PENDING,
                         PaymentStatus.APPROVED,
                     ]
                 ),
@@ -174,7 +196,7 @@ class Payment(models.Model):
         if self.status == PaymentStatus.APPROVED:
             if not self.reviewed_at:
                 errors["reviewed_at"] = "Los pagos aprobados deben registrar fecha de revisión."
-            if not self.reviewed_by_id:
+            if not self.reviewed_by_id and self.method != PaymentMethod.MERCADO_PAGO:
                 errors["reviewed_by"] = "Los pagos aprobados deben registrar el usuario revisor."
 
         if self.status == PaymentStatus.AWAITING_VOUCHER and not self.proof_deadline_at:
@@ -186,3 +208,39 @@ class Payment(models.Model):
 
         if errors:
             raise ValidationError(errors)
+
+
+class PaymentGatewayEvent(models.Model):
+    """Registro de notificaciones recibidas de una pasarela de pagos.
+
+    Sirve como deduplicador (unicidad por proveedor + identificador + acción)
+    y como bitácora de auditoría de cada notificación procesada.
+    """
+
+    class Provider(models.TextChoices):
+        MERCADO_PAGO = "MERCADO_PAGO", "Mercado Pago"
+
+    id = models.BigAutoField(primary_key=True)
+    provider = models.CharField("proveedor", max_length=32, choices=Provider.choices)
+    external_id = models.CharField("identificador externo", max_length=64)
+    action = models.CharField("acción notificada", max_length=64, blank=True, default="")
+    request_id = models.CharField("identificador del request", max_length=64, blank=True, default="")
+    signature_ok = models.BooleanField("firma válida")
+    outcome = models.CharField("resultado del procesamiento", max_length=64, default="RECEIVED")
+    detail = models.CharField("detalle", max_length=255, blank=True, default="")
+    created_at = models.DateTimeField("fecha de recepción", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "evento de pasarela"
+        verbose_name_plural = "eventos de pasarela"
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "external_id", "action"],
+                name="payments_gateway_event_unique",
+                violation_error_message="La notificación ya fue procesada.",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.provider} · {self.external_id} · {self.action or '-'}"

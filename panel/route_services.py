@@ -26,7 +26,10 @@ def save_panel_route(*, actor, data, pk=None, force_new_version=False):
     route = get_object_or_404(Route.objects.select_for_update(), pk=pk) if pk is not None else None
     before = snapshot(route) if route is not None else {}
 
-    form = RouteConfigurationForm(data, instance=route)
+    # Al versionar, el formulario se valida sin la instancia en uso: Route.clean
+    # impide modificarla directamente y la nueva versión se crea en el servicio.
+    versioning = route is not None and (force_new_version or route.has_trips)
+    form = RouteConfigurationForm(data, instance=None if versioning else route)
     if not form.is_valid():
         return form, None, False
 

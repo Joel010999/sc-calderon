@@ -338,6 +338,15 @@ BANK_TRANSFER_CUIT = _bank_setting("BANK_TRANSFER_CUIT")
 BANK_TRANSFER_ENTITY = _bank_setting("BANK_TRANSFER_ENTITY")
 PAYMENTS_PROOF_WINDOW_MINUTES = int(os.getenv("PAYMENTS_PROOF_WINDOW_MINUTES", 5))
 PAYMENTS_REVIEW_WINDOW_HOURS = int(os.getenv("PAYMENTS_REVIEW_WINDOW_HOURS", 24))
+
+# Mercado Pago Checkout Pro: integración deshabilitada por defecto.
+# Las credenciales solo se leen de variables de entorno; nunca se registran en logs.
+MERCADO_PAGO_ENABLED = os.getenv("MERCADO_PAGO_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "").strip()
+MERCADO_PAGO_WEBHOOK_SECRET = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip()
+MERCADO_PAGO_COLLECTOR_ID = os.getenv("MERCADO_PAGO_COLLECTOR_ID", "").strip()
+MERCADO_PAGO_API_BASE = os.getenv("MERCADO_PAGO_API_BASE", "https://api.mercadopago.com").strip().rstrip("/")
+MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS = int(os.getenv("MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS", 300))
 PANEL_REPORTS_MAX_RANGE_DAYS = int(os.getenv("PANEL_REPORTS_MAX_RANGE_DAYS", 366))
 
 # Customer accounts & Authentication

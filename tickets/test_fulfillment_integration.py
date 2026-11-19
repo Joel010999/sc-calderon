@@ -88,6 +88,52 @@ class TicketFulfillmentIntegrationTests(TicketBaseMixin, TransactionTestCase):
         job.refresh_from_db()
         self.assertEqual(job.issue_status, FulfillmentIssueStatus.SUCCEEDED)
 
+    def test_issue_failure_is_logged_without_personal_data(self):
+        import logging
+        from core.request_context import RequestJSONFormatter
+
+        booking = self._held_booking()
+        secret_detail = OSError("comprador@scviajes.com.ar DNI 40123456 https://bucket/x?X-Amz-Signature=abc")
+        with patch("tickets.services.build_ticket_pdf", side_effect=secret_detail):
+            with self.assertLogs("tickets.services", level="ERROR") as logs:
+                self._confirm_booking_with_transfer(booking)
+        record = next(r for r in logs.records if "Falló la emisión de pasajes" in r.getMessage())
+        rendered = RequestJSONFormatter().format(record)
+        job = TicketFulfillment.objects.get(booking=booking)
+        self.assertIn(f"fulfillment={job.pk}", rendered)
+        self.assertIn(f"reserva={booking.pk}", rendered)
+        self.assertIn("error_type=OSError", rendered)
+        self.assertIn("origen=services.py:", rendered)
+        self.assertIsNone(record.exc_info)
+        for leaked in ("comprador@", "40123456", "X-Amz-Signature"):
+            self.assertNotIn(leaked, rendered)
+            self.assertNotIn(leaked, " ".join(logs.output))
+
+    def test_public_transfer_admin_approval_issues_tickets_once(self):
+        from payments.models import Payment
+        from payments.services import initiate_public_transfer_payment, upload_public_transfer_voucher
+
+        booking = create_online_booking(
+            email="publico@scviajes.com.ar",
+            phone="3511234567",
+            legs=[{"trip": self.trip_ida, "origin_stop": self.ts_cba, "destination_stop": self.ts_jujuy, "seats": [self.seat_1]}],
+            passengers_data=[{"first_name": "Pasajera", "last_name": "Web", "document_type": "DNI", "document_number": "40999888", "birth_date": "1994-04-04", "nationality": "Argentina"}],
+        )
+        initiate_public_transfer_payment(booking_or_id=booking)
+        payment = upload_public_transfer_voucher(booking_or_id=booking, voucher_file=self._voucher())
+
+        review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True)
+        review_transfer_payment(payment_or_id=payment, reviewer=self.admin_user, approved=True)
+
+        booking.refresh_from_db()
+        job = TicketFulfillment.objects.get(booking=booking)
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        self.assertEqual(Payment.objects.filter(booking=booking).count(), 1)
+        self.assertEqual(Ticket.objects.filter(booking=booking).count(), 1)
+        self.assertEqual(job.issue_status, FulfillmentIssueStatus.SUCCEEDED)
+        process_booking_fulfillment(job.pk, retry=True)
+        self.assertEqual(Ticket.objects.filter(booking=booking).count(), 1)
+
     def test_email_failure_is_recoverable_without_new_tickets(self):
         booking = self._held_booking()
         with patch("django.core.mail.EmailMessage.send", side_effect=OSError("smtp down")):

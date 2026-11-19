@@ -4,7 +4,7 @@ Este documento consolida las reglas de negocio confirmadas y vigentes tras la in
 
 ## Producto
 
-SC Viajes comercializa pasajes de colectivos de larga distancia a través de un canal de venta online y gestiona la operación, ventas, caja y despacho mediante un panel interno 100 % personalizado.
+SC Viajes comercializa pasajes de colectivos de larga distancia a través de un canal de venta online y gestiona la operación y las ventas mediante un panel interno 100 % personalizado. La caja diaria y el control de embarque fueron retirados operativamente (ver `docs/DECISIONS.md` §1-§2); sus registros históricos se conservan.
 
 ## Recorridos y paradas
 
@@ -55,7 +55,7 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
 - Categorías: Cama y Semicama con precios diferenciados.
 - Colectivo de referencia inicial: 60 butacas (planta alta: semicama 1 a 48; planta baja: cama 49 a 60). La distribución se modela dinámicamente mediante coordenadas relativas (`position_x`, `position_y`) y plantas (`Seat.Deck`), sin esquemas rígidos en el código.
 - No se cambia el colectivo una vez programado el viaje en la operación comercial informada.
-- **Butacas prioritarias 51 y 54**:
+- **Butacas prioritarias 51 y 54** (comportamiento implementado; existe una discrepancia pendiente con el acuerdo posterior de solicitud por correo hasta 48 h antes sin liberación automática acordada, ver `docs/CONTEXTO_COORDINACION.md` §2):
   - Las butacas 51 y 54 están reservadas prioritariamente y bloqueadas para la venta general hasta las 00:00 (hora local de Argentina, `America/Argentina/Buenos_Aires`) de dos días calendario antes de la fecha local de salida del viaje (por ejemplo, salida un jueves a las 20:00 se libera el martes previo a las 00:00).
   - No se liberan calculando 48 horas exactas.
   - La restricción se valida server-side en disponibilidad y en el servicio de creación de reservas con bloqueo transaccional. Ocupaciones previas se preservan.
@@ -76,10 +76,10 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
 ## Disponibilidad, vencimientos y cortes
 
 - **Retención online**: una selección online mantiene la butaca durante 15 minutos (`SALES_ONLINE_HOLD_MINUTES`).
-- **Reserva manual rápida sin expiración automática**:
-  - Las reservas manuales creadas desde el panel interno tienen `expires_at = None` y no vencen automáticamente por tiempo.
-  - La butaca se retiene hasta su cobro o hasta su liberación manual explícita.
-  - **Antecedente histórico corregido**: la regla inicial histórica contemplaba un vencimiento de 24 horas para reservas manuales (`SALES_MANUAL_HOLD_HOURS`), la cual quedó superada tras la decisión operativa de Sandro.
+- **Reserva manual sin expiración automática (restringida por rol)**:
+  - Sólo administradores y superusuarios pueden crear reservas manuales con `expires_at = None`; no vencen por tiempo y retienen la butaca hasta su cobro o liberación manual explícita (`require_can_create_manual_unexpired_reservation`).
+  - Los vendedores registran ventas internas por transferencia con vencimiento `min(medianoche AR del día de compra, salida inicial − 1 h)` (`sales/internal_transfer.py`); un intento de forzar el tipo manual se convierte en venta por transferencia con vencimiento.
+  - **Antecedentes históricos corregidos**: la regla inicial contemplaba un vencimiento de 24 horas (`SALES_MANUAL_HOLD_HOURS`); luego se definió la reserva manual sin vencimiento para todo el panel (PR #45), y desde `d2aa716` (ventas internas por transferencia) ese privilegio quedó restringido a administración.
 - **Alcance y liberación por vendedor**:
   - Las reservas manuales se atribuyen al vendedor autenticado.
   - La acción de liberación de una reserva manual está restringida exclusivamente al vendedor creador de la misma.
@@ -91,11 +91,16 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
 
 ## Pagos, transferencias y comisiones
 
-- Métodos implementados:
-  - Efectivo, registrado manualmente en el panel (requiere sesión de caja diaria abierta).
+- Métodos vigentes:
   - Transferencia bancaria manual, con comprobante subido por el cliente o vendedor.
-- **Revisión administrativa de transferencias**:
-  - La revisión, aprobación y rechazo de comprobantes de transferencia corresponde con exclusividad a usuarios del grupo `Administrador` activos. Los vendedores no pueden revisar transferencias de otros ni aprobar las propias.
+  - Mercado Pago Checkout Pro para la compra pública (ver más abajo; deshabilitado por defecto).
+- **Efectivo y caja diaria (retirados)**: el cobro en efectivo con sesión de caja fue retirado operativamente; nuevos registros son rechazados y los históricos se conservan para auditoría.
+- **Revisión de transferencias — compras públicas (canal ONLINE)** *(decisión confirmada)*:
+  - Sólo administradores y superusuarios activos pueden aprobar o rechazar transferencias de compras realizadas desde la página web.
+  - Los vendedores no pueden revisarlas por interfaz, URL directa, POST manipulado ni servicio de aplicación (`payments.services.validate_payment_reviewer`, `panel/internal_sales_permissions.py`, `panel/payment_views.py`), aun cuando un dato manipulado los asocie al pago.
+- **Revisión de transferencias — ventas internas (canal MANUAL)** *(pendiente de definición)*:
+  - Regla vigente en el código (regla 5): administradores y superusuarios revisan cualquier venta interna; el vendedor puede revisar únicamente sus propias ventas internas. Otro vendedor no ve ni opera ventas ajenas.
+  - La documentación histórica (PR #45) declaraba revisión exclusiva de administradores; queda pendiente que Sandro confirme cuál rige para ventas internas.
   - El rechazo de un comprobante preserva el registro del intento y su motivo, manteniendo la butaca retenida para permitir la carga de un nuevo comprobante.
   - La aprobación confirma de forma atómica y terminal el pago, la reserva y las butacas, disparando el fulfillment durable de pasajes.
 - **Balance y comisiones de vendedores**:
@@ -104,7 +109,8 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
   - Los menores gratuitos sin butaca ($0,00) y las ventas web sin vendedor no generan comisión.
   - Los ingresos y comisiones se basan en pagos `APPROVED` de reservas `CONFIRMED`.
   - El sistema muestra ventas brutas, unidades comisionables, comisión total y neto operativo; no realiza transferencias bancarias automáticas ni marca rendiciones automáticamente.
-- Métodos previstos diferidos: pasarelas automáticas (Mercado Pago QR y tarjetas Payway) se encuentran diferidas para después de la migración de datos.
+- **Mercado Pago Checkout Pro**: integración autorizada e implementada para la compra pública (preferencia creada en backend con importe server-side, confirmación por webhook firmado + consulta autenticada; nunca por URL de retorno). Deshabilitada por defecto vía `MERCADO_PAGO_ENABLED` y credenciales por entorno. El QR presencial no forma parte del alcance.
+- Payway (tarjetas) sigue diferido, pendiente de autorización.
 
 ## Pasajes y emisión
 
@@ -114,7 +120,7 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
   - Logo oficial incrustado en ambos talones (`static/assets/scviajes-logo.png`).
 - **Supresión de códigos visuales**:
   - No se imprimen códigos QR ni códigos de barras visuales en ninguno de los talones.
-  - Los tokens criptográficos (`verification_token_hash`, `download_token_hash`) se conservan internamente en la base de datos para la validación de embarque en el panel interno (`/panel/embarques/`).
+  - Los tokens criptográficos (`verification_token_hash`, `download_token_hash`) se conservan internamente en la base de datos. La validación de embarque en `/panel/embarques/` fue retirada; la verificación del pasaje en `/tickets/verify/` **se conserva** como consulta pública de solo lectura con sus permisos actuales (retirar el embarque no retira la verificación). Su URL se calcula al emitir pero hoy no se imprime en el pasaje.
 - **Numeración persistente correlativa (serie AAA)**:
   - Numeración única y consecutiva gestionada mediante el modelo transaccional `TicketSequence` con bloqueo `select_for_update()`.
   - Formato `AAA-000000001` en adelante para pasajes reales emitidos (`AAA-000000000` reservado para plantilla vacía). El mismo código se imprime en ambos talones.
@@ -135,8 +141,8 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
 ## Migración de datos heredados
 
 - SC Viajes operó históricamente con AppSheet y Google Sheets.
-- Se cuenta con un toolkit seguro de solo lectura para inventario y análisis de archivos exportados (`inventory_legacy_exports`), con datos sintéticos auditados.
-- La migración real de datos históricos se realizará en una etapa controlada previa a la puesta en marcha de pasarelas de pago, sujeta a validación previa de esquemas en staging y autorización comercial expresa.
+- **Decisión posterior (ver `docs/DECISIONS.md` §4)**: la migración fue **cancelada**. La aplicación opera con su propia base de datos como fuente única de verdad y no depende de recibir exports de AppSheet/Google Sheets.
+- Se conserva como utilitario histórico el toolkit de solo lectura `inventory_legacy_exports` (sin uso previsto).
 
 ## Decisiones comerciales pendientes de Sandro
 
