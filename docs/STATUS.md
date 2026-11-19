@@ -151,6 +151,67 @@ Ejecutadas con Playwright/HTTP sobre `http://127.0.0.1:8000` sin tocar producci�
 4. **Descarga de pasajes emitidos desde el panel**: botón "Descargar PDF" por pasaje con pasajero, tramo y butaca; alcance verificado (admin todo, vendedor sólo sus ventas, otro vendedor recibe 404).
 5. **Mercado Pago Checkout Pro (rama `Joel010999/mercadopago-checkout-pro`)**: implementado (`b393348`) y **revisado contra la documentación oficial vigente** (`88df44f`): identificación del intento de pago por `external_payment_id` (notificación de otro intento → `IGNORED_OTHER_PAYMENT`), topics ajenos a pagos ignorados (`IGNORED_TOPIC`), preferencia con `expires`/`expiration_date_to` igual a la retención de butaca y `payer.email`. Validado **únicamente con mocks** — 30 tests en `payments/test_mercadopago.py` cubren preferencia server-side, aprobado/pendiente/rechazado, firma inválida/ausente/vencida, importe/moneda/collector/referencia incorrectos, notificación duplicada y fuera de orden, notificación de intento ajeno, aprobación con reserva vencida (conflicto registrado, sin reasignación de butaca ni pasaje) y deduplicación de fulfillment. **Sandbox E2E pendiente**: requiere credenciales de prueba y túnel HTTPS para webhooks (ver `docs/MERCADO_PAGO.md`). No declarado listo para producción.
 
+### Aceptación funcional local (19/11/2026 — localhost, SQLite de prueba, Playwright, datos ficticios)
+
+Sesiones separadas por rol (administrador, vendedor, segundo vendedor, invitado público, móvil iPhone 13). Mercado Pago deshabilitado; datos bancarios ficticios sólo en el lanzador local. Evidencia fuera del repositorio en `C:\Users\joelj\scviajes-e2e\acept\` (scripts `a_`…`e_*.py`, logs `run_*.log`, `shots/`, `pdfs/`). **Es evidencia SQLite local: no sustituye PostgreSQL ni staging.**
+
+#### Implementado y verificado
+
+| Flujo | Resultado | Evidencia |
+|---|---|---|
+| Recorrido versionado desde "Nueva versión" (renombrado), viaje nuevo sobre v2, el viaje existente conserva v1 | OK (tras fix `2847344`) | `run_a2.log` A1–A2 |
+| Horarios por parada: edición válida y rechazo de secuencia no creciente | OK | A4 |
+| Tarifas Cama/Semicama por salida; duplicado por categoría rechazado; viaje publicado en búsqueda pública con su tarifa; viaje sin tarifas no se ofrece | OK | A3, A5, `f_nofare.py` |
+| Vendedor: 403 por URL y POST en alta de viaje, tarifas, horarios, recorridos e inicio de viaje; sin efecto en DB | OK | A6 |
+| Disponibilidad: butaca retenida bloqueada en tramo intermedio del mismo viaje; libre en otro viaje | OK | `run_b.log` B2 |
+| Compra pública por transferencia: rechazo con motivo (intento preservado, reserva retenida, cliente ve motivo y "Reintentar pago"), reintento, aprobación, un único pasaje, PDF con pasajero/fecha/hora/butaca/importe/código | OK | B1–B4, `pdfs/B4-publico-reintento.pdf` |
+| Fulfillment fallido recuperado con "Reintentar pasajes" del panel; segundo reintento no duplica | OK | `b_retry.py`, `pdfs/B5-recuperado-panel.pdf` |
+| Reserva manual sin vencimiento sólo administrador; vendedor obtiene venta interna con vencimiento y comprobante | OK | `run_c.log` C1–C2 |
+| Mantenimiento real `run_operational_maintenance --task expire` no vence la manual sin vencimiento | OK | C5 |
+| Liberación sólo por el creador (otro usuario 404); butaca vuelve a estar disponible | OK | C6 |
+| Aislamiento entre vendedores: detalle de reserva/pago/comprobante, lista de pendientes, POST aprobar/liberar, reproceso de fulfillment ajeno | OK (404 / sin efecto) | C3, D4c |
+| Comisiones del dashboard por rol = cálculo SQL independiente (ARS 5.000 por asignación confirmada positiva de venta interna) | OK | `run_d.log` D1 |
+| Reporte CSV del vendedor acotado aun forzando `?vendedor=<otro>`; admin filtra por vendedor | OK | D2 |
+| Listado provisional de pasajeros y manifiesto: 403 para vendedor, sin botón; admin descarga; incluye confirmados y menor sin asiento, excluye no confirmados; rótulo provisional no CNRT | OK | D3, `pdfs/D3-listado-viaje*.pdf` |
+| Secciones administrativas (usuarios, auditoría, clientes, colectivos, finalizar viaje, cambio de rol) bloqueadas al vendedor por URL y POST | OK | D4 |
+| Ida/vuelta con menor sin asiento: frase exacta en ambos talones, butaca 11 (ida) y 25 (vuelta) | OK (re-verificada sobre PDFs del 14/11) | `scviajes-e2e/pdfs/B-*-menor-*.pdf` |
+| Móvil: portada, resultados, checkout, dashboard, venta interna y listados sin desborde horizontal; validación de formulario vacío; drawer abre, cierra con Escape y devuelve el foco | OK | `run_e.log` E1–E4 |
+| Caja, efectivo y embarque retirados: rutas 404, sin opción de efectivo ni validación de embarque, fuera del menú | OK | E5 |
+| Antiabuso de checkout (3 reservas / 15 min por IP) activo | OK (observado; se amplió sólo en el lanzador local) | `django_local.log` |
+
+#### Defectos encontrados y corregidos (`2847344`)
+
+1. **Nueva versión de recorrido con cambio de nombre era rechazada** ("no se puede modificar directamente") porque el formulario validaba la instancia en uso. Ahora se valida sin ella y el servicio versiona. Regresión `test_new_version_with_renamed_route_is_created` (falla sin el fix).
+2. **`/panel/operaciones/recorridos/<pk>/` devolvía 500** (plantilla `route_detail.html` inexistente). Plantilla agregada; regresión `test_route_detail_renders_for_seller_and_admin`.
+3. **Fallo de emisión de pasajes sin rastro en logs**: el error quedaba sólo como texto genérico en el trabajo. Ahora `logger.exception`; regresión `test_issue_failure_is_logged_with_traceback`.
+
+Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http://` hace fallar la emisión (el código exige HTTPS por diseño). El lanzador local usa el valor por defecto de DEBUG (`https://scviajes.test`).
+
+#### Defectos o discrepancias por resolver (no modificados en esta tarea)
+
+1. **Aprobación de transferencias por el vendedor titular**: `DECISIONS.md` §1, `PROJECT_SPEC.md` y este documento (§1.3, §2) declaran la revisión exclusiva de administradores, pero `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado C4: botón visible). Definir cuál rige.
+2. **Butacas prioritarias 51/54**: el código libera automáticamente a las 00:00 AR dos días antes; el acuerdo vigente es solicitud por correo hasta 48 h antes sin liberación automática acordada (`docs/CONTEXTO_COORDINACION.md` §2). Sin cambios hasta la definición.
+3. **Reservas manuales sin vencimiento**: §1.1 de este documento y `DECISIONS.md` describen que los vendedores crean reservas manuales sin vencimiento; el código vigente lo restringe a administradores y aplica a vendedores `min(medianoche AR, salida − 1 h)`. Actualizar la documentación canónica cuando se confirme.
+4. **Documentación de embarque y efectivo desactualizada**: §1.10 menciona validación de embarque operativa en `/panel/embarques/` y `PROJECT_SPEC.md` lista efectivo como medio implementado; ambos están retirados (§1.11–§1.12, verificado E5).
+5. El checkout móvil con 60 butacas resulta muy extenso (~17.000 px de alto); usable, mejora de UX opcional.
+
+#### Decisiones pendientes de Sandro
+
+- Credenciales de prueba de Mercado Pago (cuenta dueña de la aplicación) para completar el sandbox Checkout Pro.
+- Butacas prioritarias 51/54 (procedimiento, horario límite, liberación).
+- Quién aprueba transferencias internas (administrador exclusivo vs. vendedor titular).
+- Menores: fecha de referencia de edad, seguro y documentación/RENAPER.
+- Cambios, cancelaciones y devoluciones.
+- Datos reales fiscales, bancarios, aseguradora y paradas; Payway.
+
+#### Preparación de publicación
+
+- Staging sobre PostgreSQL dedicado: migraciones (incluida `payments.0003`), concurrencia y restricciones reales.
+- Storage privado S3, SMTP real, `PUBLIC_BASE_URL` HTTPS y datos bancarios reales (los checks `tickets.E008/E019/E020` bloquean el arranque sin ellos).
+- `collectstatic` en el despliegue (con `DEBUG=False` el manifest de WhiteNoise es obligatorio).
+- Drill de backup/restauración sobre dump real.
+- Sandbox Mercado Pago con túnel o dominio HTTPS y webhook firmado; luego decisión explícita para habilitarlo.
+
 ### Validaciones pendientes antes de producción
 1. **Validación de despliegue real sobre PostgreSQL**: los tests de concurrencia y restricciones avanzadas (omitidos en SQLite) ya corren en GitHub Actions sobre PostgreSQL 16 — verificados en verde para `5642156` en los workflows *Sales PostgreSQL tests*, *Tickets PostgreSQL CI* y *PostgreSQL restore drill*. Queda pendiente la **validación del despliegue real en staging** (instancia dedicada, migraciones, concurrencia bajo carga real), que la evidencia CI no sustituye.
 2. **Validación en Staging**: desplegar la aplicación en Railway Staging con `PRIVATE_STORAGE_BACKEND=s3` y backend SMTP configurado para validar la descarga autenticada de pasajes y el envío transaccional de correos.

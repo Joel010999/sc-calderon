@@ -72,6 +72,8 @@ no se resuelve por suposición.
 | Punto | Acuerdo conversado | Lo que el código hace hoy | Acción |
 |---|---|---|---|
 | Butacas 51/54 | Solicitud por correo hasta 48 h antes; **sin liberación automática acordada** | `sales/priority_seats.py` **sí libera automáticamente** a las 00:00 AR dos días calendario antes de la salida | Reconciliar con Sandro: ¿se retira la liberación automática, se reemplaza por solicitud manual, o conviven? |
+| Revisión de transferencias internas | `DECISIONS.md`/`PROJECT_SPEC.md`: exclusiva de administradores | `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado en aceptación local C4) | Confirmar con Sandro cuál rige |
+| Reservas manuales sin vencimiento | `DECISIONS.md` §1 / `STATUS.md` §1.1: los vendedores las crean sin vencimiento | Sólo administradores; el vendedor obtiene venta interna con vencimiento `min(medianoche AR, salida − 1 h)` | Actualizar documentación canónica al confirmar |
 
 ## 3. Estado técnico y evidencia
 
