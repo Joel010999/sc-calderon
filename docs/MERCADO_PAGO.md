@@ -42,7 +42,10 @@ manual se conserva como medio de pago independiente.
    inválida), deduplica por `(provider, external_id, action)` en
    `PaymentGatewayEvent`, consulta `GET /v1/payments/{id}` autenticado y
    valida `collector_id`, `external_reference`→booking, `transaction_amount`
-   y `currency_id` antes de transicionar.
+   y `currency_id` antes de transicionar. El intento local se identifica
+   por `external_payment_id` cuando ya está registrado; una notificación
+   de otro intento de pago se ignora (`IGNORED_OTHER_PAYMENT`) y las de
+   topics ajenos a pagos se registran como `IGNORED_TOPIC`.
 4. `approved` → confirma reserva/butacas y encola fulfillment (mismo camino
    que la aprobación de transferencia). `rejected`/`cancelled`/`refunded` →
    `REJECTED` y la reserva sigue HELD para reintento. `pending`/`in_process`
@@ -50,6 +53,11 @@ manual se conserva como medio de pago independiente.
 5. Aprobación con reserva vencida → `Payment` queda `APPROVED` con
    `conflict_reason="approved_after_expiry"` + `AuditEvent`; la butaca jamás
    se reasigna ni se emite pasaje; requiere resolución operativa.
+
+La preferencia envía `external_reference=<booking.public_id>`,
+`expires=true` + `expiration_date_to=<vencimiento de la retención>`,
+`payer.email` cuando la reserva lo tiene, `back_urls`/`auto_return`/
+`notification_url` solo cuando `PUBLIC_BASE_URL` es HTTPS público.
 
 ## Prueba sandbox (pendiente de credenciales)
 
