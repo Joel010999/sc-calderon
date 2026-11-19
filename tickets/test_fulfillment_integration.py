@@ -88,6 +88,14 @@ class TicketFulfillmentIntegrationTests(TicketBaseMixin, TransactionTestCase):
         job.refresh_from_db()
         self.assertEqual(job.issue_status, FulfillmentIssueStatus.SUCCEEDED)
 
+    def test_issue_failure_is_logged_with_traceback(self):
+        booking = self._held_booking()
+        with patch("tickets.services.build_ticket_pdf", side_effect=OSError("pdf unavailable")):
+            with self.assertLogs("tickets.services", level="ERROR") as logs:
+                self._confirm_booking_with_transfer(booking)
+        self.assertTrue(any("Falló la emisión de pasajes" in line for line in logs.output))
+        self.assertTrue(any("OSError" in line for line in logs.output))
+
     def test_email_failure_is_recoverable_without_new_tickets(self):
         booking = self._held_booking()
         with patch("django.core.mail.EmailMessage.send", side_effect=OSError("smtp down")):

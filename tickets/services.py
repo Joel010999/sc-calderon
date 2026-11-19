@@ -617,6 +617,7 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
     try:
         issue_tickets_for_booking(job.booking_id, now=effective_now)
     except Exception:
+        logger.exception("Falló la emisión de pasajes del fulfillment %s (reserva %s)", job_id, job.booking_id)
         with transaction.atomic():
             job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
             job.issue_status = FulfillmentIssueStatus.FAILED
