@@ -13,8 +13,9 @@ no se resuelve por suposición.
 - Desarrollo con Devin Local sobre Windows + `localhost` con **SQLite de prueba**
   y datos ficticios. Producción vive en **Railway y no debe tocarse**.
 - Codex/Orca/Antigravity quedaron **pausados** para este flujo. ChatGPT
-  coordinará tareas y revisiones cuando exista la conexión MCP (puente aún
-  no construido — investigado, no implementado).
+  coordinará tareas y revisiones cuando exista la conexión MCP. Un puente
+  local de solo lectura se construyó fuera del repositorio
+  (`C:\renderbyte\devin-bridge`) y quedó **pausado**; ChatGPT no se conectó.
 - Reglas de trabajo del repo en `AGENTS.md` (nunca `main`, sin Django Admin,
   monolito modular Django, PostgreSQL en producción, `Decimal` para dinero,
   datetimes conscientes de zona horaria, migración por cada cambio de modelo).
@@ -25,7 +26,8 @@ no se resuelve por suposición.
 
 - Administradores/superusuarios gestionan recorridos y viajes; vendedores
   consultan y operan sus propias ventas, sin recorridos/viajes ni reservas
-  manuales sin vencimiento (`panel/reservation_services.py`,
+  manuales sin vencimiento (restricción por rol confirmada y reconciliada en
+  la documentación canónica) (`panel/reservation_services.py`,
   `require_can_create_manual_unexpired_reservation`; coacción `sale_type`
   en `panel/reservation_views.py`).
 - Venta interna por transferencia con comprobante y aprobación según
@@ -73,7 +75,7 @@ no se resuelve por suposición.
 |---|---|---|---|
 | Butacas 51/54 | Solicitud por correo hasta 48 h antes; **sin liberación automática acordada** | `sales/priority_seats.py` **sí libera automáticamente** a las 00:00 AR dos días calendario antes de la salida | Reconciliar con Sandro: ¿se retira la liberación automática, se reemplaza por solicitud manual, o conviven? |
 | Revisión de transferencias internas | `DECISIONS.md`/`PROJECT_SPEC.md`: exclusiva de administradores | `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado en aceptación local C4) | Confirmar con Sandro cuál rige |
-| Reservas manuales sin vencimiento | `DECISIONS.md` §1 / `STATUS.md` §1.1: los vendedores las crean sin vencimiento | Sólo administradores; el vendedor obtiene venta interna con vencimiento `min(medianoche AR, salida − 1 h)` | Actualizar documentación canónica al confirmar |
+| ~~Reservas manuales sin vencimiento~~ | `DECISIONS.md` §1 / `STATUS.md` §1.1 decían que los vendedores las crean sin vencimiento | Sólo administradores; el vendedor obtiene venta interna con vencimiento `min(medianoche AR, salida − 1 h)` | **Reconciliado**: decisión confirmada, documentos actualizados |
 
 ## 3. Estado técnico y evidencia
 
@@ -82,11 +84,11 @@ Verificado por `git` en esta máquina (árbol limpio al momento de escribir):
 | Item | Estado | Origen |
 |---|---|---|
 | Rama de trabajo | `Joel010999/mercadopago-checkout-pro` | `git branch` |
-| HEAD | `b393348` Mercado Pago Checkout Pro (local, sin push) | `git log` |
+| HEAD | Ver `git log`; al momento de la última actualización, la rama contiene `b393348` (Checkout Pro), `7107a52` (este documento), `88df44f`/`4aee059` (revisión Checkout Pro), `2847344`/`527ff29` (aceptación local) y la reconciliación documental posterior, todos locales sin push | `git log` |
 | `4d9d6ad` | Actualización documental (verificaciones E2E + fix `5642156`) | `git log` |
 | `5642156` | Fix mantenimiento: reservas HELD sin `Payment` ya no se excluyen por `latest_payment_status NULL` | `git log`, pusheado a PR #50 |
 | `1bc0d4d` | Botones Descargar PDF por pasaje en detalle interno + tests de alcance | `git log`, pusheado a PR #50 |
-| PR #50 → `main` | Open, **Draft**, head remoto `5642156` (verificado por API de GitHub al momento del push; no re-verificado después) | API GitHub (evidencia consultada) |
+| PR #50 → `main` | Open, **Draft**, head remoto `5642156` (re-verificado por API de GitHub el 19/11/2026) | API GitHub (evidencia consultada) |
 | Workflows CI sobre `5642156` | 5 en verde: Quality Gate, Browser E2E, Sales PostgreSQL, Tickets PostgreSQL, Restore Drill | API GitHub (evidencia consultada). **CI ≠ validación de despliegue real en staging.** |
 | `b393348` (Checkout Pro) | Implementación completa con `payments.0003`; **solo validado con mocks** (26 tests); **sandbox NO ejecutado** — faltan credenciales de prueba y recepción HTTPS de webhooks | `git log` + `payments/test_mercadopago.py` |
 | Aprobación post-vencimiento | Conflicto registrado (`conflict_reason` + `AuditEvent`); sin reasignación de butaca, sin pasaje, sin devolución automática | `payments/mercadopago.py` |
@@ -114,9 +116,10 @@ Verificado por `git` en esta máquina (árbol limpio al momento de escribir):
    reales, Payway — pendientes de Sandro (`docs/DECISIONS.md` §3-§4).
 4. Validación de despliegue real en staging PostgreSQL (la CI no la
    sustituye), storage privado S3, SMTP, drill de backup.
-5. Puente MCP ChatGPT↔Devin: investigado (CLI `devin.exe` v3000.14.30819
-   presente, sesiones resumibles por ID, locks en `session_locks/`);
-   **no construido ni expuesto**.
+5. Puente MCP ChatGPT↔Devin: puente local de solo lectura construido y
+   **pausado**; sin túnel ni conexión desde ChatGPT. Antecedente: investigado (CLI `devin.exe` v3000.14.30819
+   presente, sesiones resumibles por ID, locks en `session_locks/`).
+   No expuesto a internet.
 
 ## 5. Próxima tarea
 
