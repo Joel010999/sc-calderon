@@ -185,6 +185,12 @@ def build_preference_payload(booking, payment):
         "external_reference": str(booking.public_id),
         "statement_descriptor": "SC VIAJES",
     }
+    if booking.email:
+        payload["payer"] = {"email": booking.email}
+    if booking.expires_at is not None:
+        # La preferencia vence junto con la retención de butaca.
+        payload["expires"] = True
+        payload["expiration_date_to"] = booking.expires_at.isoformat()
     base = _public_base_url()
     if base:
         summary_url = f"{base}{reverse('resumen_reserva', args=[booking.public_id])}"
@@ -296,6 +302,11 @@ def _apply_payment_state(payment, mp_payment, effective_now):
         # Orden de bloqueo determinístico: Booking primero, Payment después.
         booking = Booking.objects.select_for_update().get(pk=payment.booking_id)
         locked = Payment.objects.select_for_update().get(pk=payment.pk)
+        mp_id = str(mp_payment.get("id") or "")
+        if locked.external_payment_id and mp_id and locked.external_payment_id != mp_id:
+            # La notificación pertenece a otro intento de pago: no aplicar ni
+            # sobrescribir el identificador externo.
+            return "IGNORED_OTHER_PAYMENT", "La notificación corresponde a otro intento de pago."
         locked.external_payment_id = str(mp_payment.get("id", locked.external_payment_id))
 
         if locked.status == PaymentStatus.APPROVED and booking.status == BookingStatus.CONFIRMED:
@@ -428,39 +439,58 @@ def process_mercadopago_notification(*, data_id, action="", request_id=""):
 
     outcome, detail = "ERROR", ""
     try:
-        mp_payment = MercadoPagoClient().get_payment(data_id)
-
-        # Identidad de la operación: cuenta receptora configurada.
-        expected_collector = str(getattr(settings, "MERCADO_PAGO_COLLECTOR_ID", ""))
-        if str(mp_payment.get("collector_id", "")) != expected_collector:
-            outcome, detail = "MISMATCH", "collector_id no coincide con la cuenta configurada."
+        if action and not str(action).lower().startswith("payment"):
+            outcome, detail = "IGNORED_TOPIC", "Notificación de otro recurso; no es de pagos."
         else:
-            external_reference = mp_payment.get("external_reference") or ""
-            try:
-                booking = Booking.objects.filter(public_id=external_reference).first()
-            except (ValidationError, ValueError):
-                booking = None
-            if booking is None:
-                outcome, detail = "UNKNOWN_BOOKING", "external_reference sin reserva local."
-            else:
-                payment = Payment.objects.filter(
-                    booking=booking, method=PaymentMethod.MERCADO_PAGO,
-                ).order_by("-created_at", "-pk").first()
-                if payment is None:
-                    outcome, detail = "UNKNOWN_PAYMENT", "No hay pago local para la referencia."
-                else:
-                    amount_ok = _amount_matches(mp_payment.get("transaction_amount"), payment.amount)
-                    currency_ok = (mp_payment.get("currency_id") or "").upper() == payment.currency
-                    if not (amount_ok and currency_ok):
-                        outcome, detail = "MISMATCH", "Importe o moneda no coinciden con el pago local."
-                    else:
-                        outcome, detail = _apply_payment_state(payment, mp_payment, effective_now)
+            outcome, detail = _process_payment_notification(data_id, effective_now)
     except Exception as exc:  # noqa: BLE001 - el evento registra el fallo y MP reintenta
         logger.exception("Error procesando notificación de Mercado Pago %s", data_id)
         outcome, detail = "ERROR", exc.__class__.__name__
 
     PaymentGatewayEvent.objects.filter(pk=event.pk).update(outcome=outcome, detail=detail[:255])
     return outcome, detail
+
+
+def _process_payment_notification(data_id, effective_now):
+    """Consulta el pago de forma autenticada y aplica la transición."""
+    mp_payment = MercadoPagoClient().get_payment(data_id)
+
+    # Identidad de la operación: cuenta receptora configurada.
+    expected_collector = str(getattr(settings, "MERCADO_PAGO_COLLECTOR_ID", ""))
+    if str(mp_payment.get("collector_id", "")) != expected_collector:
+        return "MISMATCH", "collector_id no coincide con la cuenta configurada."
+
+    external_reference = mp_payment.get("external_reference") or ""
+    try:
+        booking = Booking.objects.filter(public_id=external_reference).first()
+    except (ValidationError, ValueError):
+        booking = None
+    if booking is None:
+        return "UNKNOWN_BOOKING", "external_reference sin reserva local."
+
+    # Identificar el intento local del pago notificado: primero por el
+    # identificador externo ya registrado; si no, el intento MP más reciente.
+    mp_id = str(mp_payment.get("id") or "")
+    payment = None
+    if mp_id:
+        payment = Payment.objects.filter(
+            booking=booking,
+            method=PaymentMethod.MERCADO_PAGO,
+            external_payment_id=mp_id,
+        ).first()
+    if payment is None:
+        payment = Payment.objects.filter(
+            booking=booking, method=PaymentMethod.MERCADO_PAGO,
+        ).order_by("-created_at", "-pk").first()
+    if payment is None:
+        return "UNKNOWN_PAYMENT", "No hay pago local para la referencia."
+
+    amount_ok = _amount_matches(mp_payment.get("transaction_amount"), payment.amount)
+    currency_ok = (mp_payment.get("currency_id") or "").upper() == payment.currency
+    if not (amount_ok and currency_ok):
+        return "MISMATCH", "Importe o moneda no coinciden con el pago local."
+
+    return _apply_payment_state(payment, mp_payment, effective_now)
 
 
 def _amount_matches(remote_amount, local_amount):

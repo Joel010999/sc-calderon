@@ -191,6 +191,17 @@ class InitiateTests(MercadoPagoBase):
             initiate_mercadopago_payment(booking_or_id=booking, client=FailingClient())
         self.assertEqual(Payment.objects.filter(booking=booking).count(), 0)
 
+    def test_preference_expires_with_hold_and_includes_payer(self):
+        booking = self.create_online_booking()
+        booking.email = "comprador@example.com"
+        booking.save(update_fields=["email"])
+        client = FakeMercadoPagoClient()
+        initiate_mercadopago_payment(booking_or_id=booking, client=client)
+        pref = client.last_preference
+        self.assertTrue(pref["expires"])
+        self.assertEqual(pref["expiration_date_to"], booking.expires_at.isoformat())
+        self.assertEqual(pref["payer"], {"email": "comprador@example.com"})
+
 
 class NotificationTests(MercadoPagoBase):
     def setUp(self):
@@ -315,8 +326,44 @@ class NotificationTests(MercadoPagoBase):
         )
         self.assertEqual(TicketFulfillment.objects.filter(booking=self.booking).count(), 0)
 
+    def test_notification_matches_payment_by_external_id(self):
+        # Intento previo rechazado con id externo registrado.
+        old_payment = Payment.objects.create(
+            booking=self.booking, method=PaymentMethod.MERCADO_PAGO,
+            status=PaymentStatus.REJECTED, amount=Decimal("12500.00"),
+            currency="ARS", rejection_reason="cc_rejected_other_reason",
+            external_payment_id="111000",
+        )
+        self.payment.external_payment_id = "222000"
+        self.payment.save(update_fields=["external_payment_id"])
+        # Llega la notificación tardía del intento viejo: no debe tocar el nuevo.
+        FakeMercadoPagoClient.payment_payload = self.mp_payload(
+            self.booking, self.payment, status="rejected", payment_id="111000",
+        )
+        outcome, _ = self.notify(data_id="111000")
+        self.assertEqual(outcome, "IGNORED")
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.PENDING)
+        old_payment.refresh_from_db()
+        self.assertEqual(old_payment.status, PaymentStatus.REJECTED)
 
-class SignatureTests(TestCase):
+    def test_notification_for_other_payment_attempt_ignored(self):
+        self.payment.external_payment_id = "222000"
+        self.payment.save(update_fields=["external_payment_id"])
+        # Notificación de un pago MP distinto al registrado en el intento.
+        outcome, _ = self.notify(data_id="999999")
+        self.assertEqual(outcome, "IGNORED_OTHER_PAYMENT")
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.PENDING)
+        self.assertEqual(self.payment.external_payment_id, "222000")
+        self.assertEqual(Booking.objects.get(pk=self.booking.pk).status, BookingStatus.HELD)
+
+    def test_non_payment_notification_ignored(self):
+        outcome, _ = self.notify(data_id="4444", action="merchant_order.updated")
+        self.assertEqual(outcome, "IGNORED_TOPIC")
+        self.assertEqual(
+            PaymentGatewayEvent.objects.get(external_id="4444").outcome, "IGNORED_TOPIC"
+        )
     @override_settings(**MP_SETTINGS)
     def test_valid_signature(self):
         sig = sign("5550001")
