@@ -88,13 +88,26 @@ class TicketFulfillmentIntegrationTests(TicketBaseMixin, TransactionTestCase):
         job.refresh_from_db()
         self.assertEqual(job.issue_status, FulfillmentIssueStatus.SUCCEEDED)
 
-    def test_issue_failure_is_logged_with_traceback(self):
+    def test_issue_failure_is_logged_without_personal_data(self):
+        import logging
+        from core.request_context import RequestJSONFormatter
+
         booking = self._held_booking()
-        with patch("tickets.services.build_ticket_pdf", side_effect=OSError("pdf unavailable")):
+        secret_detail = OSError("comprador@scviajes.com.ar DNI 40123456 https://bucket/x?X-Amz-Signature=abc")
+        with patch("tickets.services.build_ticket_pdf", side_effect=secret_detail):
             with self.assertLogs("tickets.services", level="ERROR") as logs:
                 self._confirm_booking_with_transfer(booking)
-        self.assertTrue(any("Falló la emisión de pasajes" in line for line in logs.output))
-        self.assertTrue(any("OSError" in line for line in logs.output))
+        record = next(r for r in logs.records if "Falló la emisión de pasajes" in r.getMessage())
+        rendered = RequestJSONFormatter().format(record)
+        job = TicketFulfillment.objects.get(booking=booking)
+        self.assertIn(f"fulfillment={job.pk}", rendered)
+        self.assertIn(f"reserva={booking.pk}", rendered)
+        self.assertIn("error_type=OSError", rendered)
+        self.assertIn("origen=services.py:", rendered)
+        self.assertIsNone(record.exc_info)
+        for leaked in ("comprador@", "40123456", "X-Amz-Signature"):
+            self.assertNotIn(leaked, rendered)
+            self.assertNotIn(leaked, " ".join(logs.output))
 
     def test_email_failure_is_recoverable_without_new_tickets(self):
         booking = self._held_booking()

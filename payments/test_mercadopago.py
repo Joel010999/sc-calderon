@@ -163,10 +163,10 @@ class InitiateTests(MercadoPagoBase):
             initiate_mercadopago_payment(booking_or_id=booking, client=FakeMercadoPagoClient())
         self.assertEqual(Payment.objects.filter(booking=booking).count(), 0)
 
-    def test_blocks_second_active_payment(self):
+    def test_reuses_pending_payment_despite_expired_transfer_history(self):
         booking = self.create_online_booking()
         self.create_mp_payment(booking)
-        transfer = Payment.objects.create(
+        Payment.objects.create(
             booking=booking, method=PaymentMethod.BANK_TRANSFER,
             status=PaymentStatus.EXPIRED, amount=Decimal("12500.00"),
         )

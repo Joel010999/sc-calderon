@@ -32,7 +32,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from panel.models import AuditEvent
-from sales.exceptions import BookingExpiredError, InvalidBookingError, SeatUnavailableError
+from sales.exceptions import BookingExpiredError, InvalidBookingError
 from sales.models import AssignmentStatus, Booking, BookingChannel, BookingStatus, SeatAssignment
 from sales.validators import validate_aware_datetime
 
