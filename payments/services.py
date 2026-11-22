@@ -24,7 +24,7 @@ from .exceptions import (
     PaymentError,
 )
 from .models import Payment, PaymentMethod, PaymentStatus
-from .storage import validate_voucher_file
+from .storage import discard_vouchers_on_error, validate_voucher_file
 
 
 def calculate_booking_total(booking):
@@ -114,13 +114,14 @@ def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=No
     raise ValidationError("El registro de nuevos pagos en efectivo ha sido deshabilitado.")
 
 def register_transfer_payment(*, booking_or_id, seller, voucher, reference="", now=None):
-    payment, expired_error = _register_transfer_payment_atomic(
-        booking_or_id=booking_or_id,
-        seller=seller,
-        voucher=voucher,
-        reference=reference,
-        now=now,
-    )
+    with discard_vouchers_on_error():
+        payment, expired_error = _register_transfer_payment_atomic(
+            booking_or_id=booking_or_id,
+            seller=seller,
+            voucher=voucher,
+            reference=reference,
+            now=now,
+        )
     if expired_error is not None:
         raise expired_error
     return payment
@@ -622,11 +623,12 @@ def _initiate_public_transfer_payment_atomic(*, booking_or_id, now=None):
 
 
 def upload_public_transfer_voucher(*, booking_or_id, voucher_file, now=None):
-    payment, expired_error = _upload_public_transfer_voucher_atomic(
-        booking_or_id=booking_or_id,
-        voucher_file=voucher_file,
-        now=now,
-    )
+    with discard_vouchers_on_error():
+        payment, expired_error = _upload_public_transfer_voucher_atomic(
+            booking_or_id=booking_or_id,
+            voucher_file=voucher_file,
+            now=now,
+        )
     if expired_error is not None:
         raise expired_error
     return payment

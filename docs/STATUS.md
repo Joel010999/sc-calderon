@@ -190,6 +190,13 @@ Sesiones separadas por rol (administrador, vendedor, segundo vendedor, invitado 
 
 Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http://` hace fallar la emisión (el código exige HTTPS por diseño). El lanzador local usa el valor por defecto de DEBUG (`https://scviajes.test`).
 
+#### Validación de transferencias sobre PostgreSQL 16 (21/11/2026)
+
+- **Entorno**: en la notebook no hay PostgreSQL disponible (sin servicio, binarios, Docker ni WSL); no se instaló ninguno. La validación PostgreSQL se ejecuta **sólo en GitHub Actions** (`postgres:16`, base efímera `test_*`), no hay aceptación visual local sobre PostgreSQL.
+- **Pruebas nuevas** `payments/test_transfer_postgres.py` (paso explícito en *Sales PostgreSQL tests*): motor PostgreSQL 16; comprobante obligatorio y confirmación por vendedor titular; aislamiento entre vendedores y separación ONLINE/MANUAL; fallo de storage del comprobante sin confirmar el cobro; confirmación repetida y concurrente (titular + administrador, dos administradores en compra web), ventas inmediatas concurrentes por la misma butaca y reintentos concurrentes de fulfillment sin duplicar pagos, reservas confirmadas, asignaciones ni pasajes; emisión fallida y recuperada.
+- **Defecto demostrado y corregido**: si la operación fallaba después de guardar el comprobante (confirmación, auditoría o notificación), la base se revertía pero el archivo quedaba huérfano en el storage privado. Ahora `discard_vouchers_on_error` elimina los comprobantes guardados en el bloque fallido (registro interno, carga pública, venta interna y venta inmediata), funciona con filesystem o S3 y no registra nombres ni mensajes. Tres regresiones fallan sin la corrección.
+- La regla de confirmación de ventas internas por el vendedor titular (regla 5) se valida tal como está implementada; su definición comercial sigue registrada en la discrepancia 1.
+
 #### Defectos o discrepancias por resolver (no modificados en esta tarea)
 
 1. **Aprobación de transferencias por el vendedor titular — sólo ventas internas**: para compras públicas quedó resuelto (sólo administración, regla explícita por canal). Para ventas internas, `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado C4). Definir cuál rige.

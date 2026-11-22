@@ -18,6 +18,7 @@ Reglas obligatorias:
 (13) Conservar menores gratuitos y snapshots.
 """
 
+import functools
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -26,7 +27,7 @@ from django.core.validators import validate_email
 from django.db import transaction
 from django.utils import timezone
 
-from payments.storage import validate_voucher_file
+from payments.storage import discard_vouchers_on_error, validate_voucher_file
 from sales.models import (
     Booking,
     BookingChannel,
@@ -256,7 +257,19 @@ def _normalize_internal_legs(legs):
     return normalized
 
 
-@transaction.atomic
+def _atomic_with_voucher_cleanup(func):
+    """Transacción atómica que además elimina comprobantes guardados si se revierte."""
+    atomic_func = transaction.atomic(func)
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with discard_vouchers_on_error():
+            return atomic_func(*args, **kwargs)
+
+    return wrapper
+
+
+@_atomic_with_voucher_cleanup
 def create_internal_transfer_booking(
     *,
     seller=None,
@@ -375,7 +388,7 @@ def create_internal_transfer_booking(
     return booking
 
 
-@transaction.atomic
+@_atomic_with_voucher_cleanup
 def create_immediate_transfer_sale(
     *,
     seller=None,

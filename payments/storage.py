@@ -1,5 +1,8 @@
 """Almacenamiento desacoplado y validación de comprobantes de pago."""
 
+from contextlib import contextmanager
+import contextvars
+import logging
 from pathlib import Path
 import uuid
 
@@ -9,6 +12,9 @@ from django.core.files.storage import FileSystemStorage
 
 from core.private_storage import get_private_storage
 
+logger = logging.getLogger(__name__)
+
+_PENDING_VOUCHERS = contextvars.ContextVar("scviajes_pending_vouchers", default=None)
 
 
 class ProtectedFileSystemStorage(FileSystemStorage):
@@ -61,7 +67,41 @@ def voucher_upload_path(instance, filename):
     Usa un UUID v4 hexadecimal preservando únicamente la extensión normalizada.
     """
     ext = Path(filename).suffix.lower()
-    return f"vouchers/{uuid.uuid4().hex}{ext}"
+    name = f"vouchers/{uuid.uuid4().hex}{ext}"
+    pending = _PENDING_VOUCHERS.get()
+    if pending is not None:
+        pending.append(name)
+    return name
+
+
+@contextmanager
+def discard_vouchers_on_error():
+    """Elimina los comprobantes guardados dentro del bloque si la operación falla.
+
+    La base de datos se revierte por la transacción; los archivos del storage no,
+    por lo que un comprobante sin cobro registrado quedaría huérfano. Si el bloque
+    termina bien, los nombres se transfieren al bloque externo (si existe) para que
+    también se limpien ante un fallo posterior. No registra nombres ni mensajes.
+    """
+    outer = _PENDING_VOUCHERS.get()
+    pending = []
+    token = _PENDING_VOUCHERS.set(pending)
+    try:
+        yield
+    except BaseException:
+        storage = get_voucher_storage()
+        for name in pending:
+            try:
+                if storage.exists(name):
+                    storage.delete(name)
+            except Exception as exc:  # noqa: BLE001 - la limpieza no debe ocultar el error original
+                logger.warning("No se pudo eliminar un comprobante huérfano error_type=%s", type(exc).__name__)
+        raise
+    else:
+        if outer is not None:
+            outer.extend(pending)
+    finally:
+        _PENDING_VOUCHERS.reset(token)
 
 
 MAGIC_SIGNATURES = {
