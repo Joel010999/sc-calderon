@@ -30,9 +30,11 @@ no se resuelve por suposición.
   la documentación canónica) (`panel/reservation_services.py`,
   `require_can_create_manual_unexpired_reservation`; coacción `sale_type`
   en `panel/reservation_views.py`).
-- Venta interna por transferencia con comprobante y aprobación según
-  permisos (regla 5, pendiente de definición); aislamiento por vendedor
-  (otro vendedor recibe 404).
+- Venta interna (decisión confirmada por Joel): cada vendedor cobra en su
+  cuenta personal; comprobante obligatorio; su carga por el vendedor titular
+  confirma el cobro, aprueba el pago y dispara la emisión, sin segunda
+  aprobación ni cuenta/Mercado Pago del negocio (declaración del vendedor,
+  no verificación bancaria). Aislamiento por vendedor (otro vendedor: 404).
 - Transferencias de compras públicas (web): sólo administradores y
   superusuarios las aprueban o rechazan (decisión confirmada; bloqueo por
   UI, URL, POST y servicio).
@@ -80,7 +82,7 @@ no se resuelve por suposición.
 | Punto | Acuerdo conversado | Lo que el código hace hoy | Acción |
 |---|---|---|---|
 | Butacas 51/54 | Solicitud por correo hasta 48 h antes; **sin liberación automática acordada** | `sales/priority_seats.py` **sí libera automáticamente** a las 00:00 AR dos días calendario antes de la salida | Reconciliar con Sandro: ¿se retira la liberación automática, se reemplaza por solicitud manual, o conviven? |
-| Revisión de transferencias de **ventas internas** | Documentación histórica: exclusiva de administradores | `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas internas (verificado en aceptación local C4) | Confirmar con Sandro cuál rige |
+| ~~Revisión de transferencias de ventas internas~~ | Cobro en cuenta personal del vendedor; la carga del comprobante por el titular confirma | La carga del titular confirma en la misma transacción, sin casilla ni segunda aprobación | **Resuelto**: decisión confirmada e implementada |
 | ~~Revisión de transferencias de compras públicas~~ | Sólo administradores y superusuarios | Regla explícita por canal en servicio, permisos y vistas | **Resuelto**: decisión confirmada e implementada |
 | ~~Reservas manuales sin vencimiento~~ | `DECISIONS.md` §1 / `STATUS.md` §1.1 decían que los vendedores las crean sin vencimiento | Sólo administradores; el vendedor obtiene venta interna con vencimiento `min(medianoche AR, salida − 1 h)` | **Reconciliado**: decisión confirmada, documentos actualizados |
 

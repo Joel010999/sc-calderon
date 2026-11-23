@@ -251,15 +251,17 @@ test.describe('aceptación pública y panel interno', () => {
       await expect(sellerPage.locator('body')).not.toContainText(/cobro en efectivo/i);
       await expect(sellerPage.getByRole('button', { name: /cobro en efectivo/i })).toHaveCount(0);
 
-      // Flujo vigente: pago por transferencia bancaria con comprobante
+      // Flujo vigente: el vendedor titular carga el comprobante de su cobro y la venta se confirma
       const voucherInput = sellerPage.locator('input[type="file"][name="voucher"]');
       await expect(voucherInput).toBeVisible();
+      await expect(sellerPage.locator('input[name="payment_verified"]')).toHaveCount(0);
       await voucherInput.setInputFiles(onePixelPng);
       await Promise.all([
         sellerPage.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//),
-        sellerPage.getByRole('button', { name: /Registrar transferencia/i }).click(),
+        sellerPage.getByRole('button', { name: /Cargar comprobante y confirmar cobro/i }).click(),
       ]);
-      await expect(sellerPage.getByText(/Transferencia en revisión|registrada una transferencia/i)).toBeVisible();
+      await expect(sellerPage.getByText(/Cobro declarado y confirmado/i)).toBeVisible();
+      await expect(sellerPage.getByText(/Transferencia en revisión/i)).toHaveCount(0);
 
       // Reportes de caja retirados (404) para administradores
       const adminPage = await adminContext.newPage();

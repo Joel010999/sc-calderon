@@ -113,15 +113,43 @@ def register_cash_payment(*, booking_or_id, seller, reference="", now=None):
 def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=None):
     raise ValidationError("El registro de nuevos pagos en efectivo ha sido deshabilitado.")
 
+def _is_owner_declaration(booking, seller):
+    """Venta interna cuyo comprobante carga el vendedor titular (cobro en su cuenta personal)."""
+    return bool(
+        seller is not None
+        and booking.channel == BookingChannel.MANUAL
+        and booking.seller_id is not None
+        and booking.seller_id == getattr(seller, "pk", None)
+    )
+
+
 def register_transfer_payment(*, booking_or_id, seller, voucher, reference="", now=None):
+    """Registra el comprobante de una venta interna.
+
+    Decisión confirmada: cuando lo carga el vendedor titular, la carga es su
+    declaración de cobro en su cuenta personal y, en la misma transacción,
+    aprueba el pago, confirma la reserva y dispara la emisión, sin segunda
+    aprobación administrativa. Si quien carga no es el titular (p. ej. un
+    administrador sobre la venta de otro vendedor), el pago queda en revisión.
+    """
+    if now is not None:
+        validate_aware_datetime(now)
+    effective_now = now or timezone.now()
     with discard_vouchers_on_error():
-        payment, expired_error = _register_transfer_payment_atomic(
-            booking_or_id=booking_or_id,
-            seller=seller,
-            voucher=voucher,
-            reference=reference,
-            now=now,
-        )
+        with transaction.atomic():
+            payment, expired_error = _register_transfer_payment_atomic(
+                booking_or_id=booking_or_id,
+                seller=seller,
+                voucher=voucher,
+                reference=reference,
+                now=effective_now,
+            )
+            if expired_error is None and _is_owner_declaration(payment.booking, seller):
+                payment, review_error = _review_transfer_payment_atomic(
+                    payment_or_id=payment, reviewer=seller, approved=True, now=effective_now,
+                )
+                if review_error is not None:
+                    raise review_error
     if expired_error is not None:
         raise expired_error
     return payment
@@ -235,13 +263,15 @@ def _register_transfer_payment_atomic(*, booking_or_id, seller, voucher, referen
         },
     )
 
-    from notifications.models import NotificationType
-    from notifications.services import schedule_notification
-    schedule_notification(
-        booking=booking, notification_type=NotificationType.VOUCHER_RECEIVED,
-        event_key=f"payment:{payment.public_id}:voucher-received",
-        payload={"booking_ref": str(booking.public_id)},
-    )
+    if not _is_owner_declaration(booking, seller):
+        # La declaración del titular se confirma en la misma operación: no hay revisión pendiente.
+        from notifications.models import NotificationType
+        from notifications.services import schedule_notification
+        schedule_notification(
+            booking=booking, notification_type=NotificationType.VOUCHER_RECEIVED,
+            event_key=f"payment:{payment.public_id}:voucher-received",
+            payload={"booking_ref": str(booking.public_id)},
+        )
 
     return payment, None
 

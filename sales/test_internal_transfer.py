@@ -587,8 +587,9 @@ class InternalTransferRulesPermissionsTests(InternalTransferSalesBaseTestCase):
 class VoucherAndReviewTests(InternalTransferSalesBaseTestCase):
     """Reglas (5) y (6): Comprobante, aprobación propia vs ajena e inmutabilidad de retención."""
 
-    def test_voucher_upload_creates_payment_under_review_does_not_confirm_or_extend(self):
-        """Regla (6): Subir comprobante crea pago en revisión pero NO confirma la reserva ni extiende vencimiento."""
+    def test_owner_voucher_upload_confirms_without_second_approval(self):
+        """Decisión confirmada (sustituye la regla 6 original): el comprobante cargado por el
+        vendedor titular declara el cobro en su cuenta personal y confirma la venta."""
         now = timezone.now()
         dep = now + timedelta(days=2)
         trip, ts_cba, _, ts_ssj = self.create_test_trip(departure_dt=dep)
@@ -605,19 +606,17 @@ class VoucherAndReviewTests(InternalTransferSalesBaseTestCase):
             passenger_data=[make_pax()],
             now=now,
         )
-        initial_expires_at = booking.expires_at
-
         payment = register_transfer_payment(
             booking_or_id=booking,
             seller=self.seller_1,
             voucher=self.sample_pdf_voucher(),
             now=now,
         )
-        self.assertEqual(payment.status, PaymentStatus.UNDER_REVIEW)
+        self.assertEqual(payment.status, PaymentStatus.APPROVED)
+        self.assertEqual(payment.reviewed_by, self.seller_1)
 
         booking.refresh_from_db()
-        self.assertEqual(booking.status, BookingStatus.HELD)
-        self.assertEqual(booking.expires_at, initial_expires_at)
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
 
     def test_seller_can_approve_own_transfer_sale(self):
         """Regla (5): Vendedor verifica y aprueba sus propias ventas."""
@@ -686,7 +685,8 @@ class VoucherAndReviewTests(InternalTransferSalesBaseTestCase):
         self.assertIn("propias ventas", str(ctx.exception))
 
     def test_admin_can_approve_any_transfer_sale_globally(self):
-        """Regla (5): Administrador y superusuario pueden aprobar transferencias globalmente."""
+        """Regla (5): Administrador y superusuario pueden aprobar transferencias globalmente
+        (pago pendiente cargado por un usuario no titular)."""
         now = timezone.now()
         dep = now + timedelta(days=2)
         trip, ts_cba, _, ts_ssj = self.create_test_trip(departure_dt=dep)
@@ -705,7 +705,7 @@ class VoucherAndReviewTests(InternalTransferSalesBaseTestCase):
         )
         payment = register_transfer_payment(
             booking_or_id=booking,
-            seller=self.seller_1,
+            seller=self.admin_user,
             voucher=self.sample_pdf_voucher(),
             now=now,
         )
@@ -743,7 +743,7 @@ class SeatConflictAndIdempotencyTests(InternalTransferSalesBaseTestCase):
             passenger_data=[make_pax(first_name="A", last_name="A", doc="11")],
             now=now,
         )
-        pay_a = register_transfer_payment(booking_or_id=booking_a, seller=self.seller_1, voucher=self.sample_pdf_voucher(), now=now)
+        pay_a = register_transfer_payment(booking_or_id=booking_a, seller=self.admin_user, voucher=self.sample_pdf_voucher(), now=now)
 
         from unittest.mock import patch
         with patch("payments.services.SeatAssignment.objects.filter") as mock_filter:

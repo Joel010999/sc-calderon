@@ -98,9 +98,12 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
 - **Revisión de transferencias — compras públicas (canal ONLINE)** *(decisión confirmada)*:
   - Sólo administradores y superusuarios activos pueden aprobar o rechazar transferencias de compras realizadas desde la página web.
   - Los vendedores no pueden revisarlas por interfaz, URL directa, POST manipulado ni servicio de aplicación (`payments.services.validate_payment_reviewer`, `panel/internal_sales_permissions.py`, `panel/payment_views.py`), aun cuando un dato manipulado los asocie al pago.
-- **Revisión de transferencias — ventas internas (canal MANUAL)** *(pendiente de definición)*:
-  - Regla vigente en el código (regla 5): administradores y superusuarios revisan cualquier venta interna; el vendedor puede revisar únicamente sus propias ventas internas. Otro vendedor no ve ni opera ventas ajenas.
-  - La documentación histórica (PR #45) declaraba revisión exclusiva de administradores; queda pendiente que Sandro confirme cuál rige para ventas internas.
+- **Cobro de ventas internas (canal MANUAL)** *(decisión confirmada por Joel)*:
+  - Cada vendedor cobra en su cuenta personal; no se usan la cuenta bancaria ni Mercado Pago del negocio y el panel no muestra datos bancarios del negocio en ventas internas.
+  - El comprobante es obligatorio. Su carga por el vendedor titular de la venta confirma el cobro, aprueba el pago, confirma la reserva y dispara la emisión, en una sola transacción y sin segunda aprobación administrativa ni casilla de "pago verificado".
+  - Es una declaración del vendedor, no una verificación bancaria automática.
+  - Otro vendedor no ve ni opera ventas ajenas. Si un administrador carga el comprobante de la venta de otro vendedor, el pago queda en revisión hasta aprobación administrativa.
+  - *Antecedentes*: PR #45 declaraba revisión exclusiva de administradores; `d2aa716` introdujo la aprobación por el vendedor titular como paso separado (regla 5). Ambos quedan sustituidos por esta decisión.
   - El rechazo de un comprobante preserva el registro del intento y su motivo, manteniendo la butaca retenida para permitir la carga de un nuevo comprobante.
   - La aprobación confirma de forma atómica y terminal el pago, la reserva y las butacas, disparando el fulfillment durable de pasajes.
 - **Balance y comisiones de vendedores**:

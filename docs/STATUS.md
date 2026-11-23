@@ -22,7 +22,7 @@ Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base 
    - La acción de liberación de una reserva manual está permitida exclusivamente al usuario vendedor que la creó.
 3. **Revisión de transferencias**:
    - **Compras públicas (ONLINE)**: exclusiva de administradores y superusuarios (decisión confirmada). Regla explícita por canal en servicio, permisos y vistas; vendedores bloqueados por UI, URL, POST y servicio (`payments.tests.PublicTransferReviewPermissionTests`).
-   - **Ventas internas (MANUAL)**: el código permite al vendedor revisar sus propias ventas (regla 5; verificado en aceptación local C4); pendiente de definición. *(Redacción original de esta consolidación: "exclusiva de administradores" para todas las transferencias.)*
+   - **Ventas internas (canal MANUAL)** *(decisión confirmada por Joel)*: cada vendedor cobra en su **cuenta personal**; el **comprobante es obligatorio**; su carga por el **vendedor titular** es su declaración de cobro y, en la misma operación, aprueba el pago, confirma la reserva y dispara la emisión de pasajes. **No hay segunda aprobación administrativa** ni casilla adicional, y no se usan la cuenta bancaria ni Mercado Pago del negocio. Es una declaración del vendedor, no una verificación bancaria automática. *(Redacción original de esta consolidación: "exclusiva de administradores" para todas las transferencias.)*
    - Los rechazos de comprobantes preservan el intento de pago (`Payment`), registran el motivo obligatorio y mantienen la reserva y la butaca retenidas, habilitando al cliente o vendedor a cargar un nuevo comprobante.
    - La aprobación es terminal e idempotente: confirma atómicamente la reserva, el pago y las butacas, disparando el fulfillment durable de pasajes sin enviar notificaciones redundantes.
 4. **Balance y comisiones de vendedores**:
@@ -195,11 +195,12 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 - **Entorno**: en la notebook no hay PostgreSQL disponible (sin servicio, binarios, Docker ni WSL); no se instaló ninguno. La validación PostgreSQL se ejecuta **sólo en GitHub Actions** (`postgres:16`, base efímera `test_*`), no hay aceptación visual local sobre PostgreSQL.
 - **Pruebas nuevas** `payments/test_transfer_postgres.py` (paso explícito en *Sales PostgreSQL tests*): motor PostgreSQL 16; comprobante obligatorio y confirmación por vendedor titular; aislamiento entre vendedores y separación ONLINE/MANUAL; fallo de storage del comprobante sin confirmar el cobro; confirmación repetida y concurrente (titular + administrador, dos administradores en compra web), ventas inmediatas concurrentes por la misma butaca y reintentos concurrentes de fulfillment sin duplicar pagos, reservas confirmadas, asignaciones ni pasajes; emisión fallida y recuperada.
 - **Defecto demostrado y corregido**: si la operación fallaba después de guardar el comprobante (confirmación, auditoría o notificación), la base se revertía pero el archivo quedaba huérfano en el storage privado. Ahora `discard_vouchers_on_error` elimina los comprobantes guardados en el bloque fallido (registro interno, carga pública, venta interna y venta inmediata), funciona con filesystem o S3 y no registra nombres ni mensajes. Tres regresiones fallan sin la corrección.
-- La regla de confirmación de ventas internas por el vendedor titular (regla 5) se valida tal como está implementada; su definición comercial sigue registrada en la discrepancia 1.
+- **Decisión de ventas internas aplicada (22/11/2026)**: la diferencia real era que la carga del comprobante por el titular dejaba el pago en revisión (y la casilla "pago verificado" condicionaba la confirmación). Ahora la carga del titular confirma el cobro y dispara la emisión en una sola transacción, sin casilla ni segunda aprobación; si la confirmación falla, se revierte la carga y se elimina el comprobante. Las compras web siguen en revisión hasta aprobación de administración.
+- **Alcance de la evidencia**: PostgreSQL 16 está validado en CI. Eso es distinto de una aceptación visual local sobre PostgreSQL (no realizada) y del futuro despliegue en staging (pendiente); no se registra "PostgreSQL local" como pendiente propio.
 
 #### Defectos o discrepancias por resolver (no modificados en esta tarea)
 
-1. **Aprobación de transferencias por el vendedor titular — sólo ventas internas**: para compras públicas quedó resuelto (sólo administración, regla explícita por canal). Para ventas internas, `panel/internal_sales_permissions.py` (regla 5) y la UI permiten al vendedor aprobar sus propias ventas (verificado C4). Definir cuál rige.
+1. ~~**Aprobación de transferencias de ventas internas**~~: **resuelto** por decisión confirmada (cuenta personal del vendedor, comprobante obligatorio, confirmación por el titular sin segunda aprobación). Compras web: sólo administración.
 2. **Butacas prioritarias 51/54**: el código libera automáticamente a las 00:00 AR dos días antes; el acuerdo vigente es solicitud por correo hasta 48 h antes sin liberación automática acordada (`docs/CONTEXTO_COORDINACION.md` §2). Sin cambios hasta la definición.
 3. ~~**Reservas manuales sin vencimiento**~~: **reconciliado** en `PROJECT_SPEC.md`, `DECISIONS.md` y §1.1 (restricción por rol confirmada, desde `d2aa716`).
 4. ~~**Documentación de embarque y efectivo desactualizada**~~: **reconciliado** (§1.10, `PROJECT_SPEC.md` y `DECISIONS.md` §2.4).
@@ -224,7 +225,6 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 
 - Credenciales de prueba de Mercado Pago (cuenta dueña de la aplicación) para completar el sandbox Checkout Pro.
 - Butacas prioritarias 51/54 (procedimiento, horario límite, liberación).
-- Quién aprueba transferencias de **ventas internas** (administrador exclusivo vs. vendedor titular). Las de compras públicas ya están definidas: sólo administración.
 - Menores: fecha de referencia de edad, seguro y documentación/RENAPER.
 - Cambios, cancelaciones y devoluciones.
 - Datos reales fiscales, bancarios, aseguradora y paradas; Payway.

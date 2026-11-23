@@ -97,7 +97,7 @@
                     <!-- Transferencia Bancaria -->
                     <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.25rem; background: #fafafa;">
                         <h3 style="margin-top: 0; font-size: 1.1rem; color: #111827;">Transferencia Bancaria</h3>
-                        <p class="muted" style="font-size: 0.875rem; margin-bottom: 1rem;">Presenta el comprobante de transferencia para revisión.</p>
+                        <p class="muted" style="font-size: 0.875rem; margin-bottom: 1rem;">Cargá el comprobante del cobro en tu cuenta personal. Si sos el vendedor titular, la venta se confirma y se emiten los pasajes.</p>
                         <form method="post" action="{% url 'panel:booking_pay_transfer' booking.public_id %}" enctype="multipart/form-data">
                             {% csrf_token %}
                             <div class="form-group" style="margin-bottom: 0.75rem;">
@@ -109,17 +109,8 @@
                                 <label for="transfer_reference" class="form-label" style="display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem;">Número de operación / Notas (opcional):</label>
                                 <input type="text" id="transfer_reference" name="reference" class="form-input" placeholder="Ej. Operación 123456789" maxlength="255" style="width: 100%; box-sizing: border-box;">
                             </div>
-                            <div class="form-group" style="margin-bottom: 1rem;">
-                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; cursor: pointer;">
-                                    <input type="checkbox" name="payment_verified" value="1">
-                                    <span>Declaro haber verificado externamente la acreditación (Confirmación inmediata)</span>
-                                </label>
-                                <small class="text-muted" style="display: block; font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">
-                                    Obligatorio si la salida inicial es dentro de la última hora.
-                                </small>
-                            </div>
                             <button type="submit" class="ops-button secondary" style="width: 100%;">
-                                Registrar transferencia ($ {{ total|unlocalize }})
+                                Cargar comprobante y confirmar cobro ($ {{ total|unlocalize }})
                             </button>
                         </form>
                     </div>

@@ -199,7 +199,7 @@ class InternalTransferValidationTests(TransferValidationBase):
 
     def test_seller_isolation_and_online_manual_separation(self):
         internal = self.internal_booking(self.seller_1)
-        internal_payment = register_transfer_payment(booking_or_id=internal, seller=self.seller_1,
+        internal_payment = register_transfer_payment(booking_or_id=internal, seller=self.admin,
                                                      voucher=_voucher())
         _, public_payment = self.public_payment_under_review(seat=2)
         Payment.objects.filter(pk=public_payment.pk).update(registered_by=self.seller_1)
@@ -241,7 +241,7 @@ class InternalTransferValidationTests(TransferValidationBase):
         booking = self.internal_booking(self.seller_1)
         with patch("notifications.services.schedule_notification", side_effect=RuntimeError("fallo")):
             with self.assertRaises(RuntimeError):
-                register_transfer_payment(booking_or_id=booking, seller=self.seller_1, voucher=_voucher())
+                register_transfer_payment(booking_or_id=booking, seller=self.admin, voucher=_voucher())
         self.assertFalse(Payment.objects.exists())
         self.assertEqual(self.stored_vouchers(), [])
 
@@ -258,6 +258,37 @@ class InternalTransferValidationTests(TransferValidationBase):
                 upload_public_transfer_voucher(booking_or_id=booking, voucher_file=_voucher())
         payment.refresh_from_db()
         self.assertEqual(payment.status, PaymentStatus.AWAITING_VOUCHER)
+        self.assertEqual(self.stored_vouchers(), [])
+
+    def test_owner_voucher_upload_confirms_without_second_approval(self):
+        from notifications.models import NotificationType, TransactionalNotification
+
+        booking = self.internal_booking(self.seller_1)
+        payment = register_transfer_payment(booking_or_id=booking, seller=self.seller_1, voucher=_voucher())
+        self.assertEqual(payment.status, PaymentStatus.APPROVED)
+        self.assertEqual(payment.reviewed_by, self.seller_1)
+        self.assertEqual(payment.registered_by, self.seller_1)
+        self.assertTrue(payment.voucher.name)
+        self.assert_single_confirmation(booking)
+        self.assertFalse(TransactionalNotification.objects.filter(
+            booking=booking, notification_type=NotificationType.VOUCHER_RECEIVED).exists())
+
+    def test_non_owner_upload_on_internal_sale_stays_under_review(self):
+        booking = self.internal_booking(self.seller_1)
+        payment = register_transfer_payment(booking_or_id=booking, seller=self.admin, voucher=_voucher())
+        self.assertEqual(payment.status, PaymentStatus.UNDER_REVIEW)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        self.assertFalse(Ticket.objects.filter(booking=booking).exists())
+
+    def test_owner_upload_confirmation_failure_rolls_back_upload_and_voucher(self):
+        booking = self.internal_booking(self.seller_1)
+        with patch("payments.services._review_transfer_payment_atomic", side_effect=RuntimeError("fallo")):
+            with self.assertRaises(RuntimeError):
+                register_transfer_payment(booking_or_id=booking, seller=self.seller_1, voucher=_voucher())
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.HELD)
+        self.assertFalse(Payment.objects.exists())
         self.assertEqual(self.stored_vouchers(), [])
 
     def test_repeated_confirmation_is_idempotent(self):
@@ -282,13 +313,25 @@ class TransferConcurrencyPostgresTests(TransferValidationBase):
     def test_concurrent_internal_confirmation_by_owner_and_admin(self):
         self.require_postgresql()
         booking = self.internal_booking(self.seller_1)
-        payment = register_transfer_payment(booking_or_id=booking, seller=self.seller_1, voucher=_voucher())
+        payment = register_transfer_payment(booking_or_id=booking, seller=self.admin, voucher=_voucher())
         _, errors = self.run_concurrently(
             lambda: review_transfer_payment(payment_or_id=payment.pk, reviewer=self.seller_1, approved=True),
             lambda: review_transfer_payment(payment_or_id=payment.pk, reviewer=self.admin, approved=True),
         )
         self.assertEqual(errors, [])
         self.assert_single_confirmation(booking)
+
+    def test_concurrent_owner_voucher_uploads_confirm_once(self):
+        self.require_postgresql()
+        booking = self.internal_booking(self.seller_1)
+        results, errors = self.run_concurrently(
+            lambda: register_transfer_payment(booking_or_id=booking.pk, seller=self.seller_1, voucher=_voucher("a.pdf")),
+            lambda: register_transfer_payment(booking_or_id=booking.pk, seller=self.seller_1, voucher=_voucher("b.pdf")),
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(errors), 1)
+        self.assert_single_confirmation(booking)
+        self.assertEqual(len(self.stored_vouchers()), 1)
 
     def test_concurrent_public_transfer_approval_by_two_admins(self):
         self.require_postgresql()

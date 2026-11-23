@@ -283,18 +283,6 @@ def booking_pay_transfer(request, public_id):
         return redirect("panel:booking_detail", public_id=booking.public_id)
 
     reference = request.POST.get("reference", "").strip()
-    payment_verified = request.POST.get("payment_verified") in ("1", "true", "on", "yes")
-
-    from sales.internal_transfer import validate_internal_sale_timing
-    trips = [leg.trip for leg in booking.legs.all()]
-    _, is_last_hour = validate_internal_sale_timing(trips)
-
-    if is_last_hour and not payment_verified:
-        messages.error(
-            request,
-            "Dentro de la última hora previa a la salida inicial, solo se admiten operaciones confirmadas con comprobante y pago verificado.",
-        )
-        return redirect("panel:booking_detail", public_id=booking.public_id)
 
     try:
         payment = register_transfer_payment(
@@ -303,15 +291,10 @@ def booking_pay_transfer(request, public_id):
             voucher=voucher_file,
             reference=reference,
         )
-        if payment_verified:
-            review_transfer_payment(
-                payment_or_id=payment,
-                reviewer=request.user,
-                approved=True,
-            )
+        if payment.status == PaymentStatus.APPROVED:
             messages.success(
                 request,
-                f"Venta por transferencia confirmada por $ {payment.amount}. La reserva ha sido confirmada.",
+                f"Cobro declarado y confirmado por $ {payment.amount}. La reserva ha sido confirmada y se emiten los pasajes.",
             )
         else:
             messages.success(
