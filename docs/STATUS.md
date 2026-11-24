@@ -42,8 +42,8 @@ Tras la integración sucesiva de los PRs #44, #45, #46, #47 y #48 sobre la base 
    - Congelamiento inmutable del precio en la reserva (`SeatAssignment.price`), de modo que cambios tarifarios posteriores no alteran reservas existentes (ni siquiera impagas).
 7. **Butacas prioritarias 51 y 54**:
    - Las butacas 51 y 54 se evalúan dinámicamente como prioritarias por salida y número.
-   - Quedan bloqueadas para venta general hasta las 00:00 (hora de Argentina, `America/Argentina/Buenos_Aires`) de dos días calendario antes de la fecha local de salida.
-   - La restricción se valida server-side en disponibilidad y en el servicio transaccional de creación de reserva. Ocupaciones previas se preservan.
+   - Reservadas para personas con discapacidad (solicitud por correo) hasta 48 horas exactas antes de la salida; a partir de ese instante se liberan automáticamente para venta general si están disponibles (decisión confirmada por Joel).
+   - La restricción se valida server-side en disponibilidad y en el servicio transaccional de creación de reserva. La liberación no cancela reservas ni libera asignaciones válidas.
 8. **Menores de cinco años (gratuidad sin butaca)**:
    - Todo pasajero estrictamente menor de 5 años (`0` a `4` años cumplidos) a la fecha de compra viaja gratis en brazos/falda (`is_lap_infant = True`).
    - Al cumplir exactamente 5 años o más, abona tarifa completa con butaca individual.
@@ -116,7 +116,6 @@ Las siguientes definiciones comerciales no han sido autorizadas y permanecen abi
 1. **Fecha comercial de compra del menor**: definir si la edad al comprar se evalúa al instante de creación de la reserva (`Booking.created_at`) o al momento de confirmación del pago (`Booking.confirmed_at`).
 2. **Seguro sobre menores gratuitos sin butaca**: confirmar si debe liquidarse prima de seguro obligatoria, monto a cobrar y leyenda fiscal/legal a imprimir en el pasaje.
 3. **Validación de vínculo e identidad (RENAPER)**: confirmar si se integrará validación oficial por servicio externo o si se continuará con acreditación documental física en boletería/embarque.
-4. **Autorización previa de butacas prioritarias**: reglamentar el procedimiento, rol autorizante y tarifa aplicable para asignar butacas 51 y 54 antes de las 00:00 de dos días previos a la salida.
 5. **Políticas de cambio y cancelación**: definir porcentajes de penalización, ventanas horarias de tolerancia y régimen de reembolsos/créditos.
 6. **Datos fijos de transporte y legales**: confirmación de CUIT, razón social, Ingresos Brutos, inicio de actividades, aseguradora, póliza, direcciones físicas exactas de paradas y WhatsApp oficial de atención.
 7. **Pasarelas de pago online**: ~~Mercado Pago QR~~ reemplazado por **Mercado Pago Checkout Pro** (implementado, deshabilitado por defecto, revisado contra documentación oficial vigente — commit `88df44f`; validado con mocks; falta prueba sandbox con credenciales de prueba y túnel HTTPS). Payway sigue diferido.
@@ -202,7 +201,7 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 #### Defectos o discrepancias por resolver (no modificados en esta tarea)
 
 1. ~~**Aprobación de transferencias de ventas internas**~~: **resuelto** por decisión confirmada (cuenta personal del vendedor, comprobante obligatorio, confirmación por el titular sin segunda aprobación). Compras web: sólo administración.
-2. **Butacas prioritarias 51/54**: el código libera automáticamente a las 00:00 AR dos días antes; el acuerdo vigente es solicitud por correo hasta 48 h antes sin liberación automática acordada (`docs/CONTEXTO_COORDINACION.md` §2). Sin cambios hasta la definición.
+2. ~~**Butacas prioritarias 51/54**~~: **resuelto** por decisión confirmada (22/11/2026): reservadas para personas con discapacidad por solicitud por correo hasta 48 h antes; liberación automática a las 48 horas exactas previas a la salida, sin cancelar ocupaciones. Implementado en `sales/priority_seats.py`.
 3. ~~**Reservas manuales sin vencimiento**~~: **reconciliado** en `PROJECT_SPEC.md`, `DECISIONS.md` y §1.1 (restricción por rol confirmada, desde `d2aa716`).
 4. ~~**Documentación de embarque y efectivo desactualizada**~~: **reconciliado** (§1.10, `PROJECT_SPEC.md` y `DECISIONS.md` §2.4).
 6. **La emisión exige `PUBLIC_BASE_URL` HTTPS aunque la URL de verificación no se imprime**: `build_verification_url` se calcula para cada pasaje (sólo se guarda el hash del token) y falla con `http://`. `/tickets/verify/` **se conserva** como consulta de solo lectura (decisión); queda pendiente sólo si en el futuro la URL se imprime en el pasaje. La exigencia HTTPS no se cambió.
@@ -225,7 +224,6 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 #### Decisiones pendientes de Sandro
 
 - Credenciales de prueba de Mercado Pago (cuenta dueña de la aplicación) para completar el sandbox Checkout Pro.
-- Butacas prioritarias 51/54 (procedimiento, horario límite, liberación).
 - Menores: fecha de referencia de edad, seguro y documentación/RENAPER.
 - Cambios, cancelaciones y devoluciones.
 - Datos reales fiscales, bancarios, aseguradora y paradas; Payway.

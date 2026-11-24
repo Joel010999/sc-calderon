@@ -55,10 +55,12 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
 - Categorías: Cama y Semicama con precios diferenciados.
 - Colectivo de referencia inicial: 60 butacas (planta alta: semicama 1 a 48; planta baja: cama 49 a 60). La distribución se modela dinámicamente mediante coordenadas relativas (`position_x`, `position_y`) y plantas (`Seat.Deck`), sin esquemas rígidos en el código.
 - No se cambia el colectivo una vez programado el viaje en la operación comercial informada.
-- **Butacas prioritarias 51 y 54** (comportamiento implementado; existe una discrepancia pendiente con el acuerdo posterior de solicitud por correo hasta 48 h antes sin liberación automática acordada, ver `docs/CONTEXTO_COORDINACION.md` §2):
-  - Las butacas 51 y 54 están reservadas prioritariamente y bloqueadas para la venta general hasta las 00:00 (hora local de Argentina, `America/Argentina/Buenos_Aires`) de dos días calendario antes de la fecha local de salida del viaje (por ejemplo, salida un jueves a las 20:00 se libera el martes previo a las 00:00).
-  - No se liberan calculando 48 horas exactas.
-  - La restricción se valida server-side en disponibilidad y en el servicio de creación de reservas con bloqueo transaccional. Ocupaciones previas se preservan.
+- **Butacas prioritarias 51 y 54** *(decisión confirmada por Joel)*:
+  - Las butacas 51 y 54 están reservadas para personas con discapacidad; la solicitud se gestiona por correo electrónico hasta 48 horas antes de la salida del viaje (sin circuito de autorización dentro de la aplicación).
+  - A 48 horas exactas antes de la salida (`departure_at` menos 48 horas, instante absoluto) se liberan automáticamente para venta general si están disponibles según las reglas normales (por ejemplo, salida un jueves a las 20:00 se libera el martes a las 20:00).
+  - La liberación no cancela reservas ni libera asignaciones válidas: las ocupaciones previas se preservan.
+  - La restricción se valida server-side en disponibilidad y en el servicio de creación de reservas con bloqueo transaccional.
+  - *Antecedente*: el código liberaba a las 00:00 AR de dos días calendario antes de la salida; esa regla queda sustituida por esta decisión.
 
 ## Tarifas por salida
 

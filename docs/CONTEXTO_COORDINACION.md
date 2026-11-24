@@ -69,10 +69,11 @@ no se resuelve por suposición.
 - **Mercado Pago Checkout Pro autorizado** para implementación y sandbox
   (ya no depende de migración). Checkout Pro ≠ QR presencial; este último
   no se implementa. Transferencia manual intacta.
-- **Butacas prioritarias 51 y 54 (discapacidad)**: el acuerdo conversado
-  es *consultas o solicitud por correo hasta 48 horas antes del día del
-  viaje* y **no se acordó liberación automática**. Interpretación del
-  horario límite y demás condiciones: **pendientes de Sandro**.
+- **Butacas prioritarias 51 y 54 (discapacidad)**: decisión confirmada
+  por Joel — reservadas por solicitud por correo hasta 48 horas antes de
+  la salida; a las 48 horas exactas previas se liberan automáticamente
+  para venta general si están disponibles, sin cancelar ocupaciones ni
+  circuito de autorización en la aplicación.
 - **Diferidos sin inventar reglas**: fecha de referencia de edad del
   menor, seguro y documentación de menores (RENAPER), políticas de
   cambios/cancelaciones/devoluciones, datos bancarios/fiscales reales.
@@ -81,7 +82,7 @@ no se resuelve por suposición.
 
 | Punto | Acuerdo conversado | Lo que el código hace hoy | Acción |
 |---|---|---|---|
-| Butacas 51/54 | Solicitud por correo hasta 48 h antes; **sin liberación automática acordada** | `sales/priority_seats.py` **sí libera automáticamente** a las 00:00 AR dos días calendario antes de la salida | Reconciliar con Sandro: ¿se retira la liberación automática, se reemplaza por solicitud manual, o conviven? |
+| ~~Butacas 51/54~~ | Solicitud por correo hasta 48 h antes; liberación automática a las 48 h exactas previas a la salida | `sales/priority_seats.py` libera a `departure_at` − 48 h; la solicitud por correo queda fuera de la aplicación | **Resuelto**: decisión confirmada e implementada |
 | ~~Revisión de transferencias de ventas internas~~ | Cobro en cuenta personal del vendedor; la carga del comprobante por el titular confirma | La carga del titular confirma en la misma transacción, sin casilla ni segunda aprobación | **Resuelto**: decisión confirmada e implementada |
 | ~~Revisión de transferencias de compras públicas~~ | Sólo administradores y superusuarios | Regla explícita por canal en servicio, permisos y vistas | **Resuelto**: decisión confirmada e implementada |
 | ~~Reservas manuales sin vencimiento~~ | `DECISIONS.md` §1 / `STATUS.md` §1.1 decían que los vendedores las crean sin vencimiento | Sólo administradores; el vendedor obtiene venta interna con vencimiento `min(medianoche AR, salida − 1 h)` | **Reconciliado**: decisión confirmada, documentos actualizados |
@@ -115,17 +116,14 @@ Verificado por `git` en esta máquina (árbol limpio al momento de escribir):
 
 ## 4. Pendientes y dudas por resolver
 
-1. **Contradicción butacas 51/54** (tabla §2): definir con Sandro si la
-   liberación automática implementada se mantiene, se retira o se
-   reemplaza por solicitud manual por correo.
-2. **Sandbox Checkout Pro**: credenciales de prueba MP (app de prueba +
+1. **Sandbox Checkout Pro**: credenciales de prueba MP (app de prueba +
    usuarios vendedor/comprador) y túnel HTTPS para webhooks
    (`/webhooks/mercadopago/`). Guía en `docs/MERCADO_PAGO.md`.
-3. Reglas de menores, cambios/devoluciones, datos fiscales/bancarios
+2. Reglas de menores, cambios/devoluciones, datos fiscales/bancarios
    reales, Payway — pendientes de Sandro (`docs/DECISIONS.md` §3-§4).
-4. Validación de despliegue real en staging PostgreSQL (la CI no la
+3. Validación de despliegue real en staging PostgreSQL (la CI no la
    sustituye), storage privado S3, SMTP, drill de backup.
-5. Puente MCP ChatGPT↔Devin: puente local de solo lectura construido y
+4. Puente MCP ChatGPT↔Devin: puente local de solo lectura construido y
    **pausado**; sin túnel ni conexión desde ChatGPT. Antecedente: investigado (CLI `devin.exe` v3000.14.30819
    presente, sesiones resumibles por ID, locks en `session_locks/`).
    No expuesto a internet.

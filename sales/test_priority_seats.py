@@ -19,25 +19,43 @@ from sales.tests import SalesBaseTestCase
 
 
 class PrioritySeatPolicyTests(TestCase):
-    def test_calendar_release_uses_argentina_midnight_not_48_hours(self):
+    def test_release_is_exactly_48_hours_before_departure(self):
+        """Decisión confirmada: liberación a las 48 horas exactas de la salida (no medianoche)."""
         departure = datetime(2026, 10, 15, 20, 0, tzinfo=AR_TZ)
         release_at = priority_seat_release_at(departure)
 
-        self.assertEqual(release_at, datetime(2026, 10, 13, 0, 0, tzinfo=AR_TZ))
+        self.assertEqual(release_at, datetime(2026, 10, 13, 20, 0, tzinfo=AR_TZ))
         self.assertTrue(is_priority_seat_released_for_general_sale(departure, release_at))
         self.assertFalse(is_priority_seat_released_for_general_sale(departure, release_at - timedelta(seconds=1)))
         self.assertTrue(is_priority_seat_released_for_general_sale(departure, release_at + timedelta(seconds=1)))
 
-    def test_timezone_and_year_boundary_are_calendar_based(self):
+    def test_release_keeps_departure_time_of_day_across_schedules(self):
+        """Salidas con distintos horarios liberan al mismo horario dos días antes, no a las 00:00."""
+        cases = [
+            (datetime(2026, 10, 15, 8, 30, tzinfo=AR_TZ), datetime(2026, 10, 13, 8, 30, tzinfo=AR_TZ)),
+            (datetime(2026, 10, 15, 0, 15, tzinfo=AR_TZ), datetime(2026, 10, 13, 0, 15, tzinfo=AR_TZ)),
+            (datetime(2026, 10, 15, 23, 45, tzinfo=AR_TZ), datetime(2026, 10, 13, 23, 45, tzinfo=AR_TZ)),
+            (datetime(2026, 10, 16, 6, 0, tzinfo=AR_TZ), datetime(2026, 10, 14, 6, 0, tzinfo=AR_TZ)),
+        ]
+        for departure, expected_release in cases:
+            with self.subTest(departure=departure):
+                release_at = priority_seat_release_at(departure)
+                self.assertEqual(release_at, expected_release)
+                # La liberación conserva el horario de la salida; no es medianoche.
+                self.assertEqual(release_at.time(), departure.time())
+                self.assertFalse(is_priority_seat_released_for_general_sale(departure, release_at - timedelta(seconds=1)))
+                self.assertTrue(is_priority_seat_released_for_general_sale(departure, release_at))
+
+    def test_timezone_aware_and_year_boundary(self):
         departure_utc = datetime(2026, 10, 15, 23, 0, tzinfo=ZoneInfo("UTC"))
         self.assertEqual(
             priority_seat_release_at(departure_utc),
-            datetime(2026, 10, 13, 0, 0, tzinfo=AR_TZ),
+            datetime(2026, 10, 13, 23, 0, tzinfo=ZoneInfo("UTC")),
         )
         new_year_departure = datetime(2027, 1, 1, 1, 0, tzinfo=AR_TZ)
         self.assertEqual(
             priority_seat_release_at(new_year_departure),
-            datetime(2026, 12, 30, 0, 0, tzinfo=AR_TZ),
+            datetime(2026, 12, 30, 1, 0, tzinfo=AR_TZ),
         )
 
     def test_only_51_and_54_are_priority_and_policy_isolated_by_departure(self):

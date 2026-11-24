@@ -44,3 +44,38 @@ class PublicPrioritySeatPostTests(CheckoutBaseTestCase):
 
         self.assertRedirects(response, reverse("buscar_viajes"))
         self.assertFalse(Booking.objects.exists())
+
+    def test_post_at_release_instant_creates_booking_on_priority_seat(self):
+        """Exactamente a las 48 h antes de la salida la butaca prioritaria ya es vendible por POST."""
+        priority_seat = Seat.objects.create(
+            bus=self.bus,
+            number=54,
+            deck=Seat.Deck.UPPER,
+            category=SeatCategory.CAMA,
+            position_x=3,
+            position_y=0,
+        )
+        release_at = priority_seat_release_at(self.trip_out)
+        payload = {
+            "trip_type": "oneway",
+            "passengers_count": "1",
+            "outbound_trip": str(self.trip_out.pk),
+            "outbound_origin": str(self.ts_out_orig.pk),
+            "outbound_destination": str(self.ts_out_dest.pk),
+            "outbound_seats": [str(priority_seat.pk)],
+            "email": "exacto48@correo.com",
+            "phone": "3881234567",
+            "passenger_1_first_name": "Prueba",
+            "passenger_1_last_name": "Limite",
+            "passenger_1_document_type": "DNI",
+            "passenger_1_document_number": "35123457",
+            "passenger_1_birth_date": "1990-01-01",
+            "passenger_1_nationality": "Argentina",
+        }
+
+        with patch("django.utils.timezone.now", return_value=release_at):
+            self.client.post(reverse("crear_reserva"), payload)
+
+        self.assertTrue(Booking.objects.filter(email="exacto48@correo.com").exists())
+        booking = Booking.objects.get(email="exacto48@correo.com")
+        self.assertEqual(booking.legs.first().seat_assignments.first().seat, priority_seat)

@@ -191,7 +191,7 @@ def get_trip_availability(trip, origin_stop=None, destination_stop=None, categor
     del viaje antes de calcular disponibilidad. Si `mutate=False` (consultas GET), evalúa la
     disponibilidad y el vencimiento por reloj sin realizar escrituras en la base de datos.
     Las butacas prioritarias (51 y 54) no ocupadas se excluyen de la disponibilidad para venta
-    general hasta su horario de liberación (dos días calendario antes de la salida a las 00:00 AR).
+    general hasta su horario de liberación (48 horas exactas antes de la salida del viaje).
     Una butaca es para un pasajero durante todo el viaje, sin reventa por tramos.
     """
     if now is None:
