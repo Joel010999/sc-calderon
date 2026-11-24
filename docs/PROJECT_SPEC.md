@@ -115,7 +115,7 @@ SC Viajes comercializa pasajes de colectivos de larga distancia a través de un 
   - Los ingresos y comisiones se basan en pagos `APPROVED` de reservas `CONFIRMED`.
   - El sistema muestra ventas brutas, unidades comisionables, comisión total y neto operativo; no realiza transferencias bancarias automáticas ni marca rendiciones automáticamente.
 - **Mercado Pago Checkout Pro**: integración autorizada e implementada para la compra pública (preferencia creada en backend con importe server-side, confirmación por webhook firmado + consulta autenticada; nunca por URL de retorno). Deshabilitada por defecto vía `MERCADO_PAGO_ENABLED` y credenciales por entorno. El QR presencial no forma parte del alcance.
-- Payway (tarjetas) sigue diferido, pendiente de autorización.
+- **Payway (tarjetas de crédito/débito)**: agregado al alcance como medio de pago para compras públicas web, **pendiente de implementación**. Proveedor separado de Mercado Pago. Propuesta técnica: tokenización en navegador (SDK JS oficial con API key pública; el servidor nunca recibe datos de tarjeta) + ejecución `POST /payments` con API key privada, confirmación sincrónica e idempotencia por `site_transaction_id`. Requiere credenciales y decisiones de Sandro. Investigación y propuesta en `docs/PAYWAY.md`.
 
 ## Pasajes y emisión
 

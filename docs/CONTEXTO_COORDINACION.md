@@ -120,7 +120,11 @@ Verificado por `git` en esta máquina (árbol limpio al momento de escribir):
    usuarios vendedor/comprador) y túnel HTTPS para webhooks
    (`/webhooks/mercadopago/`). Guía en `docs/MERCADO_PAGO.md`.
 2. Reglas de menores, cambios/devoluciones, datos fiscales/bancarios
-   reales, Payway — pendientes de Sandro (`docs/DECISIONS.md` §3-§4).
+   reales — pendientes de Sandro (`docs/DECISIONS.md` §3-§4).
+   **Payway**: agregado al alcance como pendiente de implementación;
+   propuesta técnica en `docs/PAYWAY.md`. Requiere de Sandro: credenciales
+   sandbox, producto (tokenización vs. formulario hospedado), cuotas,
+   devoluciones, vertical de fraude y coexistencia con Mercado Pago.
 3. Validación de despliegue real en staging PostgreSQL (la CI no la
    sustituye), storage privado S3, SMTP, drill de backup.
 4. Puente MCP ChatGPT↔Devin: puente local de solo lectura construido y
