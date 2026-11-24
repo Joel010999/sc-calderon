@@ -12,6 +12,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
+from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 from zoneinfo import ZoneInfo
@@ -833,13 +834,23 @@ class SalesChartsBrowserValidationTests(SalesChartsFixturesMixin, StaticLiveServ
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            time.sleep(2)
 
             client_session = None
             ws = None
             try:
-                with urlopen(f"http://127.0.0.1:{cdp_port}/json/list") as resp:
-                    targets = json.loads(resp.read().decode())
+                targets = None
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    if chrome_proc.poll() is not None:
+                        raise RuntimeError(f"Chrome finalizó con código {chrome_proc.returncode}")
+                    try:
+                        with urlopen(f"http://127.0.0.1:{cdp_port}/json/list", timeout=2) as resp:
+                            targets = json.loads(resp.read().decode())
+                            break
+                    except (URLError, OSError):
+                        time.sleep(0.5)
+                if targets is None:
+                    raise RuntimeError("Chrome no habilitó el puerto de depuración CDP")
                 page_target = next(t for t in targets if t.get("type") == "page")
                 ws_url = page_target["webSocketDebuggerUrl"]
 
