@@ -69,6 +69,10 @@ jobs:
         env:
           APPLE_OIDC_SIMULATION_ENABLED: 'True'
         run: npm run test:e2e -- e2e/accessibility.spec.js -g "Apple habilitado ficticiamente"
+      - name: Instalar dependencias de la prueba visual con Chrome (sólo test)
+        run: python -m pip install requests==2.32.4 aiohttp==3.12.15
+      - name: Ejecutar prueba visual de gráficos con Chrome headless
+        run: python manage.py test panel.test_sales_charts_and_commissions.SalesChartsBrowserValidationTests --verbosity 2
       - name: Publicar artefactos sólo si falla
         if: failure()
         uses: actions/upload-artifact@v4

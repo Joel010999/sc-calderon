@@ -5,7 +5,10 @@ import csv
 import io
 import json
 import os
+import shutil
+import socket
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -745,9 +748,28 @@ class SalesChartsAndCommissionsTests(SalesChartsFixturesMixin, TestCase):
         )
 
 
-SCREENSHOT_DIR = r"C:\Users\JOEL\AppData\Local\Temp\scviajes_charts_20261106"
-CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-CDP_PORT = 9222
+SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "scviajes_charts_screenshots")
+_WINDOWS_CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+
+def _chrome_path():
+    """Ubica el binario de Chrome/Chromium del entorno (respeta CHROME_PATH)."""
+    env_path = os.environ.get("CHROME_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
+        found = shutil.which(name)
+        if found:
+            return found
+    if os.path.exists(_WINDOWS_CHROME_PATH):
+        return _WINDOWS_CHROME_PATH
+    return None
+
+
+def _free_tcp_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 class SalesChartsBrowserValidationTests(SalesChartsFixturesMixin, StaticLiveServerTestCase):
@@ -790,28 +812,33 @@ class SalesChartsBrowserValidationTests(SalesChartsFixturesMixin, StaticLiveServ
     def test_sales_report_browser_visual_and_overflow(self):
         if not requests or not aiohttp:
             self.skipTest("requests y aiohttp son necesarios para la prueba visual con Chrome")
-        if not os.path.exists(CHROME_PATH):
-            self.skipTest(f"Chrome no encontrado en {CHROME_PATH}")
+        chrome_path = _chrome_path()
+        if not chrome_path:
+            self.skipTest("Chrome/Chromium no encontrado en este entorno")
 
         admin_cookie = self._login_user("admin-user", "password")
         seller_cookie = self._login_user("seller-a", "password")
 
         async def run_cdp():
+            cdp_port = _free_tcp_port()
+            profile_dir = tempfile.mkdtemp(prefix="scviajes_chrome_profile_")
             chrome_proc = subprocess.Popen(
                 [
-                    CHROME_PATH,
+                    chrome_path,
                     "--headless=new",
-                    f"--remote-debugging-port={CDP_PORT}",
+                    f"--remote-debugging-port={cdp_port}",
                     "--hide-scrollbars",
-                    r"--user-data-dir=C:\Users\JOEL\AppData\Local\Temp\chrome_charts_test_profile",
+                    f"--user-data-dir={profile_dir}",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
             time.sleep(2)
 
+            client_session = None
+            ws = None
             try:
-                with urlopen(f"http://127.0.0.1:{CDP_PORT}/json/list") as resp:
+                with urlopen(f"http://127.0.0.1:{cdp_port}/json/list") as resp:
                     targets = json.loads(resp.read().decode())
                 page_target = next(t for t in targets if t.get("type") == "page")
                 ws_url = page_target["webSocketDebuggerUrl"]
@@ -1002,14 +1029,22 @@ class SalesChartsBrowserValidationTests(SalesChartsFixturesMixin, StaticLiveServ
 
                 self.assertEqual(len(js_exceptions), 0, f"Se detectaron errores JS no controlados: {js_exceptions}")
 
-                await ws.close()
-                await client_session.close()
-
             finally:
+                if ws is not None:
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
+                if client_session is not None:
+                    try:
+                        await client_session.close()
+                    except Exception:
+                        pass
                 chrome_proc.terminate()
                 try:
                     chrome_proc.wait(timeout=3)
                 except Exception:
                     chrome_proc.kill()
+                shutil.rmtree(profile_dir, ignore_errors=True)
 
         asyncio.run(run_cdp())
