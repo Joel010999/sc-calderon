@@ -121,7 +121,7 @@ Verificado por `git` en esta máquina (árbol limpio al momento de escribir):
    (`/webhooks/mercadopago/`). Guía en `docs/MERCADO_PAGO.md`.
 2. Reglas de menores, cambios/devoluciones, datos fiscales/bancarios
    reales — pendientes de Sandro (`docs/DECISIONS.md` §3-§4).
-   **Payway**: agregado al alcance como pendiente de implementación;
+   **Payway**: implementado y deshabilitado por defecto (`PAYWAY_ENABLED`); sandbox pendiente de credenciales de Sandro (`docs/PAYWAY.md` §8);
    propuesta técnica en `docs/PAYWAY.md`. Requiere de Sandro: credenciales
    sandbox, producto (tokenización vs. formulario hospedado), cuotas,
    devoluciones, vertical de fraude y coexistencia con Mercado Pago.

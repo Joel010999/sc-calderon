@@ -187,7 +187,17 @@ class Command(BaseCommand):
             ).order_by("pk").distinct()
             if booking_id:
                 qs = qs.filter(public_id=booking_id)
-            return list(qs.values_list("pk", flat=True))
+            ids = list(qs.values_list("pk", flat=True))
+            # Intentos Payway pendientes con resultado desconocido: conciliar
+            # aunque la reserva no haya vencido.
+            payway_pending = Booking.objects.filter(
+                payments__method="PAYWAY",
+                payments__status="PENDING",
+            ).order_by("pk").distinct()
+            if booking_id:
+                payway_pending = payway_pending.filter(public_id=booking_id)
+            ids += list(payway_pending.values_list("pk", flat=True))
+            return list(dict.fromkeys(ids))
 
         if task == "notifications":
             from notifications.models import NotificationStatus, TransactionalNotification
@@ -247,6 +257,9 @@ class Command(BaseCommand):
         if task == "payments":
             from payments.services import expire_public_transfer_if_expired
             expire_public_transfer_if_expired(booking_pk, now=timezone.now())
+            from payments.payway import payway_configured, reconcile_pending_payway_payments
+            if payway_configured():
+                reconcile_pending_payway_payments(now=timezone.now())
             return
         if task == "notifications":
             from notifications.services import process_notification

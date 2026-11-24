@@ -15,6 +15,7 @@ class PaymentMethod(models.TextChoices):
     CASH = "CASH", "Efectivo"
     BANK_TRANSFER = "BANK_TRANSFER", "Transferencia bancaria"
     MERCADO_PAGO = "MERCADO_PAGO", "Mercado Pago"
+    PAYWAY = "PAYWAY", "Payway (tarjeta)"
 
 
 class PaymentStatus(models.TextChoices):
@@ -196,7 +197,9 @@ class Payment(models.Model):
         if self.status == PaymentStatus.APPROVED:
             if not self.reviewed_at:
                 errors["reviewed_at"] = "Los pagos aprobados deben registrar fecha de revisión."
-            if not self.reviewed_by_id and self.method != PaymentMethod.MERCADO_PAGO:
+            if not self.reviewed_by_id and self.method not in (
+                PaymentMethod.MERCADO_PAGO, PaymentMethod.PAYWAY
+            ):
                 errors["reviewed_by"] = "Los pagos aprobados deben registrar el usuario revisor."
 
         if self.status == PaymentStatus.AWAITING_VOUCHER and not self.proof_deadline_at:
@@ -219,6 +222,7 @@ class PaymentGatewayEvent(models.Model):
 
     class Provider(models.TextChoices):
         MERCADO_PAGO = "MERCADO_PAGO", "Mercado Pago"
+        PAYWAY = "PAYWAY", "Payway"
 
     id = models.BigAutoField(primary_key=True)
     provider = models.CharField("proveedor", max_length=32, choices=Provider.choices)

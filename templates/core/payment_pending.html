@@ -92,22 +92,27 @@
       </div>
     </div>
 
-    <!-- OPCION 3: PAYWAY (PRÓXIMAMENTE) -->
-    <div class="summary-details-card" style="opacity: 0.7; background: #f9fafb;">
+    <!-- OPCION 3: PAYWAY (TARJETAS) -->
+    <div class="summary-details-card"{% if not payway_configured %} style="opacity: 0.7; background: #f9fafb;"{% endif %}>
       <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
         <div>
+          {% if not payway_configured %}
           <span class="badge" style="background: #6b7280; color: #fff; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.8rem;">
-            Próximamente disponible
+            No disponible
           </span>
-          <h2 style="margin: 0.5rem 0 0.25rem 0; font-size: 1.25rem; color: #6b7280;">Payway (Tarjetas de crédito y débito)</h2>
+          {% endif %}
+          <h2 style="margin: 0.5rem 0 0.25rem 0; font-size: 1.25rem;"{% if not payway_configured %} style="color: #6b7280;"{% endif %}>Tarjeta de crédito o débito (Payway)</h2>
           <p class="muted" style="margin: 0; font-size: 0.9rem;">
-            Próximamente podrás abonar en línea con tarjetas de crédito y débito a través de la pasarela Payway.
+            Pagás con tu tarjeta de crédito o débito a través de la pasarela segura Payway. La reserva se confirma automáticamente al aprobarse el pago.
           </p>
         </div>
-        <div>
-          <button type="button" class="button button--ghost" disabled style="cursor: not-allowed;">
-            No disponible
-          </button>
+        <div style="text-align: right;">
+          <form method="POST" action="{% url 'iniciar_payway' public_id=booking.public_id %}">
+            {% csrf_token %}
+            <button type="submit" class="button button--primary" id="btn-start-payway" {% if not payway_configured %}disabled{% endif %}>
+              Pagar con Tarjeta →
+            </button>
+          </form>
         </div>
       </div>
     </div>

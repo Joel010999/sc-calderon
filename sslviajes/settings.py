@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import json
 import os
 import sys
 import dj_database_url
@@ -347,6 +348,19 @@ MERCADO_PAGO_WEBHOOK_SECRET = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip
 MERCADO_PAGO_COLLECTOR_ID = os.getenv("MERCADO_PAGO_COLLECTOR_ID", "").strip()
 MERCADO_PAGO_API_BASE = os.getenv("MERCADO_PAGO_API_BASE", "https://api.mercadopago.com").strip().rstrip("/")
 MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS = int(os.getenv("MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS", 300))
+
+# Payway (Decidir2): deshabilitado por defecto; credenciales solo por entorno.
+PAYWAY_ENABLED = os.getenv("PAYWAY_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+PAYWAY_PUBLIC_API_KEY = os.getenv("PAYWAY_PUBLIC_API_KEY", "").strip()
+PAYWAY_PRIVATE_API_KEY = os.getenv("PAYWAY_PRIVATE_API_KEY", "").strip()
+PAYWAY_API_BASE = os.getenv("PAYWAY_API_BASE", "https://ventasonline.payway.com.ar/api/v2").strip().rstrip("/")
+PAYWAY_SANDBOX = os.getenv("PAYWAY_SANDBOX", "").strip().lower() in ("1", "true", "yes", "on")
+PAYWAY_SCRIPT_URL = os.getenv("PAYWAY_SCRIPT_URL", "https://ventasonline.payway.com.ar/static/v2.6.4/decidir.js").strip()
+# Medios habilitados por el comercio: JSON {"payment_method_id": "Etiqueta"}.
+try:
+    PAYWAY_PAYMENT_METHODS = json.loads(os.getenv("PAYWAY_PAYMENT_METHODS", "{}") or "{}")
+except ValueError:
+    PAYWAY_PAYMENT_METHODS = {}
 PANEL_REPORTS_MAX_RANGE_DAYS = int(os.getenv("PANEL_REPORTS_MAX_RANGE_DAYS", 366))
 
 # Customer accounts & Authentication

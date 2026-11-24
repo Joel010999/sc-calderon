@@ -54,6 +54,14 @@ from payments.mercadopago import (
     process_mercadopago_notification,
     verify_webhook_signature,
 )
+from payments.payway import (
+    execute_payway_payment,
+    payway_configured,
+    payway_payment_method_ids,
+    payway_sandbox,
+    payway_script_url,
+    start_payway_payment,
+)
 from payments.services import (
     calculate_booking_total,
     initiate_public_transfer_payment,
@@ -909,6 +917,7 @@ def payment_pending(request, public_id):
         "is_held": True,
         "bank_transfer_configured": bank_transfer_configured(),
         "mercadopago_configured": mercadopago_configured(),
+        "payway_configured": payway_configured(),
     })
 
 
@@ -992,6 +1001,107 @@ def mercadopago_webhook(request):
     # 200 siempre que la firma sea válida: MP reintenta ante errores y el
     # procesamiento es idempotente.
     return JsonResponse({"outcome": outcome})
+
+
+@require_POST
+def iniciar_payway(request, public_id):
+    """POST + CSRF: inicia o reutiliza el intento de pago con tarjeta (Payway)
+    de una reserva ONLINE HELD y muestra el formulario de tokenización."""
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    now = timezone.now()
+    if not consume(request, scope="transfer.start", limit=settings.ABUSE_TRANSFER_LIMIT,
+                   window_seconds=settings.ABUSE_TRANSFER_WINDOW_SECONDS,
+                   identifier=request_identifier(request)):
+        messages.error(request, "límite de solicitudes alcanzado; aguardá unos minutos.")
+        return redirect("pago_pendiente", public_id=public_id)
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+
+    if not payway_configured():
+        messages.error(request, "El pago con tarjeta no está disponible en este momento.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    try:
+        payment = start_payway_payment(booking_or_id=booking, now=now)
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except PaymentDuplicateError as pde:
+        messages.info(request, str(pde))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except (InvalidBookingError, PaymentError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    return render(request, "core/payway_checkout.html", {
+        "booking": booking,
+        "payment": payment,
+        "total": payment.amount,
+        "payway_script_url": payway_script_url(),
+        "payway_payment_methods": payway_payment_method_ids(),
+        "payway_public_key": getattr(settings, "PAYWAY_PUBLIC_API_KEY", ""),
+        "payway_sandbox": payway_sandbox(),
+        "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ) if booking.expires_at else None,
+    })
+
+
+@require_POST
+def ejecutar_payway(request, public_id):
+    """POST + CSRF: ejecuta el cobro con el token generado por decidir.js.
+
+    La confirmación se basa exclusivamente en la respuesta del proveedor o en
+    una consulta autenticada; el token nunca se registra en logs.
+    """
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+    payment = booking.payments.filter(
+        method=PaymentMethod.PAYWAY,
+    ).order_by("-created_at", "-pk").first()
+    if payment is None:
+        messages.error(request, "No hay un pago con tarjeta iniciado para esta reserva.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    token = request.POST.get("token", "")
+    payment_method_id = request.POST.get("payment_method_id", "")
+    try:
+        outcome, detail = execute_payway_payment(
+            payment_or_id=payment,
+            token=token,
+            payment_method_id=payment_method_id,
+            now=timezone.now(),
+        )
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except (InvalidBookingError, PaymentError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("pago_pendiente", public_id=booking.public_id)
+    except Exception:
+        logger.exception("Error inesperado al ejecutar pago con Payway")
+        messages.error(request, "Ocurrió un error al procesar el pago. Por favor intentá nuevamente.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    if outcome == "CONFIRMED":
+        messages.success(request, "Pago aprobado. Tu reserva quedó confirmada y tus pasajes se emiten en breve.")
+    elif outcome == "REJECTED":
+        messages.error(request, "El pago fue rechazado por el emisor de la tarjeta. Podés intentarlo nuevamente.")
+    elif outcome == "VALIDATION_ERROR":
+        messages.error(request, detail)
+    elif outcome == "ALREADY_CONFIRMED":
+        messages.info(request, detail)
+    elif outcome in ("IN_PROGRESS", "STILL_PENDING"):
+        messages.info(request, detail + " Verificá el estado en unos instantes desde el resumen.")
+    else:
+        messages.warning(request, "No pudimos confirmar el resultado del pago en este momento. "
+                                  "El intento quedó registrado y se verificará automáticamente; "
+                                  "no realices otro pago hasta que se resuelva.")
+    return redirect("resumen_reserva", public_id=booking.public_id)
 
 
 @require_POST

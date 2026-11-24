@@ -1,11 +1,49 @@
-# Payway — investigación y propuesta (pendiente de implementación)
+# Payway — integración con tarjetas (implementada, deshabilitada por defecto)
 
-Estado: **pendiente**. Payway se agrega al alcance como medio de pago con
-tarjetas de crédito y débito para **compras públicas web** (canal ONLINE).
-Es un proveedor independiente de Mercado Pago: credenciales, contrato,
-liquidación y circuito de confirmación son distintos. Este documento sólo
-registra investigación y propuesta; **no hay implementación, cuentas ni
-llamadas al proveedor**.
+Estado: **implementado y deshabilitado** (`PAYWAY_ENABLED=False`). Payway es
+medio de pago con tarjetas de crédito y débito para **compras públicas web**
+(canal ONLINE), independiente de Mercado Pago: credenciales, contrato,
+liquidación y circuito de confirmación son distintos.
+
+**Validación:** el servicio, las vistas y los estados están cubiertos por
+mocks del cliente HTTP (`payments/test_payway.py`) y por las suites de CI en
+PostgreSQL 16. **El sandbox real NO fue validado**: requiere las credenciales
+del comercio que Sandro debe solicitar a Payway (ver sección 8). Las pruebas
+con mocks no reemplazan esa validación.
+
+## Implementación
+
+- Servicio: `payments/payway.py` — cliente HTTP mínimo sin SDK, autenticación
+  por header `apikey` (clave privada), timeout corto; nunca registra payloads
+  (contienen el token).
+- Flujo público: `payment_pending.html` (opción "Pagar con Tarjeta") →
+  `POST iniciar_payway` persiste el `Payment` PENDING con
+  `site_transaction_id` **antes de cualquier contacto con el proveedor** →
+  `payway_checkout.html` tokeniza con `decidir.js` (clave pública) →
+  `POST ejecutar_payway` ejecuta el cobro server-side.
+- El navegador nunca envía PAN/CVV al servidor; el token tampoco se guarda
+  en base, logs ni auditoría (`PaymentGatewayEvent` sólo registra el
+  `site_transaction_id` como `external_id` y la acción).
+- Confirmación: sólo por respuesta del proveedor o consulta autenticada
+  (`GET /payments?siteOperationId=<site_transaction_id>`); el retorno del
+  navegador no confirma nada.
+- Resultado desconocido (timeout/red/5xx): el intento queda PENDING con
+  evento `UNKNOWN_RESULT`, se bloquea un nuevo cobro de la reserva y el
+  comando `run_operational_maintenance --task payments` concilia por
+  `site_transaction_id`. Si el proveedor no registró el cobro
+  (`NOT_FOUND_RETRYABLE`) se permite reintentar; si lo registró, se aplica
+  su estado real.
+- Aprobación tardía (reserva vencida o pago en estado terminal): se registra
+  `conflict_reason` **sin** reasignar butacas, emitir pasajes ni asumir
+  devolución.
+- Anti doble cobro entre métodos: la restricción existente
+  `payments_active_booking_unique` impide un segundo pago activo de
+  cualquier método por reserva; `start_payway_payment` reusa el intento
+  PENDING existente.
+- Config: `PAYWAY_ENABLED`, `PAYWAY_SANDBOX`, `PAYWAY_PUBLIC_API_KEY`,
+  `PAYWAY_PRIVATE_API_KEY`, `PAYWAY_API_BASE`, `PAYWAY_SCRIPT_URL`,
+  `PAYWAY_PAYMENT_METHODS` (JSON id → etiqueta de los medios habilitados
+  por el comercio). Secretos sólo por entorno; ver `.env.example`.
 
 ## Fuentes oficiales
 
@@ -149,22 +187,29 @@ propios.
 - **Pendientes**: reconsulta por mantenimiento; el cumplimiento del
   vencimiento de la reserva no se altera por el pago pendiente.
 
-## 7. Pruebas propuestas
+## 7. Pruebas
 
-**Unitarias y PostgreSQL (CI), con cliente simulado:**
+**Implementadas (unitarias/integración HTTP, con cliente simulado) en
+`payments/test_payway.py`, corren también en las suites PostgreSQL 16 de CI:**
 
 - Cobro aprobado → pago `APPROVED` + reserva `CONFIRMED` + fulfillment
-  encolado una sola vez.
-- Dos intentos concurrentes sobre la misma reserva → un solo cobro.
-- Error `site_transaction_id` repetido / timeout → reconsulta, sin segundo
-  cobro.
+  encolado; payload con `amount` en unidades mínimas, `installments: 1`,
+  `payment_type: "single"`.
+- Timeout tras el cobro → conciliación por `site_transaction_id` confirma
+  sin un segundo POST; timeout antes del cobro → `NOT_FOUND_RETRYABLE`
+  permite reintentar.
+- Resultado desconocido o estado no reconocido → queda PENDING de
+  conciliación, nunca tratado como rechazo.
 - Reserva vencida → no se ejecuta el `POST`; aprobación tardía registrada
-  como conflicto sin reasignar butaca ni emitir.
+  como `conflict_reason` sin reasignar butaca ni emitir.
+- Aprobación sobre estado terminal → `CONFLICT_TERMINAL`.
 - Rechazo → retención intacta, nuevo intento posible.
-- Importe enviado por el cliente ignorado; `amount` siempre server-side en
-  unidades mínimas.
-- Estado intermedio → `PENDING` con reconsulta por mantenimiento.
-- Bypass por POST manipulado (token de otra reserva) → rechazado.
+- Importe/moneda/`site_transaction_id` de la respuesta validados contra el
+  pago local (mismatch → no confirma).
+- Unicidad de pago activo por reserva y bloqueo cruzado con transferencia.
+- Token nunca persistido ni logueado.
+- Vistas: acceso por token de sesión, sólo POST, botón deshabilitado sin
+  credenciales, ejecución aprobada confirma la reserva.
 
 **Sandbox (con credenciales de Sandro):**
 
@@ -175,10 +220,28 @@ propios.
 - Si se elige formulario hospedado: verificar formato y autenticidad real de
   `notifications_url` antes de diseñar su procesamiento.
 
-## Alcance inicial propuesto
+## 8. Lo que Sandro debe solicitar a Payway (exacto)
+
+1. **Alta del comercio** en el portal de desarrolladores y credenciales de
+   **sandbox**: site id + API key pública + API key privada
+   (`developers.decidir.com/api/v2`), para crédito **y** débito.
+2. **Producto**: confirmar la modalidad de tokenización + API (opción A de
+   este documento); si Payway exige el formulario hospedado, entonces
+   `template_id`, `formApiKey` y `formSite`.
+3. **Medios de pago habilitados**: `payment_method_id` por marca/tipo para
+   `PAYWAY_PAYMENT_METHODS`, y si el contrato habilita débito.
+4. **Cuotas**: alcance implementado = 1 cuota (`payment_type: "single"`);
+   cualquier plan de cuotas es decisión comercial pendiente.
+5. **Devoluciones/anulaciones**: no implementadas; si se requieren, definir
+   el circuito contractual antes de codear.
+6. **Vertical de detección de fraude (Cybersource)**: qué vertical aplica al
+   comercio (existe `cs_ticketing`); hoy no se envía `fraud_detection`.
+7. **Coexistencia con Mercado Pago**: orden/condición de medios en el
+   checkout cuando ambos estén habilitados.
+8. **Credenciales de producción** y dominio final para las URLs del sitio.
+
+## Alcance implementado
 
 - Una cuota, un cobro (`payment_type: "single"`), sin cuotas promocionales,
   sin devoluciones/anulaciones automáticas y sin circuito nuevo de
-  autorización.
-- Decisiones indispensables de Sandro: producto (A/B), credenciales sandbox,
-  cuotas, devoluciones, vertical de fraude y coexistencia con Mercado Pago.
+  autorización. Pendientes comerciales diferibles listados en la sección 8.

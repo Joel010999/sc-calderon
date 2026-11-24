@@ -118,7 +118,7 @@ Las siguientes definiciones comerciales no han sido autorizadas y permanecen abi
 3. **Validación de vínculo e identidad (RENAPER)**: confirmar si se integrará validación oficial por servicio externo o si se continuará con acreditación documental física en boletería/embarque.
 5. **Políticas de cambio y cancelación**: definir porcentajes de penalización, ventanas horarias de tolerancia y régimen de reembolsos/créditos.
 6. **Datos fijos de transporte y legales**: confirmación de CUIT, razón social, Ingresos Brutos, inicio de actividades, aseguradora, póliza, direcciones físicas exactas de paradas y WhatsApp oficial de atención.
-7. **Pasarelas de pago online**: ~~Mercado Pago QR~~ reemplazado por **Mercado Pago Checkout Pro** (implementado, deshabilitado por defecto, revisado contra documentación oficial vigente — commit `88df44f`; validado con mocks; falta prueba sandbox con credenciales de prueba y túnel HTTPS). **Payway** (tarjetas, compras públicas) quedó **agregado al alcance como pendiente de implementación**: investigación técnica y propuesta en `docs/PAYWAY.md` (tokenización en navegador + `POST /payments` sincrónico como opción principal); sin implementación ni llamadas al proveedor todavía.
+7. **Pasarelas de pago online**: ~~Mercado Pago QR~~ reemplazado por **Mercado Pago Checkout Pro** (implementado, deshabilitado por defecto, revisado contra documentación oficial vigente — commit `88df44f`; validado con mocks; falta prueba sandbox con credenciales de prueba y túnel HTTPS). **Payway** (tarjetas, compras públicas) está **implementado y deshabilitado por defecto** (`PAYWAY_ENABLED=False`): tokenización en navegador con `decidir.js` + `POST /payments` sincrónico, persistencia del intento antes del contacto, conciliación por `site_transaction_id` ante resultado desconocido, aprobación tardía como conflicto y reúso del fulfillment existente (`payments/payway.py`, vistas en `core/views.py`, `templates/core/payway_checkout.html`). Validado con mocks e integración HTTP (`payments/test_payway.py`); **el sandbox real sigue pendiente de credenciales** — no validado.
 8. ~~**Migración de datos AppSheet / Google Sheets**~~: **CANCELADA** — la aplicación usa su propia base de datos y no depende de recibir exports (ver `docs/DECISIONS.md` §4).
 
 ---
@@ -227,7 +227,7 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 - Menores: fecha de referencia de edad, seguro y documentación/RENAPER.
 - Cambios, cancelaciones y devoluciones.
 - Datos reales fiscales, bancarios, aseguradora y paradas.
-- **Payway** (en alcance, pendiente de implementación): credenciales sandbox (site id + API keys pública/privada), producto (tokenización vs. formulario hospedado), cuotas, devoluciones, vertical de fraude y coexistencia con Mercado Pago (`docs/PAYWAY.md`).
+- **Payway** (implementado, deshabilitado): sandbox NO validado; Sandro debe obtener credenciales sandbox (site id + API keys pública/privada), `payment_method_id`s habilitados, y decidir cuotas, devoluciones, vertical de fraude y coexistencia con Mercado Pago — lista exacta en `docs/PAYWAY.md` §8.
 
 #### Preparación de publicación
 
