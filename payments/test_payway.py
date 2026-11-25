@@ -692,9 +692,8 @@ class PaywayConcurrencyTests(TransactionTestCase):
     vía CI; en SQLite los escritores se serializan y no hay concurrencia real.
     """
 
-    @classmethod
-    def setUpTestData(cls):
-        PaywayBase.setUpTestData.__func__(cls)
+    def setUp(self):
+        PaywayBase.setUpTestData.__func__(type(self))
 
     def create_online_booking(self, minutes=15):
         return PaywayBase.create_online_booking(self, minutes=minutes)
