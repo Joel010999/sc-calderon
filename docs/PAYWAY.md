@@ -28,11 +28,27 @@ con mocks no reemplazan esa validación.
   (`GET /payments?siteOperationId=<site_transaction_id>`); el retorno del
   navegador no confirma nada.
 - Resultado desconocido (timeout/red/5xx): el intento queda PENDING con
-  evento `UNKNOWN_RESULT`, se bloquea un nuevo cobro de la reserva y el
-  comando `run_operational_maintenance --task payments` concilia por
-  `site_transaction_id`. Si el proveedor no registró el cobro
-  (`NOT_FOUND_RETRYABLE`) se permite reintentar; si lo registró, se aplica
-  su estado real.
+  evento `UNKNOWN_RESULT`, se bloquea un nuevo cobro de la reserva —incluso
+  por otro medio de pago— y el comando `run_operational_maintenance
+  --task payments` concilia por `site_transaction_id`.
+- **Una lista vacía no prueba ausencia de cobro**: la conciliación filtra
+  los resultados por correspondencia exacta de `site_transaction_id`,
+  detecta ambigüedad (>1 candidato → bloqueo manual) y, si la fila es
+  parcial, reconsulta el detalle autenticado `GET /payments/{id}` antes de
+  aplicarla. Sin coincidencia verificable, el intento permanece bloqueado
+  (`STILL_UNKNOWN`); no existe reintento automático por "no encontrado".
+- **Antes de aplicar una aprobación** se exigen `site_transaction_id` igual
+  al del intento, `id` del pago, `amount` y `currency` coincidentes; campos
+  ausentes o inválidos → `INCOMPLETE`, pendiente y bloqueado.
+- **Un nuevo POST de cobro sólo es posible** tras `VALIDATION_ERROR` del
+  proveedor (rechazo del payload antes de procesar, sin cargo posible).
+  Cualquier otro resultado (en curso, desconocido, `STILL_PENDING`,
+  `MISMATCH`, `INCOMPLETE`, `AMBIGUOUS`) bloquea la re-ejecución.
+- **Vencimiento revalidado al aplicar**: la hora efectiva se toma dentro
+  de la transacción; si la reserva venció durante la llamada al proveedor,
+  la aprobación se registra como conflicto sin confirmar ni emitir.
+- Orden de bloqueos unificado con los demás servicios: **Booking →
+  Payment** (sin bloqueos durante llamadas de red).
 - Aprobación tardía (reserva vencida o pago en estado terminal): se registra
   `conflict_reason` **sin** reasignar butacas, emitir pasajes ni asumir
   devolución.
@@ -196,8 +212,15 @@ propios.
   encolado; payload con `amount` en unidades mínimas, `installments: 1`,
   `payment_type: "single"`.
 - Timeout tras el cobro → conciliación por `site_transaction_id` confirma
-  sin un segundo POST; timeout antes del cobro → `NOT_FOUND_RETRYABLE`
-  permite reintentar.
+  sin un segundo POST; lista vacía → `STILL_UNKNOWN` bloqueado (no prueba
+  ausencia de cobro); aparición tardía del cobro → conciliación confirma
+  sin nuevo POST.
+- `STILL_PENDING`/`MISMATCH`/`INCOMPLETE`/`AMBIGUOUS` bloquean otro POST;
+  sólo `VALIDATION_ERROR` lo habilita.
+- Aprobación con `id`/`amount`/`currency`/`site_transaction_id` ausentes
+  → `INCOMPLETE`, no confirma.
+- Vencimiento durante la llamada al proveedor → `CONFLICT_LATE_APPROVAL`.
+- Concurrencia ejecución/conciliación (PostgreSQL, CI) → un solo cobro.
 - Resultado desconocido o estado no reconocido → queda PENDING de
   conciliación, nunca tratado como rechazo.
 - Reserva vencida → no se ejecuta el `POST`; aprobación tardía registrada

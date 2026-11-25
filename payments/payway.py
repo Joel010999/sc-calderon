@@ -67,7 +67,12 @@ PAYWAY_PENDING_PROVIDER_STATUSES = {
 OUTCOME_AWAITING = "AWAITING_RESPONSE"
 OUTCOME_UNKNOWN = "UNKNOWN_RESULT"
 OUTCOME_VALIDATION_ERROR = "VALIDATION_ERROR"
-OUTCOME_NOT_FOUND = "PAYMENT_NOT_FOUND"
+
+# El único resultado que autoriza un nuevo POST de cobro: el proveedor
+# rechazó el payload antes de procesarlo (no hubo cobro posible). Cualquier
+# otro resultado (en curso, desconocido, pendiente, ambiguo o incompleto)
+# mantiene el intento bloqueado hasta una resolución verificable.
+RETRYABLE_EXECUTE_OUTCOMES = frozenset({OUTCOME_VALIDATION_ERROR})
 
 
 def payway_enabled():
@@ -280,7 +285,7 @@ def _claim_execution(payment, effective_now):
     """
     site_tx_id = payway_site_transaction_id(payment)
     last = _latest_execute_event(payment)
-    if last and last.outcome in (OUTCOME_AWAITING, OUTCOME_UNKNOWN):
+    if last and last.outcome not in RETRYABLE_EXECUTE_OUTCOMES:
         return None, last.outcome
     attempt = (
         PaymentGatewayEvent.objects.filter(
@@ -331,10 +336,12 @@ def execute_payway_payment(*, payment_or_id, token, payment_method_id, now=None,
     effective_now = now or timezone.now()
 
     payment_id = payment_or_id.pk if isinstance(payment_or_id, Payment) else payment_or_id
+    booking_id = Payment.objects.values_list("booking_id", flat=True).get(pk=payment_id)
 
     with transaction.atomic():
+        # Orden de bloqueo unificado con los demás servicios: Booking → Payment.
+        booking = Booking.objects.select_for_update().get(pk=booking_id)
         payment = Payment.objects.select_for_update().get(pk=payment_id)
-        booking = Booking.objects.select_for_update().get(pk=payment.booking_id)
 
         if payment.method != PaymentMethod.PAYWAY:
             raise InvalidBookingError("El pago no corresponde a Payway.")
@@ -354,21 +361,12 @@ def execute_payway_payment(*, payment_or_id, token, payment_method_id, now=None,
 
     if blocking == OUTCOME_AWAITING:
         return "IN_PROGRESS", "El cobro está en proceso; aguardá unos instantes."
-    if blocking == OUTCOME_UNKNOWN:
-        # Resultado desconocido: conciliar antes de autorizar otro cobro.
-        outcome, detail = reconcile_payway_payment(
+    if blocking:
+        # Resultado no verificable (desconocido, pendiente, ambiguo o
+        # incompleto): no autorizar otro POST de cobro; conciliar primero.
+        return reconcile_payway_payment(
             payment_or_id=payment_id, now=now, client=client
         )
-        if outcome in ("NOT_FOUND_RETRYABLE",):
-            # El proveedor no registró el intento: reintentar el cobro.
-            return execute_payway_payment(
-                payment_or_id=payment_id,
-                token=token,
-                payment_method_id=payment_method_id,
-                now=now,
-                client=client,
-            )
-        return outcome, detail
 
     payload = {
         "site_transaction_id": payway_site_transaction_id(payment),
@@ -412,16 +410,30 @@ def _remote_minor_amount(remote):
 
 
 def _apply_payway_result(*, payment_id, remote, effective_now, event=None):
-    """Aplica la respuesta del proveedor (o de una conciliación) al intento local."""
+    """Aplica la respuesta del proveedor (o de una conciliación) al intento local.
+
+    La hora efectiva se toma dentro de la transacción: una reserva que venció
+    durante la llamada al proveedor se registra como conflicto, no se confirma.
+    """
     remote_status = str(remote.get("status") or "").lower()
     remote_id = str(remote.get("id") or "")
     remote_site_tx = str(remote.get("site_transaction_id") or "")
+    remote_amount = _remote_minor_amount(remote)
+    remote_currency = str(remote.get("currency") or "").upper()
+
+    booking_id = Payment.objects.values_list("booking_id", flat=True).get(pk=payment_id)
 
     with transaction.atomic():
+        # Orden de bloqueo unificado: Booking → Payment.
+        booking = Booking.objects.select_for_update().get(pk=booking_id)
         payment = Payment.objects.select_for_update().get(pk=payment_id)
-        booking = Booking.objects.select_for_update().get(pk=payment.booking_id)
+        applied_now = timezone.now()
 
-        if remote_site_tx and remote_site_tx != payway_site_transaction_id(payment):
+        # Identidad: la referencia del intento debe estar presente y coincidir.
+        if not remote_site_tx:
+            _set_event_outcome(event, "INCOMPLETE", "Sin referencia del intento")
+            return "INCOMPLETE", "La respuesta no trae la referencia del intento; quedará pendiente de conciliación."
+        if remote_site_tx != payway_site_transaction_id(payment):
             detail = "La respuesta corresponde a otra operación."
             _set_event_outcome(event, "MISMATCH", detail)
             return "MISMATCH", detail
@@ -446,9 +458,7 @@ def _apply_payway_result(*, payment_id, remote, effective_now, event=None):
             _set_event_outcome(event, "IGNORED")
             return "IGNORED", "Intento cerrado; resultado ignorado."
 
-        # Identidad económica: importe y moneda deben coincidir con el pago local.
-        remote_amount = _remote_minor_amount(remote)
-        remote_currency = str(remote.get("currency") or "").upper()
+        # Identidad económica: campos presentes deben coincidir con el pago local.
         if remote_amount is not None and remote_amount != payment.amount.quantize(Decimal("0.01")):
             _set_event_outcome(event, "MISMATCH", "Importe no coincide")
             return "MISMATCH", "El importe devuelto no coincide con el pago local."
@@ -457,8 +467,13 @@ def _apply_payway_result(*, payment_id, remote, effective_now, event=None):
             return "MISMATCH", "La moneda devuelta no coincide con el pago local."
 
         if remote_status == PAYWAY_APPROVED_STATUS:
+            # Antes de aplicar una aprobación se exigen todos los campos
+            # necesarios: id del pago, importe y moneda verificados.
+            if not remote_id or remote_amount is None or not remote_currency:
+                _set_event_outcome(event, "INCOMPLETE", "Aprobación con campos requeridos ausentes")
+                return "INCOMPLETE", "La aprobación carece de campos requeridos; quedará pendiente de conciliación."
             outcome, detail = _confirm_approved_payment(
-                payment, booking, remote_id, effective_now
+                payment, booking, remote_id, applied_now
             )
             _set_event_outcome(event, outcome, detail)
             return outcome, detail
@@ -571,12 +586,25 @@ def _confirm_approved_payment(payment, booking, remote_id, effective_now):
     return "CONFIRMED", "Pago aprobado; reserva confirmada."
 
 
+def _remote_has_required_fields(remote):
+    """True si la fila remota trae identidad y datos económicos completos."""
+    return bool(
+        remote.get("id")
+        and remote.get("site_transaction_id")
+        and remote.get("status")
+        and remote.get("amount") is not None
+        and remote.get("currency")
+    )
+
+
 def reconcile_payway_payment(*, payment_or_id, now=None, client=None):
-    """Concilia un intento PENDING cuyo resultado es desconocido.
+    """Concilia un intento PENDING cuyo resultado no está resuelto.
 
     Consulta el proveedor por ``siteOperationId``: no exige haber recibido el
-    id del pago. Si el proveedor no registró el intento, libera la ejecución
-    para reintento. Devuelve ``(outcome, detail)``.
+    id del pago. Una respuesta vacía o sin correspondencia verificable no
+    prueba ausencia de cobro: el intento permanece pendiente y bloqueado. Si
+    el listado es parcial, se reconsulta el detalle autenticado por id.
+    Devuelve ``(outcome, detail)``.
     """
     if now is not None:
         validate_aware_datetime(now)
@@ -590,16 +618,37 @@ def reconcile_payway_payment(*, payment_or_id, now=None, client=None):
     site_tx_id = payway_site_transaction_id(payment)
     pw_client = client or PaywayClient()
     try:
-        results = pw_client.find_by_site_operation_id(site_tx_id)
+        results = pw_client.find_by_site_operation_id(site_tx_id) or []
     except PaymentError:
         return "RECONCILE_FAILED", "No se pudo consultar el estado en el proveedor; se reintentará."
 
-    if not results:
-        # El proveedor no registró la operación: el cobro no se realizó.
-        _set_event_outcome(_latest_execute_event(payment), OUTCOME_NOT_FOUND)
-        return "NOT_FOUND_RETRYABLE", "El proveedor no registró el cobro; se puede reintentar."
+    # Verificar correspondencia por la referencia del intento y ambigüedad.
+    candidates = [
+        row for row in results
+        if str(row.get("site_transaction_id") or "") == site_tx_id
+    ]
+    if len({str(row.get("id") or "") for row in candidates}) > 1:
+        _set_event_outcome(_latest_execute_event(payment), "AMBIGUOUS", "Varios pagos con la misma referencia")
+        return "AMBIGUOUS", "El proveedor devolvió más de un pago con la referencia del intento; requiere resolución manual."
 
-    remote = results[0]
+    if not candidates:
+        # Ausencia no verificada: no habilita otro cobro de la reserva.
+        _set_event_outcome(
+            _latest_execute_event(payment), OUTCOME_UNKNOWN,
+            "sin correspondencia verificable en el listado",
+        )
+        return "STILL_UNKNOWN", "El proveedor no devolvió un pago con la referencia del intento; el resultado sigue desconocido y el cobro permanece bloqueado."
+
+    remote = candidates[0]
+    # Si el listado es parcial, reconsultar el detalle autenticado por id.
+    if remote.get("id") and not _remote_has_required_fields(remote):
+        try:
+            detail = pw_client.get_payment(str(remote["id"]))
+        except PaymentError:
+            return "RECONCILE_FAILED", "No se pudo consultar el detalle del pago en el proveedor; se reintentará."
+        if detail:
+            remote = detail
+
     return _apply_payway_result(
         payment_id=payment_id, remote=remote, effective_now=effective_now,
         event=_latest_execute_event(payment),
@@ -625,7 +674,7 @@ def reconcile_pending_payway_payments(*, now=None, limit=25, client=None):
     )
     for payment in pending:
         last = _latest_execute_event(payment)
-        if last is None or last.outcome not in (OUTCOME_AWAITING, OUTCOME_UNKNOWN):
+        if last is None or last.outcome in RETRYABLE_EXECUTE_OUTCOMES:
             continue
         try:
             outcome, _detail = reconcile_payway_payment(payment_or_id=payment, now=now, client=client)
