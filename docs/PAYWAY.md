@@ -40,10 +40,14 @@ con mocks no reemplazan esa validación.
 - **Antes de aplicar una aprobación** se exigen `site_transaction_id` igual
   al del intento, `id` del pago, `amount` y `currency` coincidentes; campos
   ausentes o inválidos → `INCOMPLETE`, pendiente y bloqueado.
-- **Un nuevo POST de cobro sólo es posible** tras `VALIDATION_ERROR` del
-  proveedor (rechazo del payload antes de procesar, sin cargo posible).
-  Cualquier otro resultado (en curso, desconocido, `STILL_PENDING`,
-  `MISMATCH`, `INCOMPLETE`, `AMBIGUOUS`) bloquea la re-ejecución.
+- **Un nuevo POST de cobro sólo es posible** tras `VALIDATION_ERROR`, que
+  se clasifica exclusivamente como HTTP 400 con `error_type` estructurado
+  `invalid_request_error` (rechazo de parámetros documentado por la API
+  Decidir2, antes de procesar el cobro). Cualquier otro error —otros 4xx
+  (401/403, 404, 408, 409, 429), 5xx, cuerpos vacíos/malformados o sin
+  `error_type`— se trata como resultado desconocido: conciliación, sin
+  reintento ni habilitación de otro medio. El código HTTP por sí solo no
+  demuestra ausencia de cobro.
 - **Vencimiento revalidado al aplicar**: la hora efectiva se toma dentro
   de la transacción; si la reserva venció durante la llamada al proveedor,
   la aprobación se registra como conflicto sin confirmar ni emitir.

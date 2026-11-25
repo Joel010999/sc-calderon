@@ -35,7 +35,10 @@ from payments.models import (
     PaymentMethod,
     PaymentStatus,
 )
+import json as _json
+
 from payments.payway import (
+    PaywayHttpError,
     _apply_payway_result,
     execute_payway_payment,
     payway_configured,
@@ -586,6 +589,71 @@ class PaywayServiceTests(PaywayBase):
         self.assertEqual(outcome, "STILL_UNKNOWN")
         payment.refresh_from_db()
         self.assertEqual(payment.status, PaymentStatus.PENDING)
+
+    def test_http_400_invalid_request_error_allows_retry(self):
+        """Rechazo de validación documentado (400 + error_type
+        invalid_request_error): no hubo cobro → reintento habilitado."""
+        payment = self._pending_payment()
+        err = PaywayHttpError(400, _json.dumps({
+            "error_type": "invalid_request_error",
+            "validation_errors": [{"code": "invalid_param", "param": "token"}],
+        }))
+        client = FakePaywayClient(create_error=err)
+        outcome, _ = execute_payway_payment(
+            payment_or_id=payment, token="tok1", payment_method_id="1",
+            now=self.now, client=client,
+        )
+        self.assertEqual(outcome, "VALIDATION_ERROR")
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, PaymentStatus.PENDING)
+        client2 = FakePaywayClient(create_result=approved_remote(payment))
+        outcome2, _ = execute_payway_payment(
+            payment_or_id=payment, token="tok2", payment_method_id="1",
+            now=self.now, client=client2,
+        )
+        self.assertEqual(outcome2, "CONFIRMED")
+        self.assertEqual(client2.create_calls, 1)
+
+    def test_ambiguous_http_errors_block_second_charge(self):
+        """Errores ambiguos conservan resultado desconocido: conciliación
+        sin un segundo POST de cobro."""
+        ambiguous = [
+            (400, _json.dumps({"error_type": "api_error"})),            # 400 no validación
+            (400, ""),                                                  # cuerpo vacío
+            (400, "no es json"),                                        # malformado
+            (400, _json.dumps({"error": {"code": "card_expired"}})),    # sin error_type
+            (401, _json.dumps({"error_type": "auth_error"})),
+            (404, _json.dumps({"error_type": "invalid_request_error"})),
+            (408, ""),                                                  # timeout del request
+            (409, _json.dumps({"error_type": "invalid_request_error"})),# conflicto/duplicado
+            (429, _json.dumps({"error_type": "rate_limit"})),           # rate limit
+            (500, _json.dumps({"error_type": "invalid_request_error"})),
+            (503, ""),
+        ]
+        for status, body in ambiguous:
+            with self.subTest(status=status, body=body[:40]):
+                Payment.objects.filter(booking=self.booking).delete()
+                payment = start_payway_payment(booking_or_id=self.booking, now=self.now)
+                client = FakePaywayClient(
+                    create_error=PaywayHttpError(status, body),
+                    find_result=[],
+                )
+                outcome, _ = execute_payway_payment(
+                    payment_or_id=payment, token="tok1", payment_method_id="1",
+                    now=self.now, client=client,
+                )
+                self.assertEqual(outcome, "STILL_UNKNOWN")
+                payment.refresh_from_db()
+                self.assertEqual(payment.status, PaymentStatus.PENDING)
+                # Segundo intento: ningún POST de cobro.
+                client2 = FakePaywayClient(
+                    create_result=approved_remote(payment), find_result=[],
+                )
+                execute_payway_payment(
+                    payment_or_id=payment, token="tok2", payment_method_id="1",
+                    now=self.now, client=client2,
+                )
+                self.assertEqual(client2.create_calls, 0)
 
     def test_reconcile_partial_listing_fetches_detail(self):
         """Listado parcial con id: se reconsulta el detalle autenticado."""

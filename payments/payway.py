@@ -188,15 +188,41 @@ class PaywayHttpError(PaymentError):
         self.status_code = status_code
         self.detail = detail
 
-    def parsed_errors(self):
+    def parsed_body(self):
         try:
             body = json.loads(self.detail) if self.detail else {}
         except ValueError:
-            body = {}
-        errors = body.get("validation_errors") or body.get("errors") or []
+            return {}
+        return body if isinstance(body, dict) else {}
+
+    def error_type(self):
+        """``error_type`` estructurado del cuerpo de error (API Decidir2)."""
+        return str(self.parsed_body().get("error_type") or "")
+
+    def parsed_errors(self):
+        errors = self.parsed_body().get("validation_errors") or self.parsed_body().get("errors") or []
         if errors:
             return [str(e.get("code") or e.get("message") or e) for e in errors]
         return []
+
+
+def _is_documented_validation_error(exc):
+    """True sólo si el error es un rechazo de validación documentado por el
+    proveedor, lo que garantiza que el payload se rechazó antes de procesar
+    el cobro y por tanto no hubo cargo.
+
+    Única clase reintentable: HTTP 400 con ``error_type`` estructurado
+    ``invalid_request_error`` (la API Decidir2 lo documenta para errores de
+    validación de parámetros, junto a ``validation_errors`` por campo).
+    Cualquier otro error — 4xx distintos (401/403 auth, 404, 408 timeout del
+    request, 409 conflicto/duplicado, 429 rate limit), 5xx, respuestas
+    vacías o malformadas y cuerpos sin ``error_type`` — es ambiguo respecto
+    del cobro y mantiene el resultado desconocido.
+    """
+    return (
+        exc.status_code == 400
+        and exc.error_type() == "invalid_request_error"
+    )
 
 
 def _latest_execute_event(payment):
@@ -385,12 +411,14 @@ def execute_payway_payment(*, payment_or_id, token, payment_method_id, now=None,
     try:
         remote = pw_client.create_payment(payload)
     except PaywayHttpError as exc:
-        codes = exc.parsed_errors()
-        if exc.status_code < 500 and not any("repeat" in c.lower() for c in codes):
-            # Error de validación del proveedor: el cobro no se realizó.
+        if _is_documented_validation_error(exc):
+            # Rechazo de validación documentado: el cobro no se procesó.
+            codes = exc.parsed_errors()
             _set_event_outcome(event, OUTCOME_VALIDATION_ERROR, ", ".join(codes) or "error de validación")
             return "VALIDATION_ERROR", "El proveedor rechazó los datos enviados; verificá la tarjeta e intentá nuevamente."
-        # Duplicada, 5xx u otro error: resultado desconocido → conciliar.
+        # Cualquier otro error (incluidos 408/409/429 y respuestas
+        # ambiguas o malformadas): resultado desconocido → conciliar,
+        # sin habilitar otro cobro ni otro medio de pago.
         _set_event_outcome(event, OUTCOME_UNKNOWN, f"HTTP {exc.status_code}")
         return reconcile_payway_payment(payment_or_id=payment_id, now=now, client=client)
     except PaymentError:
