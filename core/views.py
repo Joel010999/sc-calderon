@@ -56,6 +56,7 @@ from payments.mercadopago import (
 )
 from payments.payway import (
     execute_payway_payment,
+    payway_api_base,
     payway_configured,
     payway_payment_method_ids,
     payway_sandbox,
@@ -1043,6 +1044,7 @@ def iniciar_payway(request, public_id):
         "payway_script_url": payway_script_url(),
         "payway_payment_methods": payway_payment_method_ids(),
         "payway_public_key": getattr(settings, "PAYWAY_PUBLIC_API_KEY", ""),
+        "payway_api_base": payway_api_base(),
         "payway_sandbox": payway_sandbox(),
         "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ) if booking.expires_at else None,
     })
@@ -1069,11 +1071,13 @@ def ejecutar_payway(request, public_id):
 
     token = request.POST.get("token", "")
     payment_method_id = request.POST.get("payment_method_id", "")
+    card_bin = request.POST.get("bin", "")
     try:
         outcome, detail = execute_payway_payment(
             payment_or_id=payment,
             token=token,
             payment_method_id=payment_method_id,
+            bin=card_bin,
             now=timezone.now(),
         )
     except BookingExpiredError as bee:

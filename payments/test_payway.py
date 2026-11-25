@@ -655,6 +655,127 @@ class PaywayServiceTests(PaywayBase):
                 )
                 self.assertEqual(client2.create_calls, 0)
 
+    def test_http_402_with_payment_body_applies_rejection(self):
+        """La API Decidir2 responde HTTP 402 con el objeto de pago completo
+        cuando el cobro fue procesado y rechazado: es respuesta definitiva,
+        se aplica como rechazo sin pasar por conciliación."""
+        payment = self._pending_payment()
+        rejected = approved_remote(payment)
+        rejected["status"] = "rejected"
+        rejected["status_details"] = {"error": {"reason": {"name": "DENEGADA"}}}
+        client = FakePaywayClient(
+            create_error=PaywayHttpError(402, _json.dumps(rejected)),
+            find_result=[],
+        )
+        outcome, _ = execute_payway_payment(
+            payment_or_id=payment, token="tok1", payment_method_id="1",
+            now=self.now, client=client,
+        )
+        self.assertEqual(outcome, "REJECTED")
+        self.assertEqual(client.find_calls, 0)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, PaymentStatus.REJECTED)
+        self.assertEqual(payment.external_payment_id, rejected["id"])
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, BookingStatus.HELD)
+
+    def test_http_402_without_payment_body_is_unknown(self):
+        """402 sin objeto de pago verificable: resultado desconocido y bloqueo."""
+        for body in ("", "no es json", _json.dumps({"error_type": "api_error"})):
+            with self.subTest(body=body[:30]):
+                Payment.objects.filter(booking=self.booking).delete()
+                payment = start_payway_payment(booking_or_id=self.booking, now=self.now)
+                client = FakePaywayClient(
+                    create_error=PaywayHttpError(402, body), find_result=[],
+                )
+                outcome, _ = execute_payway_payment(
+                    payment_or_id=payment, token="tok1", payment_method_id="1",
+                    now=self.now, client=client,
+                )
+                self.assertEqual(outcome, "STILL_UNKNOWN")
+                payment.refresh_from_db()
+                self.assertEqual(payment.status, PaymentStatus.PENDING)
+
+    def test_repeated_site_transaction_reconciles_existing_charge(self):
+        """400 invalid_request_error con code='repeated' en site_transaction_id:
+        el cobro ya está registrado → conciliación, no reintento."""
+        payment = self._pending_payment()
+        err = PaywayHttpError(400, _json.dumps({
+            "error_type": "invalid_request_error",
+            "validation_errors": [
+                {"code": "repeated", "param": "site_transaction_id"},
+            ],
+        }))
+        client = FakePaywayClient(
+            create_error=err, find_result=[approved_remote(payment)],
+        )
+        outcome, _ = execute_payway_payment(
+            payment_or_id=payment, token="tok1", payment_method_id="1",
+            now=self.now, client=client,
+        )
+        self.assertEqual(outcome, "CONFIRMED")
+        self.assertEqual(client.create_calls, 1)
+        self.assertGreaterEqual(client.find_calls, 1)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, PaymentStatus.APPROVED)
+        # Un segundo intento no emite otro POST de cobro.
+        client2 = FakePaywayClient(create_result=approved_remote(payment))
+        outcome2, _ = execute_payway_payment(
+            payment_or_id=payment, token="tok2", payment_method_id="1",
+            now=self.now, client=client2,
+        )
+        self.assertEqual(outcome2, "ALREADY_CONFIRMED")
+        self.assertEqual(client2.create_calls, 0)
+
+    def test_repeated_site_transaction_without_match_stays_blocked(self):
+        """'repeated' sin correspondencia verificable: desconocido y bloqueado,
+        no reintento del POST."""
+        payment = self._pending_payment()
+        err = PaywayHttpError(400, _json.dumps({
+            "error_type": "invalid_request_error",
+            "validation_errors": [
+                {"code": "repeated", "param": "site_transaction_id"},
+            ],
+        }))
+        client = FakePaywayClient(create_error=err, find_result=[])
+        outcome, _ = execute_payway_payment(
+            payment_or_id=payment, token="tok1", payment_method_id="1",
+            now=self.now, client=client,
+        )
+        self.assertEqual(outcome, "STILL_UNKNOWN")
+        client2 = FakePaywayClient(create_error=err, find_result=[])
+        execute_payway_payment(
+            payment_or_id=payment, token="tok2", payment_method_id="1",
+            now=self.now, client=client2,
+        )
+        self.assertEqual(client2.create_calls, 0)
+
+    def test_bin_from_token_response_reaches_payload(self):
+        """El bin devuelto por el SDK en la tokenización viaja al payload;
+        valores inválidos se descartan (se envía vacío)."""
+        for bad_bin in ("", "45079", "4507999", "abcdef"):
+            with self.subTest(bin=bad_bin):
+                Payment.objects.filter(booking=self.booking).delete()
+                payment = start_payway_payment(booking_or_id=self.booking, now=self.now)
+                rejected = approved_remote(payment)
+                rejected["status"] = "rejected"
+                client2 = FakePaywayClient(create_result=rejected)
+                execute_payway_payment(
+                    payment_or_id=payment, token="tok", payment_method_id="1",
+                    bin=bad_bin, now=self.now, client=client2,
+                )
+                self.assertEqual(client2.last_payload["bin"], "")
+
+        Payment.objects.filter(booking=self.booking).delete()
+        payment = start_payway_payment(booking_or_id=self.booking, now=self.now)
+        client = FakePaywayClient(create_result=approved_remote(payment))
+        outcome, _ = execute_payway_payment(
+            payment_or_id=payment, token="tok1", payment_method_id="1",
+            bin="450799", now=self.now, client=client,
+        )
+        self.assertEqual(outcome, "CONFIRMED")
+        self.assertEqual(client.last_payload["bin"], "450799")
+
     def test_reconcile_partial_listing_fetches_detail(self):
         """Listado parcial con id: se reconsulta el detalle autenticado."""
         payment = self._pending_payment()

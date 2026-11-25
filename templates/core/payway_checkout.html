@@ -21,7 +21,9 @@
     <form method="POST" action="{% url 'ejecutar_payway' public_id=booking.public_id %}" id="payway-form">
       {% csrf_token %}
       <input type="hidden" name="token" id="payway-token" value="">
+      <input type="hidden" name="bin" id="payway-bin" value="">
       <input type="hidden" name="payment_method_id" id="payway-method-id" value="">
+      <input type="hidden" data-decidir="card_holder_doc_type" value="dni">
 
       <div style="display: grid; gap: 0.75rem; max-width: 420px; margin: 1rem 0;">
         <label>
@@ -34,34 +36,40 @@
         </label>
         <label>
           Número de tarjeta
-          <input type="text" id="card-number" inputmode="numeric" autocomplete="cc-number"
+          <input type="text" id="card-number" data-decidir="card_number"
+                 inputmode="numeric" autocomplete="cc-number"
                  maxlength="19" required style="width: 100%; padding: 0.5rem;">
         </label>
         <label>
           Titular (como figura en la tarjeta)
-          <input type="text" id="card-holder" autocomplete="cc-name" maxlength="60"
+          <input type="text" id="card-holder" data-decidir="card_holder_name"
+                 autocomplete="cc-name" maxlength="60"
                  required style="width: 100%; padding: 0.5rem;">
         </label>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;">
           <label>
             Venc. mes
-            <input type="text" id="card-exp-month" inputmode="numeric" maxlength="2"
+            <input type="text" id="card-exp-month" data-decidir="card_expiration_month"
+                   inputmode="numeric" maxlength="2"
                    placeholder="MM" required style="width: 100%; padding: 0.5rem;">
           </label>
           <label>
             Venc. año
-            <input type="text" id="card-exp-year" inputmode="numeric" maxlength="2"
+            <input type="text" id="card-exp-year" data-decidir="card_expiration_year"
+                   inputmode="numeric" maxlength="2"
                    placeholder="AA" required style="width: 100%; padding: 0.5rem;">
           </label>
           <label>
             CVV
-            <input type="password" id="card-cvv" inputmode="numeric" autocomplete="cc-csc"
+            <input type="password" id="card-cvv" data-decidir="security_code"
+                   inputmode="numeric" autocomplete="cc-csc"
                    maxlength="4" required style="width: 100%; padding: 0.5rem;">
           </label>
         </div>
         <label>
           DNI del titular
-          <input type="text" id="card-holder-dni" inputmode="numeric" maxlength="10"
+          <input type="text" id="card-holder-dni" data-decidir="card_holder_doc_number"
+                 inputmode="numeric" maxlength="10"
                  required style="width: 100%; padding: 0.5rem;">
         </label>
       </div>
@@ -95,23 +103,18 @@
       return;
     }
 
-    var decidir = new Decidir('{% if payway_sandbox %}{{ payway_public_key }}{% else %}{{ payway_public_key }}{% endif %}', {% if payway_sandbox %}true{% else %}false{% endif %});
+    // SDK oficial: new Decidir(urlApiBase) + setPublishableKey(publicKey).
+    // Lee los campos marcados con data-decidir del formulario y genera el
+    // token: los datos de tarjeta viajan directo a Payway, sin pasar por
+    // este servidor (los campos no tienen atributo name, no se envían).
+    var decidir = new Decidir('{{ payway_api_base|escapejs }}');
+    decidir.setPublishableKey('{{ payway_public_key|escapejs }}');
+    decidir.setTimeout(15000);
 
-    var cardData = {
-      card_number: document.getElementById('card-number').value.replace(/\s+/g, ''),
-      card_holder_name: document.getElementById('card-holder').value,
-      card_expiration_month: document.getElementById('card-exp-month').value,
-      card_expiration_year: document.getElementById('card-exp-year').value,
-      security_code: document.getElementById('card-cvv').value,
-      card_holder_identification: {
-        type: 'dni',
-        number: document.getElementById('card-holder-dni').value
-      }
-    };
-
-    decidir.createToken(cardData, function (status, response) {
-      if (status === 201 && response && response.id) {
+    decidir.createToken(form, function (status, response) {
+      if ((status === 200 || status === 201) && response && response.id) {
         document.getElementById('payway-token').value = response.id;
+        document.getElementById('payway-bin').value = response.bin || '';
         document.getElementById('payway-method-id').value = document.getElementById('card-method').value;
         sent = true;
         submitBtn.disabled = true;

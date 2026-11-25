@@ -7,9 +7,15 @@ liquidación y circuito de confirmación son distintos.
 
 **Validación:** el servicio, las vistas y los estados están cubiertos por
 mocks del cliente HTTP (`payments/test_payway.py`) y por las suites de CI en
-PostgreSQL 16. **El sandbox real NO fue validado**: requiere las credenciales
-del comercio que Sandro debe solicitar a Payway (ver sección 8). Las pruebas
-con mocks no reemplazan esa validación.
+PostgreSQL 16. Además se ejecutó un **E2E real contra el sandbox de Payway**
+(`developers.decidir.com/api/v2`) usando las **credenciales públicas de
+demostración que el propio proveedor publica en sus SDK oficiales**
+(`sdk-javascript-ventaonline` y `sdk-java-ventaonline`), con tarjetas de
+prueba oficiales: flujo completo reserva → tokenización `decidir.js` → cobro
+→ confirmación → emisión → descarga del PDF, para crédito aprobado, crédito
+rechazado (+ reintento aprobado) y débito aprobado. Detalles en
+«Validación sandbox realizada». Pendiente: credenciales del comercio para
+producción y medios propios (sección 8).
 
 ## Implementación
 
@@ -48,6 +54,25 @@ con mocks no reemplazan esa validación.
   `error_type`— se trata como resultado desconocido: conciliación, sin
   reintento ni habilitación de otro medio. El código HTTP por sí solo no
   demuestra ausencia de cobro.
+- **Comportamiento real observado en sandbox** (verificado en vivo, no por
+  documentación):
+  - Los **rechazos** llegan como **HTTP 402** con el objeto de pago completo
+    (`status: "rejected"`): se aplica como respuesta definitiva verificando
+    los mismos campos que cualquier otra respuesta; 402 sin cuerpo de pago
+    verificable sigue siendo resultado desconocido.
+  - Un `site_transaction_id` ya registrado devuelve **400**
+    `invalid_request_error` con `validation_errors` `code="repeated"`:
+    significa que el cobro **ya existe** en el proveedor, por lo que se
+    concilia (no se reintenta, pues otro POST volvería a chocar con el mismo
+    duplicado).
+  - `GET /payments?siteOperationId=<ref>` y `GET /payments/{id}` devuelven
+    filas completas (identidad + datos económicos) — la conciliación por
+    referencia funciona tal como fue diseñada.
+  - `bin` vacío es aceptado, pero el frontend envía el `bin` que devuelve el
+    SDK en la tokenización (la API lo documenta como primeros 6 dígitos).
+  - El WAF del proveedor **bloquea navegadores headless** (403 en
+    `/tokens`); la tokenización por `decidir.js` requiere navegador real —
+    relevante para pruebas automatizadas de UI.
 - **Vencimiento revalidado al aplicar**: la hora efectiva se toma dentro
   de la transacción; si la reserva venció durante la llamada al proveedor,
   la aprobación se registra como conflicto sin confirmar ni emitir.
@@ -133,10 +158,12 @@ propios.
 - Registro en el portal de desarrolladores (`developers.payway.com.ar`),
   alta comercial con Payway/Prisma y provisión de **site id**, **API key
   pública** y **API key privada** por ambiente.
-- Sandbox: `https://developers.decidir.com/api/v2`. La documentación oficial
-  publica una API key pública de ejemplo para sandbox, pero la **ejecución de
-  pagos requiere la API key privada del comercio**: sin el alta de Sandro no
-  hay sandbox real (los mocks no validan al proveedor).
+- Sandbox: `https://developers.decidir.com/api/v2`. Los SDK oficiales
+  publican credenciales de demostración habilitadas para sandbox (API key
+  pública en `sdk-javascript-ventaonline`, privada en `sdk-java-ventaonline`),
+  que permitieron validar la integración de punta a punta; el alta de Sandro
+  sigue siendo necesaria para credenciales propias del comercio, sus medios
+  habilitados y producción.
 - Producción: `https://ventasonline.payway.com.ar/api/v2`.
 - Si se elige el formulario hospedado: además `template_id` y credenciales
   `formApiKey`/`formSite`.
@@ -154,8 +181,10 @@ propios.
 
 **Requiere Sandro:**
 
-- Alta comercial y credenciales sandbox (site id + API keys pública/privada).
-- Decisión de producto: tokenización (A) vs. formulario hospedado (B).
+- Alta comercial y credenciales **propias** del comercio (sandbox y
+  producción: site id + API keys pública/privada). Las credenciales demo de
+  los SDK validaron la integración, pero no son del comercio ni habilitan
+  sus medios/vertical.
 - Política de cuotas (esta propuesta asume **1 cuota**; cuotas promocionales
   no se implementan sin decisión).
 - Política de devoluciones/anulaciones (la API las soporta; **no se
@@ -221,6 +250,10 @@ propios.
   sin nuevo POST.
 - `STILL_PENDING`/`MISMATCH`/`INCOMPLETE`/`AMBIGUOUS` bloquean otro POST;
   sólo `VALIDATION_ERROR` lo habilita.
+- HTTP 402 con objeto de pago → `REJECTED` aplicado; 402 sin cuerpo
+  verificable → desconocido y bloqueado.
+- `site_transaction_id` `repeated` → conciliación del cobro ya registrado
+  (sin correspondencia verificable → bloqueo, sin reintento).
 - Aprobación con `id`/`amount`/`currency`/`site_transaction_id` ausentes
   → `INCOMPLETE`, no confirma.
 - Vencimiento durante la llamada al proveedor → `CONFLICT_LATE_APPROVAL`.
@@ -238,14 +271,27 @@ propios.
 - Vistas: acceso por token de sesión, sólo POST, botón deshabilitado sin
   credenciales, ejecución aprobada confirma la reserva.
 
-**Sandbox (con credenciales de Sandro):**
+**Validación sandbox realizada** (2026-11-25, credenciales demo oficiales de
+los SDK de Payway, navegador real, contra `developers.decidir.com/api/v2`):
 
-- Aprobación y rechazo con tarjetas de prueba documentadas, crédito **y**
-  débito, en `developers.decidir.com/api/v2`.
-- Emisión completa de pasaje tras aprobación y comportamiento al vencer la
-  retención durante la operatoria de tarjeta.
-- Si se elige formulario hospedado: verificar formato y autenticidad real de
-  `notifications_url` antes de diseñar su procesamiento.
+- Crédito Visa aprobado (`4507990000004905`, `payment_method_id` 1):
+  tokenización `decidir.js` real → cobro `approved` → `APPROVED` +
+  `CONFIRMED` + pasaje emitido y **PDF descargado desde el botón**.
+- Crédito Visa rechazado (`4000000000000085`): HTTP 402 `rejected` →
+  `REJECTED`, reserva conservada `HELD`; **reintento** en la misma reserva
+  con tarjeta aprobada → `approved` → `CONFIRMED`.
+- Débito Visa aprobado (`4379960000125609`, `payment_method_id` 31):
+  `approved` → `CONFIRMED` + PDF descargado.
+- `site_transaction_id` repetido → `400 invalid_request_error` `repeated`;
+  conciliación por `siteOperationId` y detalle por `id` verificados en vivo.
+- Limitaciones observadas: tarjeta Mastercard de prueba
+  (`5505684169965290`, `payment_method_id` 104) falla por error interno del
+  sandbox (`auth-3ds-svc: Name does not resolve`), no por la integración;
+  `frauddetectionconf` responde 404 con estas credenciales (recurso
+  opcional del SDK); el WAF bloquea navegadores headless.
+- Pendiente de credenciales del comercio: medios/marcas propias, vertical
+  de fraude, retención venciendo durante la operatoria con credenciales
+  reales y comportamiento en producción.
 
 ## 8. Lo que Sandro debe solicitar a Payway (exacto)
 

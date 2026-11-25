@@ -102,6 +102,15 @@ def payway_sandbox():
     return bool(getattr(settings, "PAYWAY_SANDBOX", False))
 
 
+def payway_api_base():
+    """URL base de la API Decidir2 (backend y SDK JS usan la misma)."""
+    return getattr(
+        settings,
+        "PAYWAY_API_BASE",
+        "https://ventasonline.payway.com.ar/api/v2",
+    ).rstrip("/")
+
+
 def payway_payment_method_ids():
     """Medios de pago habilitados por el comercio ``{payment_method_id: etiqueta}``."""
     configured = getattr(settings, "PAYWAY_PAYMENT_METHODS", None) or {}
@@ -128,9 +137,7 @@ class PaywayClient:
 
     def __init__(self, private_key=None, api_base=None, timeout=10):
         self.private_key = private_key or getattr(settings, "PAYWAY_PRIVATE_API_KEY", "")
-        self.api_base = api_base or getattr(
-            settings, "PAYWAY_API_BASE", "https://ventasonline.payway.com.ar/api/v2"
-        ).rstrip("/")
+        self.api_base = api_base or payway_api_base()
         self.timeout = timeout
 
     def _request(self, method, path, payload=None, query=None):
@@ -206,6 +213,27 @@ class PaywayHttpError(PaymentError):
         return []
 
 
+def _is_repeated_site_transaction(exc):
+    """True si el proveedor informa ``site_transaction_id`` ya registrado.
+
+    La API Decidir2 responde HTTP 400 ``invalid_request_error`` con
+    ``validation_errors`` ``code="repeated"`` sobre ``site_transaction_id``
+    cuando ya existe un cobro bajo la referencia del intento. Significa que
+    un POST anterior llegó al proveedor: el resultado real se recupera
+    conciliando, no reintentando (otro POST volvería a chocar con el mismo
+    duplicado).
+    """
+    if not (exc.status_code == 400 and exc.error_type() == "invalid_request_error"):
+        return False
+    errors = exc.parsed_body().get("validation_errors") or []
+    return any(
+        isinstance(e, dict)
+        and e.get("code") == "repeated"
+        and e.get("param") == "site_transaction_id"
+        for e in errors
+    )
+
+
 def _is_documented_validation_error(exc):
     """True sólo si el error es un rechazo de validación documentado por el
     proveedor, lo que garantiza que el payload se rechazó antes de procesar
@@ -213,15 +241,18 @@ def _is_documented_validation_error(exc):
 
     Única clase reintentable: HTTP 400 con ``error_type`` estructurado
     ``invalid_request_error`` (la API Decidir2 lo documenta para errores de
-    validación de parámetros, junto a ``validation_errors`` por campo).
-    Cualquier otro error — 4xx distintos (401/403 auth, 404, 408 timeout del
-    request, 409 conflicto/duplicado, 429 rate limit), 5xx, respuestas
-    vacías o malformadas y cuerpos sin ``error_type`` — es ambiguo respecto
-    del cobro y mantiene el resultado desconocido.
+    validación de parámetros, junto a ``validation_errors`` por campo),
+    excluyendo ``site_transaction_id`` repetido — ése indica que el cobro ya
+    está registrado y debe conciliarse. Cualquier otro error — 4xx distintos
+    (401/403 auth, 404, 408 timeout del request, 409 conflicto, 429 rate
+    limit), 5xx, respuestas vacías o malformadas y cuerpos sin
+    ``error_type`` — es ambiguo respecto del cobro y mantiene el resultado
+    desconocido.
     """
     return (
         exc.status_code == 400
         and exc.error_type() == "invalid_request_error"
+        and not _is_repeated_site_transaction(exc)
     )
 
 
@@ -342,7 +373,7 @@ def _set_event_outcome(event, outcome, detail=""):
         )
 
 
-def execute_payway_payment(*, payment_or_id, token, payment_method_id, now=None, client=None):
+def execute_payway_payment(*, payment_or_id, token, payment_method_id, bin=None, now=None, client=None):
     """Ejecuta el cobro de un intento PENDING contra Payway.
 
     Persiste la ejecución antes de la llamada de red; no mantiene bloqueos de
@@ -399,7 +430,11 @@ def execute_payway_payment(*, payment_or_id, token, payment_method_id, now=None,
         "site_transaction_id": payway_site_transaction_id(payment),
         "token": token,
         "payment_method_id": int(payment_method_id),
-        "bin": "",
+        # El SDK devuelve ``response.bin`` al tokenizar; la API lo valida como
+        # los primeros 6 dígitos de la tarjeta. Sólo se acepta del cliente en
+        # formato estricto; si falta o es inválido se envía vacío (sandbox lo
+        # acepta, pero es mejor enviarlo cuando está disponible).
+        "bin": bin if isinstance(bin, str) and bin.isdigit() and len(bin) == 6 else "",
         "amount": _amount_minor_units(payment.amount),
         "currency": payment.currency,
         "installments": 1,
@@ -411,6 +446,26 @@ def execute_payway_payment(*, payment_or_id, token, payment_method_id, now=None,
     try:
         remote = pw_client.create_payment(payload)
     except PaywayHttpError as exc:
+        remote_body = exc.parsed_body()
+        if (
+            exc.status_code == 402
+            and remote_body.get("status")
+            and remote_body.get("site_transaction_id")
+        ):
+            # La API Decidir2 responde HTTP 402 con el objeto de pago completo
+            # cuando el cobro fue procesado y rechazado: es una respuesta
+            # definitiva, se aplica como cualquier otra (verificando campos).
+            return _apply_payway_result(
+                payment_id=payment_id, remote=remote_body,
+                effective_now=effective_now, event=event,
+            )
+        if _is_repeated_site_transaction(exc):
+            # Ya hay un cobro registrado bajo la referencia del intento (un
+            # POST previo llegó): conciliar para recuperar su resultado real.
+            _set_event_outcome(event, OUTCOME_UNKNOWN, "site_transaction_id repetido")
+            return reconcile_payway_payment(
+                payment_or_id=payment_id, now=now, client=client
+            )
         if _is_documented_validation_error(exc):
             # Rechazo de validación documentado: el cobro no se procesó.
             codes = exc.parsed_errors()
