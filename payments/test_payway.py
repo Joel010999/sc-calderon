@@ -684,13 +684,20 @@ class PaywayDisabledTests(TestCase):
 
 
 @override_settings(**PAYWAY_SETTINGS)
-class PaywayConcurrencyTests(PaywayBase, TransactionTestCase):
+class PaywayConcurrencyTests(TransactionTestCase):
     """Concurrencia entre ejecución y conciliación: un solo cobro.
 
     La restricción ``(provider, external_id, action)`` de PaymentGatewayEvent
     garantiza que sólo una ejecución reclama el intento. Corre en PostgreSQL
     vía CI; en SQLite los escritores se serializan y no hay concurrencia real.
     """
+
+    @classmethod
+    def setUpTestData(cls):
+        PaywayBase.setUpTestData.__func__(cls)
+
+    def create_online_booking(self, minutes=15):
+        return PaywayBase.create_online_booking(self, minutes=minutes)
 
     def require_postgresql(self):
         from django.db import connection
@@ -705,6 +712,8 @@ class PaywayConcurrencyTests(PaywayBase, TransactionTestCase):
         shared_client = FakePaywayClient(create_result=approved_remote(payment))
         results = []
 
+        from django.db import connection as thread_conn
+
         def run():
             try:
                 outcome, _ = execute_payway_payment(
@@ -714,6 +723,7 @@ class PaywayConcurrencyTests(PaywayBase, TransactionTestCase):
             except Exception as exc:  # noqa: BLE001 - registrado en results
                 outcome = f"ERR:{exc.__class__.__name__}"
             results.append(outcome)
+            thread_conn.close()
 
         threads = [threading.Thread(target=run) for _ in range(3)]
         for t in threads:
@@ -742,6 +752,8 @@ class PaywayConcurrencyTests(PaywayBase, TransactionTestCase):
         )
         results = []
 
+        from django.db import connection as thread_conn
+
         def run_execute():
             try:
                 outcome, _ = execute_payway_payment(
@@ -751,6 +763,7 @@ class PaywayConcurrencyTests(PaywayBase, TransactionTestCase):
             except Exception as exc:  # noqa: BLE001
                 outcome = f"ERR:{exc.__class__.__name__}"
             results.append(("execute", outcome))
+            thread_conn.close()
 
         def run_reconcile():
             try:
@@ -758,6 +771,7 @@ class PaywayConcurrencyTests(PaywayBase, TransactionTestCase):
             except Exception as exc:  # noqa: BLE001
                 summary = {"error": exc.__class__.__name__}
             results.append(("reconcile", summary))
+            thread_conn.close()
 
         threads = [threading.Thread(target=run_execute) for _ in range(2)]
         threads += [threading.Thread(target=run_reconcile) for _ in range(2)]
