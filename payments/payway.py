@@ -226,52 +226,53 @@ def start_payway_payment(*, booking_or_id, now=None):
         raise PaymentError("El pago con tarjeta no está disponible.")
 
     booking_id = booking_or_id.pk if isinstance(booking_or_id, Booking) else booking_or_id
-    booking = Booking.objects.select_for_update().get(pk=booking_id)
+    with transaction.atomic():
+        booking = Booking.objects.select_for_update().get(pk=booking_id)
 
-    if booking.channel != BookingChannel.ONLINE:
-        raise InvalidBookingError("Solo las reservas online admiten pago con tarjeta.")
-    if booking.status == BookingStatus.CONFIRMED:
-        raise InvalidBookingError("La reserva ya se encuentra confirmada.")
-    if booking.status != BookingStatus.HELD:
-        raise InvalidBookingError(f"Estado de reserva no válido para pago: {booking.status}")
-    if booking.expires_at is not None and booking.expires_at <= effective_now:
-        raise BookingExpiredError("La reserva ha expirado y no se puede iniciar el pago.")
+        if booking.channel != BookingChannel.ONLINE:
+            raise InvalidBookingError("Solo las reservas online admiten pago con tarjeta.")
+        if booking.status == BookingStatus.CONFIRMED:
+            raise InvalidBookingError("La reserva ya se encuentra confirmada.")
+        if booking.status != BookingStatus.HELD:
+            raise InvalidBookingError(f"Estado de reserva no válido para pago: {booking.status}")
+        if booking.expires_at is not None and booking.expires_at <= effective_now:
+            raise BookingExpiredError("La reserva ha expirado y no se puede iniciar el pago.")
 
-    existing_payment = Payment.objects.select_for_update().filter(
-        booking=booking,
-        status__in=GATEWAY_PENDING_STATUSES,
-    ).order_by("-created_at", "-pk").first()
+        existing_payment = Payment.objects.select_for_update().filter(
+            booking=booking,
+            status__in=GATEWAY_PENDING_STATUSES,
+        ).order_by("-created_at", "-pk").first()
 
-    if existing_payment:
-        if existing_payment.status == PaymentStatus.APPROVED:
-            raise PaymentDuplicateError("Esta reserva ya cuenta con un pago aprobado.")
-        if existing_payment.method == PaymentMethod.PAYWAY:
-            return existing_payment
-        raise PaymentDuplicateError("Ya existe un pago activo para esta reserva.")
+        if existing_payment:
+            if existing_payment.status == PaymentStatus.APPROVED:
+                raise PaymentDuplicateError("Esta reserva ya cuenta con un pago aprobado.")
+            if existing_payment.method == PaymentMethod.PAYWAY:
+                return existing_payment
+            raise PaymentDuplicateError("Ya existe un pago activo para esta reserva.")
 
-    total_amount = calculate_booking_total(booking)
-    if total_amount <= Decimal("0.00"):
-        raise PaymentError("El importe de la reserva debe ser mayor que cero.")
+        total_amount = calculate_booking_total(booking)
+        if total_amount <= Decimal("0.00"):
+            raise PaymentError("El importe de la reserva debe ser mayor que cero.")
 
-    payment = Payment(
-        booking=booking,
-        method=PaymentMethod.PAYWAY,
-        status=PaymentStatus.PENDING,
-        amount=total_amount,
-        currency="ARS",
-        registered_by=None,
-    )
-    payment.reference = payway_site_transaction_id(payment)
-    payment.full_clean()
-    try:
-        payment.save()
-    except IntegrityError as exc:
-        collision = Payment.objects.filter(
-            booking=booking, status__in=GATEWAY_PENDING_STATUSES
-        ).first()
-        if collision:
-            raise PaymentDuplicateError("Ya existe un pago activo para esta reserva.") from exc
-        raise
+        payment = Payment(
+            booking=booking,
+            method=PaymentMethod.PAYWAY,
+            status=PaymentStatus.PENDING,
+            amount=total_amount,
+            currency="ARS",
+            registered_by=None,
+        )
+        payment.reference = payway_site_transaction_id(payment)
+        payment.full_clean()
+        try:
+            payment.save()
+        except IntegrityError as exc:
+            collision = Payment.objects.filter(
+                booking=booking, status__in=GATEWAY_PENDING_STATUSES
+            ).first()
+            if collision:
+                raise PaymentDuplicateError("Ya existe un pago activo para esta reserva.") from exc
+            raise
 
     return payment
 
