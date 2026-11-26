@@ -4,8 +4,9 @@ Entorno de aceptación con datos ficticios, **sin operaciones económicas
 reales**. Gateways (Mercado Pago, Payway) deshabilitados. No es una
 habilitación productiva.
 
-Candidato desplegado: `32ba087` (rama `feature/mercadopago-checkout-pro`,
-sin merge a `main`).
+Candidato validado: `32ba087`; desplegado como `c930b87` (mismo código de
+aplicación + documentación del checkpoint), rama
+`feature/mercadopago-checkout-pro`, sin merge a `main`.
 
 ## Arquitectura
 
@@ -13,7 +14,7 @@ sin merge a `main`).
 |---|---|---|
 | `web` | Django + WhiteNoise | `gunicorn sslviajes.wsgi --bind 0.0.0.0:$PORT` |
 | `worker` | Mantenimiento + fulfillment + outbox | `python manage.py run_maintenance_worker` |
-| `postgres` | PostgreSQL 16 | servicio Railway (`DATABASE_URL` privada) |
+| `postgres` | PostgreSQL 18 (≥16) | servicio Railway (`DATABASE_URL` privada) |
 | `bucket`/volumen | Comprobantes y PDFs privados | S3-compatible (`PRIVATE_STORAGE_BACKEND=s3`) |
 
 - Los volúmenes de Railway no se comparten entre servicios: comprobantes
@@ -45,6 +46,7 @@ sin merge a `main`).
 | `BANK_TRANSFER_*` | datos ficticios de aceptación (declarado: no es cuenta real) |
 | `SECURE_HSTS_SECONDS` | `31536000` |
 | `MAINTENANCE_WORKER_MODE` | `resident` (solo worker) |
+| `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS` | `120` (solo worker; espera el advisory lock tras reinicios) |
 
 ## Secuencia de despliegue
 
@@ -76,3 +78,44 @@ PDF, compra pública → revisión → aprobación → PDF, ida/vuelta con
 menor, aislamiento vendedores, descargas protegidas, reportes, listado
 de pasajeros, mantenimiento/fulfillment sin intervención local,
 reinicio controlado conservando reservas/comprobantes/PDFs.
+
+## Despliegue efectivo (26/11/2026)
+
+| Elemento | Valor verificado |
+|---|---|
+| URL | https://sc-calderon-production.up.railway.app |
+| SHA | `c930b87` (contiene el candidato `32ba087`) desde `feature/mercadopago-checkout-pro` |
+| Servicios | `sc-calderon` (web), `worker`, `Postgres` — proyecto existente, sin duplicados |
+| PostgreSQL | imagen `postgres-ssl:18`, servidor 18.6, volumen persistente 5 GB en `/var/lib/postgresql/data` |
+| Storage privado | bucket Railway S3 `scviajes-privados` (`PRIVATE_STORAGE_BACKEND=s3`) |
+| Gateways | `MERCADO_PAGO_ENABLED=False`, `PAYWAY_ENABLED=False`; sin cobros reales |
+| `TESTING` | no definida; `DEBUG=False`; `SCVIAJES_ENVIRONMENT=acceptance` |
+| Respaldo | `pg_dump -Fc` previo a la siembra, guardado fuera del repo |
+
+Resultados:
+
+- Migraciones: ya aplicadas por el candidato (52); sin migraciones pendientes.
+- Datos ficticios: `seed_demo_scenario` sin `--reset` (no se borraron datos);
+  contraseñas demo nuevas aleatorias en variables Railway (no publicadas).
+- `e2e/acceptance.spec.js` contra la URL Railway: **16/16 aprobadas**
+  (ida/vuelta con menor, retención de butaca, transferencia pública,
+  aprobación/rechazo, permisos y aislamiento, reportes, fulfillment, QR).
+- Reinicio controlado de `Postgres`, `sc-calderon` y `worker`: Postgres
+  recuperó automáticamente; usuarios, reservas, pagos, viajes y pasajes
+  se conservaron y el último PDF sigue presente en el bucket. El worker
+  continuó procesando (emitió un pasaje y venció reservas) sin
+  intervención local.
+- `/health/live/` 200. `/health/ready/` 503 **esperado**: exige SMTP real
+  (`EMAIL_BACKEND` console) — pendiente externo.
+
+Observaciones:
+
+- Si Postgres se reinicia, el proceso worker termina con
+  `InterfaceError: connection already closed` y Railway lo reinicia; el
+  nuevo proceso retoma con `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS=120`.
+- Se corrigieron rutas `MEDIA_ROOT`/`PROTECTED_MEDIA_ROOT`/
+  `TICKETS_STORAGE_ROOT` que habían quedado con prefijo Windows
+  (`C:/Program Files/Git/...`) por conversión de Git Bash.
+
+Pendientes externos: SMTP real, datos bancarios reales, credenciales
+propias de Mercado Pago/Payway del comercio, dominio propio.

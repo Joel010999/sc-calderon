@@ -250,3 +250,10 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 - Informe de aceptación con matriz por flujo, decisiones pendientes y accesos que debe traer Sandro: `docs/INFORME_ACEPTACION_SANDRO.md`.
 - Evidencia fuera del repo en `%USERPROFILE%\scviajes-demo-sandro\evidencia\` (capturas PNG + PDFs de pasajes ficticios).
 - El workflow `browser-e2e` ahora corre el recorrido de navegador sobre un servicio `postgres:16` efímero (antes SQLite); el `runserver` de Playwright hereda `DATABASE_URL` y el job verifica `connection.vendor == 'postgresql'`.
+
+### Entorno de aceptación Railway (26/11/2026)
+
+- URL HTTPS: https://sc-calderon-production.up.railway.app — `c930b87` (candidato `32ba087`), web + worker + PostgreSQL 18.6 + bucket S3 privado; datos ficticios, gateways deshabilitados, sin `TESTING`.
+- Aceptación Playwright (`e2e/acceptance.spec.js`) contra Railway: 16/16; persistencia verificada tras reinicio de Postgres, web y worker.
+- `/health/ready/` 503 hasta configurar SMTP real. Detalle y pendientes: `docs/DEPLOY_RAILWAY.md` § Despliegue efectivo.
+- **No es producción aprobada**: faltan SMTP real, datos bancarios reales y credenciales propias de gateways.
