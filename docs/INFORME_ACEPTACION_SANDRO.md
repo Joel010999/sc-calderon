@@ -18,14 +18,17 @@ y ahora el recorrido de navegador también corre sobre `postgres:16`
 efímero: el `runserver` de Playwright hereda `DATABASE_URL` y el job
 verificó en el log `Motor E2E verificado: postgresql - scviajes_e2e`.
 
-Post-ensayo (`11a39fb` + `4faa103` + ajuste de límite E2E): se corrigió
+Post-ensayo (`11a39fb` + `4faa103` + ajustes E2E): se corrigió
 el checkout ida/vuelta (radios del buscador) y se agregó el recorrido
-público ida/vuelta con menor a `acceptance.spec.js`. El primer run con
-el nuevo test falló en CI porque `ABUSE_CHECKOUT_LIMIT=3` por IP ya
-estaba al borde con las 3 retenciones existentes; se elevó a 10 **solo
-en el entorno del workflow E2E** (knob de configuración pensado para
-escenarios de prueba, sin tocar la protección productiva) y el spec
-completo de 16 tests pasó verificado localmente.
+público ida/vuelta con menor a `acceptance.spec.js`. Dos defectos más
+que el nuevo test expuso en CI: (1) `ABUSE_CHECKOUT_LIMIT=3` por IP
+estaba al borde con las 3 retenciones existentes — se elevó a 10 **solo
+en el entorno del workflow E2E**, sin tocar la protección productiva;
+(2) `seed_demo_scenario --reset` fallaba con `ProtectedError` al borrar
+reservas con menor (`accompanied_by` es FK PROTECT a sí mismo) — se
+corrige cortando la referencia antes del delete, con regresión
+`test_reset_deletes_bookings_with_accompanied_minors`. Spec completo
+de 16 tests verificado localmente.
 
 Sandbox Payway (evidencia real, separada de los mocks de CI): aprobado
 Visa crédito y débito, rechazado Visa (HTTP 402 con cuerpo de pago),

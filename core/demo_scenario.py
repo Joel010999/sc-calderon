@@ -248,6 +248,9 @@ def reset_demo():
     CustomerBooking.objects.filter(booking_id__in=booking_ids).delete()
     BookingClaimToken.objects.filter(booking_id__in=booking_ids).delete()
     SeatAssignment.objects.filter(leg__booking_id__in=booking_ids).delete()
+    # accompanied_by es una FK PROTECT a sí mismo: hay que cortarla antes de
+    # borrar o el delete falla con ProtectedError en reservas con menor.
+    BookingPassenger.objects.filter(booking_id__in=booking_ids).update(accompanied_by=None)
     BookingPassenger.objects.filter(booking_id__in=booking_ids).delete()
     BookingLeg.objects.filter(booking_id__in=booking_ids).delete()
     AuditEvent.objects.filter(entity_id__in=[str(item) for item in booking_ids]).delete()
