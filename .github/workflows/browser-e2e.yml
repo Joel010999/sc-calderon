@@ -46,6 +46,7 @@ jobs:
       PROTECTED_MEDIA_ROOT: ${{ github.workspace }}/.e2e-protected-media
       TICKETS_STORAGE_ROOT: ${{ github.workspace }}/.e2e-tickets
       PRIVATE_STORAGE_BACKEND: filesystem
+      ABUSE_CHECKOUT_LIMIT: '10'
       BANK_TRANSFER_ACCOUNT_HOLDER: SC Viajes E2E
       BANK_TRANSFER_ALIAS: scviajes.test
       BANK_TRANSFER_CVU: "1234567890123456789012"

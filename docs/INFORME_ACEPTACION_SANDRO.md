@@ -18,6 +18,15 @@ y ahora el recorrido de navegador también corre sobre `postgres:16`
 efímero: el `runserver` de Playwright hereda `DATABASE_URL` y el job
 verificó en el log `Motor E2E verificado: postgresql - scviajes_e2e`.
 
+Post-ensayo (`11a39fb` + `4faa103` + ajuste de límite E2E): se corrigió
+el checkout ida/vuelta (radios del buscador) y se agregó el recorrido
+público ida/vuelta con menor a `acceptance.spec.js`. El primer run con
+el nuevo test falló en CI porque `ABUSE_CHECKOUT_LIMIT=3` por IP ya
+estaba al borde con las 3 retenciones existentes; se elevó a 10 **solo
+en el entorno del workflow E2E** (knob de configuración pensado para
+escenarios de prueba, sin tocar la protección productiva) y el spec
+completo de 16 tests pasó verificado localmente.
+
 Sandbox Payway (evidencia real, separada de los mocks de CI): aprobado
 Visa crédito y débito, rechazado Visa (HTTP 402 con cuerpo de pago),
 reintento tras rechazo, conciliación `GET /payments` — todo verificado
