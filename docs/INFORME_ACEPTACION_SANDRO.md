@@ -12,10 +12,11 @@ verdes, incluida la suite completa **844 tests OK / 1 omitida** sobre
 El omitido es la prueba visual de gráficos con Chrome, que corre dentro
 del workflow `browser-e2e`. Los cambios de este paquete (workflow
 browser-e2e a PostgreSQL, script y docs de demo) no modifican lógica de
-negocio; el push de este documento vuelve a correr los mismos workflows
+negocio; el push de este documento (`43615a7` + actualización de este
+informe) volvió a correr los mismos workflows — **los 4 en verde** —
 y ahora el recorrido de navegador también corre sobre `postgres:16`
-efímero (el `runserver` de Playwright hereda `DATABASE_URL`; el job
-verifica `connection.vendor == 'postgresql'` explícitamente).
+efímero: el `runserver` de Playwright hereda `DATABASE_URL` y el job
+verificó en el log `Motor E2E verificado: postgresql - scviajes_e2e`.
 
 Sandbox Payway (evidencia real, separada de los mocks de CI): aprobado
 Visa crédito y débito, rechazado Visa (HTTP 402 con cuerpo de pago),
