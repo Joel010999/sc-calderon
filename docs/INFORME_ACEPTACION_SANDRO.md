@@ -30,6 +30,13 @@ corrige cortando la referencia antes del delete, con regresión
 `test_reset_deletes_bookings_with_accompanied_minors`. Spec completo
 de 16 tests verificado localmente.
 
+**SHA del código validado: `eae97ca`** — 4 workflows en verde:
+suite completa **846 tests OK / 1 omitida** sobre `postgres:16`
+(sales y tickets), browser E2E 16/16 sobre `postgres:16` con
+`Motor E2E verificado: postgresql` en el log, quality gate.
+La omitida es la prueba visual de gráficos con Chrome (corre dentro
+de browser-e2e). Esta versión queda **congelada** para la reunión.
+
 Sandbox Payway (evidencia real, separada de los mocks de CI): aprobado
 Visa crédito y débito, rechazado Visa (HTTP 402 con cuerpo de pago),
 reintento tras rechazo, conciliación `GET /payments` — todo verificado
