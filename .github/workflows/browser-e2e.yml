@@ -13,6 +13,20 @@ permissions:
 jobs:
   playwright:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: scviajes_e2e
+          POSTGRES_USER: scviajes_e2e
+          POSTGRES_PASSWORD: e2e-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scviajes_e2e -d scviajes_e2e"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DEBUG: 'True'
       TESTING: 'True'
@@ -20,7 +34,7 @@ jobs:
       DEMO_SCENARIO_ENABLED: 'True'
       SECRET_KEY: e2e-only-secret-not-for-production
       ALLOWED_HOSTS: 127.0.0.1,localhost
-      DATABASE_URL: sqlite:///e2e.sqlite3
+      DATABASE_URL: postgresql://scviajes_e2e:e2e-only-password@127.0.0.1:5432/scviajes_e2e
       EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
       DEMO_ADMIN_PASSWORD: e2e-only-admin-password-20261007
       DEMO_SELLER_PASSWORD: e2e-only-seller-password-20261007
@@ -48,12 +62,12 @@ jobs:
           python -m pip install -r requirements.txt
           npm ci
           npx playwright install --with-deps chromium
-      - name: Preparar base temporal y escenario demo
+      - name: Preparar base temporal PostgreSQL y escenario demo
         run: |
-          rm -f e2e.sqlite3
           python manage.py check
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
+          python manage.py shell -c "from django.db import connection; assert connection.vendor == 'postgresql', connection.vendor; print('Motor E2E verificado:', connection.vendor, '-', connection.settings_dict['NAME'])"
           python manage.py seed_demo_scenario
           python e2e/prepare_browser_scenario.py
           python manage.py collectstatic --noinput

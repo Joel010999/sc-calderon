@@ -243,3 +243,10 @@ Hallazgo de configuración (no defecto del código): `PUBLIC_BASE_URL` con `http
 2. **Validación en Staging**: desplegar la aplicación en Railway Staging con `PRIVATE_STORAGE_BACKEND=s3` y backend SMTP configurado para validar la descarga autenticada de pasajes y el envío transaccional de correos.
 3. **Inspección visual independiente de pasajes**: realizar la validación visual de los PDFs renderizados con un visor PDF independiente y verificar la lectura manual de los datos impresos.
 4. **Drill de backup y restauración**: ejecutar el comando `verify_database_backup` sobre un dump PostgreSQL real en el entorno de staging.
+
+### Paquete de demostración para Sandro (viernes 27/11)
+
+- Guion de 15–20 minutos, arranque/apagado reproducible, usuarios y casos sembrados: `docs/GUION_DEMO_SANDRO.md` + `scripts/demo_sandro.sh` (base SQLite nueva fuera del repo, datos ficticios).
+- Informe de aceptación con matriz por flujo, decisiones pendientes y accesos que debe traer Sandro: `docs/INFORME_ACEPTACION_SANDRO.md`.
+- Evidencia fuera del repo en `%USERPROFILE%\scviajes-demo-sandro\evidencia\` (capturas PNG + PDFs de pasajes ficticios).
+- El workflow `browser-e2e` ahora corre el recorrido de navegador sobre un servicio `postgres:16` efímero (antes SQLite); el `runserver` de Playwright hereda `DATABASE_URL` y el job verifica `connection.vendor == 'postgresql'`.
