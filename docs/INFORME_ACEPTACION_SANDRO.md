@@ -30,7 +30,7 @@ headless: el E2E de Payway corrió con Chrome real, no en CI.
 | Flujo | Estado | Evidencia |
 |---|---|---|
 | Búsqueda, paradas permitidas, disponibilidad por tramo, categorías | Probado | Tests de búsqueda/checkout; browser E2E (búsqueda invitado, ahora en PG16) |
-| Ida e ida/vuelta, múltiples pasajeros, menor sin asiento | Probado | `tickets/test_minors.py` (menor sin butaca, reemisión idempotente preserva PDF histórico), checkout tests, seed demo ida/vuelta |
+| Ida e ida/vuelta, múltiples pasajeros, menor sin asiento | Probado (defecto corregido) | `tickets/test_minors.py`, checkout tests, seed demo ida/vuelta. **Defecto encontrado en ensayo de reunión:** el checkout descartaba `return_trip_radio` y la compra ida/vuelta pública redirigía a `/buscar/`; corregido + regresión `test_checkout_roundtrip_accepts_radio_params_from_search` |
 | Retención, vencimiento, liberación por mantenimiento | Probado | `operations/test_maintenance_command.py` + `test_maintenance_worker.py` (expira HELD sin pago, preserva pagos en revisión, advisory lock PG) |
 | Venta interna: comprobante del titular confirma; otro vendedor no accede; sin datos bancarios del negocio | Probado | `payments/test_transfer_postgres.py` (owner confirma con voucher, no-owner queda en revisión), browser E2E panel vendedor |
 | Compra web: transferencia en revisión; aprobación/rechazo solo admin/superusuario | Probado | browser E2E (upload público → revisión → aprobar/rechazar), `test_transfer_postgres.py` concurrencia admin |

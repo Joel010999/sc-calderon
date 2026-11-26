@@ -485,9 +485,9 @@ def checkout_view(request):
     return_decks = []
 
     if is_roundtrip:
-        return_trip_id = src.get("return_trip")
-        return_orig_id = src.get("return_origin")
-        return_dest_id = src.get("return_destination")
+        return_trip_id = return_trip_id or src.get("return_trip")
+        return_orig_id = return_orig_id or src.get("return_origin")
+        return_dest_id = return_dest_id or src.get("return_destination")
 
         if not return_trip_id or not return_orig_id or not return_dest_id:
             messages.warning(request, "Seleccioná el viaje de regreso para continuar.")

@@ -29,8 +29,19 @@ SCVIAJES_DEMO_RESET=1 bash scripts/demo_sandro.sh   # recrea la base desde cero
 Apagado: `Ctrl+C`. No queda ningún proceso vivo; la próxima corrida
 reutiliza la base (o la recrea con `SCVIAJES_DEMO_RESET=1`).
 
+Borrado del escenario: eliminar manualmente
+`%USERPROFILE%\scviajes-demo-sandro\` borra base, media y pasajes — el
+script lo recrea completo. Las evidencias viven fuera, en
+`%USERPROFILE%\scviajes-demo-evidencia\`, y no se borran con el escenario.
+
 Verificación del motor: el propio script imprime
 `Motor de la demo: sqlite - .../demo.sqlite3` antes de levantar.
+
+Endurecimiento (verificado en arranque): Mercado Pago y Payway
+deshabilitados, datos bancarios exclusivamente ficticios que pasan
+`validate_bank_transfer_configuration` (la transferencia pública se
+muestra completa), variables de entorno productivas limpiadas, escucha
+solo en 127.0.0.1.
 
 ## Usuarios
 
@@ -91,7 +102,11 @@ mantenimiento corre vía `python manage.py run_operational_maintenance`.
 
 ## Evidencia fuera del repo
 
-`%USERPROFILE%\scviajes-demo-sandro\evidencia\`: capturas PNG
+`%USERPROFILE%\scviajes-demo-evidencia\`: capturas PNG
 (home, búsqueda, dashboard, reservas, transferencias, fulfillment,
-reportes, viajes, vista vendedor, home móvil) y 3 PDF de pasajes
-ficticios (`AAA-000000001/3/5.pdf`).
+reportes, viajes, vista vendedor, home móvil), PDFs de pasajes
+ficticios (seed `AAA-000000001/3/5.pdf` + ensayo de reunión
+`ensayo_venta_interna.pdf`, `ensayo_compra_publica.pdf`,
+`ensayo_listado_pasajeros.pdf`), CSV de ventas
+(`ensayo_reporte_ventas.csv`) y comprobante de prueba.
+Separada del directorio de escenario para sobrevivir a su borrado.
