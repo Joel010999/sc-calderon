@@ -88,6 +88,22 @@ readiness exige SMTP real (no se falsea).
 | Mantenimiento (expire de retenciones, corrió en vivo) | OK — worker residente `run_maintenance_worker` |
 | Fulfillment (issue+email, 1 intento, SUCCEEDED) | OK en todas las confirmadas |
 | Reinicio web → reservas, comprobantes y PDFs persisten | OK (PG volumen + bucket S3) |
+| `e2e/acceptance.spec.js` completo contra la URL | OK — 16/16 (sesión paralela) |
+| Reinicio de los 3 servicios (Postgres incluido) | OK — datos conservados (sesión paralela) |
+
+Observaciones de la verificación combinada:
+
+- Si Postgres se reinicia, el worker termina con `InterfaceError` y
+  Railway lo reinicia; retoma con `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS=120`.
+- Las rutas `MEDIA_ROOT`/`PROTECTED_MEDIA_ROOT`/`TICKETS_STORAGE_ROOT`
+  deben setearse con cuidado en Git Bash: una conversión de path dejó
+  `C:/Program Files/Git/...` en un intento previo; valores vigentes
+  verificados (`/var/lib/scviajes/...`).
+- `SCVIAJES_ENVIRONMENT=demo` + `DEMO_SCENARIO_ENABLED=true` habilitan
+  el seeder del escenario ficticio (entorno de aceptación).
+- Viajes semilla: los originales quedaron `COMPLETED` por la suite de
+  la sesión paralela; se crearon dos `SCHEDULED` nuevos (9 y 12 dic)
+  para la aceptación y la demo.
 
 ## Pendientes externos
 
@@ -95,3 +111,4 @@ readiness exige SMTP real (no se falsea).
 - Datos bancarios reales del comercio.
 - Credenciales Mercado Pago y Payway del comercio (gateways off).
 - Cliente pg_dump 18 en la imagen para restore drill in-container.
+- Dominio propio (hoy `*.up.railway.app` de Railway).
