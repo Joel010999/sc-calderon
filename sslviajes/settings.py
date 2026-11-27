@@ -52,6 +52,9 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
+    # Los healthchecks de la plataforma consultan por HTTP interno; solo el
+    # endpoint de liveness queda exento del redirect a HTTPS.
+    SECURE_REDIRECT_EXEMPT = [r"^health/live/$"]
     SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', 0))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False').lower() in ('true', '1', 't')
     SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'False').lower() in ('true', '1', 't')
