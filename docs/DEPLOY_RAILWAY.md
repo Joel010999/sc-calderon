@@ -6,8 +6,12 @@ habilitación productiva.
 
 - **URL:** https://sc-calderon-production.up.railway.app
 - **Código desplegado:** rama `feature/mercadopago-checkout-pro` —
-  commit `15aca6e` (código idéntico al candidato validado `32ba087`;
-  los commits posteriores son solo documentación).
+  commit `b3d0387` (candidato `32ba087` + herramientas de backup PG18
+  y docs; sin cambios de negocio).
+- **Imagen:** `Dockerfile` propio (python:3.12-slim-trixie +
+  `postgresql-client-18` PGDG + collectstatic en build). Reemplaza a
+  Railpack/mise (elimina la dependencia de
+  `MISE_PYTHON_GITHUB_ATTESTATIONS=false`).
 - **Proyecto:** `sc calderon` (workspace "Render Byte's Projects"),
   entorno `production`.
 
@@ -63,16 +67,25 @@ variables, banco (ficticio), backups (salvo nota).
 FAIL documentados (reales, no esquivados):
 - `smtp` — sin SMTP real: el correo va a consola. Pendiente de
   credenciales SMTP de Sandro.
-- `backup_*` resuelto instalando `postgresql-client`, **pero**:
-  pg_dump/pg_restore 17.12 en la imagen < servidor 18.6 → `pg_dump`
-  aborta por *server version mismatch*. El preflight solo compara
-  cliente-vs-cliente. **Ruta de backup vigente:** `pg_dump` 18.6
-  dentro del servicio Postgres (vía `railway ssh`), verificado con
-  dump custom válido (404 TOC entries) antes de migrar. Pendiente:
-  imagen con cliente PG18 o revisar el alcance del check.
 
-`/health/live/` → 200. `/health/ready/` → **503 por diseño**: la
-readiness exige SMTP real (no se falsea).
+Resuelto:
+- `backup_*` — la imagen ahora es `Dockerfile` propio con
+  `postgresql-client-18` del repo PGDG (**pg_dump/pg_restore 18.7**
+  contra servidor 18.6). El preflight ganó el check
+  `postgres_server_tools_version` (cliente vs servidor) — detecta la
+  incompatibilidad antes de ejecutar un backup.
+- Restore drill en base desechable aislada (`restore_drill_*`, mismo
+  servidor, **nunca sobre la activa**): dump nuevo 200,884 bytes →
+  restore completo → 40/40 tablas y conteos idénticos
+  (bookings 19, tickets 10, users 5, trips 4, payments 12) → base
+  desechable eliminada. Respaldo protegido fuera del repo
+  (`~/scviajes-backups/`).
+
+`/health/live/` → 200 — **configurado como healthcheckPath del
+servicio** en Railway (antes `null`; Railway no exigía endpoint).
+`/health/ready/` → **503 por diseño**: `_production_configuration_ready()`
+en `core/health.py` exige backend SMTP + `EMAIL_HOST`; sin SMTP real
+queda not_ready. No se falsea.
 
 ## Aceptación ejecutada en la URL
 
@@ -87,28 +100,41 @@ readiness exige SMTP real (no se falsea).
 | Reporte de ventas + CSV + listado pasajeros PDF | OK |
 | Mantenimiento (expire de retenciones, corrió en vivo) | OK — worker residente `run_maintenance_worker` |
 | Fulfillment (issue+email, 1 intento, SUCCEEDED) | OK en todas las confirmadas |
-| Reinicio web → reservas, comprobantes y PDFs persisten | OK (PG volumen + bucket S3) |
-| `e2e/acceptance.spec.js` completo contra la URL | OK — 16/16 (sesión paralela) |
-| Reinicio de los 3 servicios (Postgres incluido) | OK — datos conservados (sesión paralela) |
+| Reinicio web → reservas, comprobantes y PDFs persisten | OK (PG volumen + bucket S3) — esta sesión (`railway service restart`, re-verificado) |
 
-Observaciones de la verificación combinada:
+### Evidencia no verificable / atribución
 
-- Si Postgres se reinicia, el worker termina con `InterfaceError` y
-  Railway lo reinicia; retoma con `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS=120`.
+- El recorrido de aceptación de la tabla anterior fue ejecutado en esta
+  sesión con `railway_acceptance.py` (Playwright) — log local en
+  `~/scviajes-e2e/` y PDFs en `~/scviajes-acceptance/evidencia/`.
+- La sesión de ChatGPT reportó haber corrido `e2e/acceptance.spec.js`
+  16/16 contra la URL y un reinicio de los 3 servicios, **pero según
+  Joel esa sesión solo verificó infraestructura por el conector, sin
+  ejecutar Playwright ni reinicios** → esos ítems quedan **no
+  verificados**. Existe evidencia indirecta en la base (reservas
+  `boarding-e2e-*`, `roundtrip-*`, `e2e-*` creadas el 26/11 ~22:21 UTC)
+  sin log de ejecución identificable; podría ser de la otra sesión o de
+  una corrida anterior. No se presenta como validación.
+- El seed inicial del escenario demo (~22:20 UTC del 26/11) tampoco fue
+  ejecutado por esta sesión; se asumió y rotaron las credenciales a
+  valores nuevos generados.
+
+Observaciones operativas verificadas en esta sesión:
+
+- `MAINTENANCE_WORKER_LOCK_WAIT_SECONDS=120` vigente en el worker
+  (configurado por la sesión paralela).
 - Las rutas `MEDIA_ROOT`/`PROTECTED_MEDIA_ROOT`/`TICKETS_STORAGE_ROOT`
   deben setearse con cuidado en Git Bash: una conversión de path dejó
   `C:/Program Files/Git/...` en un intento previo; valores vigentes
   verificados (`/var/lib/scviajes/...`).
 - `SCVIAJES_ENVIRONMENT=demo` + `DEMO_SCENARIO_ENABLED=true` habilitan
   el seeder del escenario ficticio (entorno de aceptación).
-- Viajes semilla: los originales quedaron `COMPLETED` por la suite de
-  la sesión paralela; se crearon dos `SCHEDULED` nuevos (9 y 12 dic)
-  para la aceptación y la demo.
+- Viajes semilla: los originales quedaron `COMPLETED`; se crearon dos
+  `SCHEDULED` nuevos (9 y 12 dic) para la aceptación y la demo.
 
 ## Pendientes externos
 
 - SMTP real (correo de pasajes) — sin él, `ready` queda 503 por diseño.
 - Datos bancarios reales del comercio.
 - Credenciales Mercado Pago y Payway del comercio (gateways off).
-- Cliente pg_dump 18 en la imagen para restore drill in-container.
 - Dominio propio (hoy `*.up.railway.app` de Railway).
