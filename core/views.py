@@ -19,7 +19,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from operations.models import Seat, Stop, Trip, TripStop
+from operations.models import Route, Seat, Stop, Trip, TripStop
 from sales.conf import (
     get_max_passengers_per_booking,
     get_online_cutoff_minutes,
@@ -258,14 +258,57 @@ def _nearby_search_links(origin_stop, destination_stop, outbound_date, return_da
     return links
 
 
+def _home_upcoming_trips(now, limit=6):
+    """Próximas salidas reales para la portada: origen/destino extremos y menor tarifa."""
+    trips = Trip.objects.filter(
+        status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING],
+        departure_at__gte=now,
+    ).select_related("route").prefetch_related("trip_stops__stop", "fares").order_by("departure_at")[:limit]
+    items = []
+    for trip in trips:
+        ordered = sorted(trip.trip_stops.all(), key=lambda ts: ts.sequence)
+        if not ordered:
+            continue
+        fares = {f.seat_category: f.amount for f in trip.fares.all()}
+        origin, destination = ordered[0].stop, ordered[-1].stop
+        local_dep = timezone.localtime(trip.departure_at, AR_TZ)
+        items.append({
+            "trip": trip,
+            "origin": origin,
+            "destination": destination,
+            "departure_local": local_dep,
+            "min_fare": min(fares.values()) if fares else None,
+            "search_url": (
+                f"{reverse('buscar_viajes')}?trip_type=oneway&origin={origin.pk}"
+                f"&destination={destination.pk}&date={local_dep.date().isoformat()}&passengers=1"
+            ),
+        })
+    return items
+
+
+def _home_routes():
+    """Recorridos activos con sus paradas operativas ordenadas."""
+    routes = []
+    for route in Route.objects.filter(is_active=True).prefetch_related("route_stops__stop"):
+        ordered = route.route_stops.order_by("sequence")
+        stops = [{"stop": rs.stop, "boarding": rs.allows_boarding, "alighting": rs.allows_alighting}
+                 for rs in ordered]
+        if stops:
+            routes.append({"route": route, "stops": stops})
+    return routes
+
+
 def home(request):
     """Página institucional principal con buscador integrado."""
     stops = _get_active_stops()
-    today_str = timezone.localtime(timezone.now(), AR_TZ).date().isoformat()
+    now = timezone.now()
+    today_str = timezone.localtime(now, AR_TZ).date().isoformat()
     return render(request, "core/base.html", {
         "stops": stops,
         "today_str": today_str,
         "max_passengers": get_max_passengers_per_booking(),
+        "upcoming_trips": _home_upcoming_trips(now),
+        "home_routes": _home_routes(),
     })
 
 

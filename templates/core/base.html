@@ -6,22 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ site_brand.name }} — Córdoba ↔ Jujuy</title>
   <meta name="description" content="Reservá tu viaje en colectivo entre Córdoba y Jujuy con {{ site_brand.name }}.">
-  <link rel="preload" href="{% static 'assets/hero-bg.jpg' %}" as="image">
-  <link rel="preload" href="{% static 'assets/hero-interior.jpg' %}" as="image">
+  <link rel="preload" href="{% static 'assets/hero-jujuy.jpg' %}" as="image" fetchpriority="high">
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
   <link rel="stylesheet" href="{% static 'css/checkout.css' %}">
   {% block extra_css %}{% endblock %}
 </head>
 <body data-whatsapp-url="{{ site_brand.whatsapp_url }}">
   <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+
   <!-- ═══════════════════ HEADER ═══════════════════ -->
   <header class="site-header">
-    <a href="/" class="brand-mark" aria-label="{{ site_brand.name }}">
-      <span class="brand-mark__flag"></span>
-      <div>
-        <p class="brand-mark__name">{{ site_brand.name }}</p>
-        <p class="brand-mark__sub">{{ site_brand.tagline }}</p>
-      </div>
+    <a href="/" class="brand-mark" aria-label="{{ site_brand.name }} — Inicio">
+      <img class="brand-mark__logo" src="{% static 'assets/scviajes-logo-h.png' %}" width="114" height="38" alt="{{ site_brand.name }}">
+      <p class="brand-mark__sub">{{ site_brand.tagline }}</p>
     </a>
 
     <button class="menu-toggle" type="button" aria-label="Abrir menú principal" aria-expanded="false" aria-controls="nav-links">
@@ -30,495 +27,283 @@
     </button>
 
     <nav class="site-nav" id="nav-links" aria-label="Navegación principal">
-      <a href="/#viajes">Viajes</a>
-      <a href="{% url 'buscar_viajes' %}">Buscador</a>
-      <a href="/#como-funciona">Cómo funciona</a>
+      <a href="/#salidas">Viajes</a>
+      <a href="/#recorrido">Recorrido</a>
+      <a href="/#como-comprar">Cómo comprar</a>
       <a href="/#preguntas">Preguntas frecuentes</a>
       {% if user.is_authenticated %}
         <a href="{% url 'mis_viajes' %}">Mis viajes</a>
-        <form method="POST" action="{% url 'logout_cliente' %}" style="display: inline; margin: 0;">
+        <form method="POST" action="{% url 'logout_cliente' %}" class="nav-logout">
           {% csrf_token %}
-          <button type="submit" class="button button--ghost" style="padding: 0.4rem 0.8rem; font-size: 0.9rem; border: none; background: transparent; color: inherit; cursor: pointer;">Cerrar sesión</button>
+          <button type="submit">Cerrar sesión</button>
         </form>
       {% else %}
         <a href="{% url 'login_cliente' %}">Ingresar</a>
       {% endif %}
-      <a href="{% url 'buscar_viajes' %}" class="button button--primary nav-cta">
-        Reservar
-      </a>
+      <a href="{% url 'buscar_viajes' %}" class="button button--primary nav-cta">Reservar</a>
     </nav>
   </header>
-
-  <!-- ═══════════════════ MARQUEE ═══════════════════ -->
-  <div class="marquee" aria-hidden="true">
-    <div class="marquee__inner">
-      <div class="marquee__content">
-        <span>VIAJÁ CÓMODO. VIAJÁ CONECTADO.</span>
-        <span class="marquee__dot">•</span>
-        <span>CÓRDOBA ↔ JUJUY</span>
-        <span class="marquee__dot">•</span>
-        <span>SERVICIO A BORDO</span>
-        <span class="marquee__dot">•</span>
-        <span>NUEVAS UNIDADES</span>
-        <span class="marquee__dot">•</span>
-      </div>
-      <div class="marquee__content" aria-hidden="true">
-        <span>VIAJÁ CÓMODO. VIAJÁ CONECTADO.</span>
-        <span class="marquee__dot">•</span>
-        <span>CÓRDOBA ↔ JUJUY</span>
-        <span class="marquee__dot">•</span>
-        <span>SERVICIO A BORDO</span>
-        <span class="marquee__dot">•</span>
-        <span>NUEVAS UNIDADES</span>
-        <span class="marquee__dot">•</span>
-      </div>
-    </div>
-  </div>
 
   <div class="page-shell">
     <main id="main-content" tabindex="-1">
       {% if messages %}
-        <div class="container" style="max-width: 1000px; margin: 1.5rem auto 0 auto; padding: 0 1.5rem;">
+        <div class="container messages-wrap">
           {% for message in messages %}
-            <div class="alert alert--{{ message.tags }}" style="padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1rem; font-weight: 500; {% if message.tags == 'error' %}background: #fee2e2; color: #991b1b; border: 1px solid #f87171;{% elif message.tags == 'success' %}background: #dcfce7; color: #166534; border: 1px solid #86efac;{% else %}background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc;{% endif %}">
-              {{ message }}
-            </div>
+            <div class="alert alert--{{ message.tags }}">{{ message }}</div>
           {% endfor %}
         </div>
       {% endif %}
       {% block content %}
-      <!-- ═══════════════════ HERO ═══════════════════ -->
+      <!-- ═══════════════════ HERO + BUSCADOR ═══════════════════ -->
       <section class="hero" id="inicio">
-        <div class="hero__copy">
-          <div class="hero__eyebrow">
-            <span>SC Viajes</span>
-            <span class="hero__eyebrow-dot"></span>
-            <span>Córdoba ↔ Jujuy</span>
-          </div>
-
-          <h1>CÓRDOBA<br><span class="hero__arrow">↔</span><br>JUJUY</h1>
-          <p class="hero__subtitle">Viajá cómodo. Viajá conectado.</p>
-          <p class="hero__lead">
-            Elegí tu fecha, consultá disponibilidad y avanzá con tu reserva en minutos.
-          </p>
-
-          <div class="hero__trust">
-            <div class="trust-pill">
-              <svg class="trust-pill__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L2 7 L12 12 L22 7 Z"/><path d="M2 17 L12 22 L22 17"/><path d="M2 12 L12 17 L22 12"/></svg>
-              <div>
-                <strong>Wi-Fi durante el viaje</strong>
-                <span>Servicio a bordo sujeto a disponibilidad</span>
-              </div>
-            </div>
-            <div class="trust-pill">
-              <svg class="trust-pill__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-              <div>
-                <strong>Servicio directo</strong>
-                <span>Córdoba ↔ Jujuy sin escalas</span>
-              </div>
+        <div class="hero__media" role="img" aria-label="Cerro de los Siete Colores y viñedos, Purmamarca, Jujuy"></div>
+        <div class="hero__inner">
+          <div class="hero__copy">
+            <p class="hero__eyebrow">{{ site_brand.name }} · Servicio de larga distancia</p>
+            <h1>Conectamos Córdoba y Jujuy</h1>
+            <p class="hero__lead">
+              Reservá tu pasaje online en minutos: elegí tu fecha, tu butaca
+              y recibí tu pasaje en PDF.
+            </p>
+            <div class="hero__trust">
+              <span class="trust-pill">Reserva online</span>
+              <span class="trust-pill">Butacas numeradas</span>
+              <span class="trust-pill">Pasaje en PDF</span>
             </div>
           </div>
-        </div>
 
-        <!-- SEARCH CARD -->
-        <aside class="search-card" aria-labelledby="search-title">
-          <div class="search-card__top">
-            <p class="search-card__eyebrow">Buscá tu viaje</p>
-            <h2 id="search-title">¿A dónde viajás?</h2>
-          </div>
-
-          <form id="search-form" class="search-form" method="GET" action="{% url 'buscar_viajes' %}">
-            <div class="search-form__trip-type" style="display: flex; gap: 1rem; margin-bottom: 0.75rem; font-size: 0.9rem; font-weight: 600;">
-              <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
-                <input type="radio" name="trip_type" value="oneway" checked id="hero-type-oneway">
-                <span>Solo ida</span>
-              </label>
-              <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
-                <input type="radio" name="trip_type" value="roundtrip" id="hero-type-roundtrip">
-                <span>Ida y vuelta</span>
-              </label>
+          <!-- SEARCH CARD -->
+          <aside class="search-card" aria-labelledby="search-title">
+            <div class="search-card__top">
+              <p class="search-card__eyebrow">Buscá tu viaje</p>
+              <h2 id="search-title">¿A dónde viajás?</h2>
             </div>
 
-            <div class="search-form__route">
-              <label>
-                <span>Origen</span>
-                <select id="origin" name="origin" required>
-                  {% if stops %}
-                    {% for stop in stops %}
-                      <option value="{{ stop.pk }}" {% if forloop.first %}selected{% endif %}>{{ stop.name }}</option>
-                    {% endfor %}
-                  {% endif %}
-                </select>
-              </label>
-
-              <button class="swap-button" type="button" id="swap-route" aria-label="Invertir origen y destino">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M5 3v14M5 17l-3-3M5 17l3-3M15 17V3M15 3l-3 3M15 3l3 3"/>
-                </svg>
-              </button>
-
-              <label>
-                <span>Destino</span>
-                <select id="destination" name="destination" required>
-                  {% if stops %}
-                    {% for stop in stops %}
-                      <option value="{{ stop.pk }}" {% if forloop.last %}selected{% endif %}>{{ stop.name }}</option>
-                    {% endfor %}
-                  {% endif %}
-                </select>
-              </label>
-            </div>
-
-            <div class="search-form__details">
-              <label>
-                <span>Fecha ida</span>
-                <input id="travel-date" name="date" type="date" value="{{ today_str }}" min="{{ today_str }}" required>
-              </label>
-
-              <label id="hero-return-date-container" style="display: none;">
-                <span>Fecha vuelta</span>
-                <input id="hero-return-date" name="return_date" type="date" min="{{ today_str }}">
-              </label>
-
-              <label>
-                <span>Pasajeros</span>
-                <select id="passengers" name="passengers">
-                  <option value="1">1 pasajero</option>
-                  <option value="2">2 pasajeros</option>
-                  <option value="3">3 pasajeros</option>
-                  <option value="4">4 pasajeros</option>
-                </select>
-              </label>
-            </div>
-
-            <button class="button button--primary button--block" type="submit">
-              Buscar viaje
-            </button>
-          </form>
-
-          <div class="search-card__route-info">
-            <div class="search-card__route-dot"></div>
-            <p><strong>Jujuy → Córdoba</strong><br>
-            <span>Casa de Turismo de Jujuy → Terminal de Córdoba</span></p>
-          </div>
-        </aside>
-      </section>
-
-      <!-- ═══════════════════ QUICK STRIP ═══════════════════ -->
-      <section class="quick-strip reveal" aria-label="Motivos para elegir SC Viajes">
-        <div class="quick-strip__item">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c-3 0-8 4-8 10s5 10 8 10 8-4 8-10S15 2 12 2Z"/><path d="M2 12h20"/></svg>
-          <div>
-            <span>Conectividad</span>
-            <strong>Servicio a bordo</strong>
-          </div>
-        </div>
-        <div class="quick-strip__item">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 12l4-4M3 12l4 4M21 12l-4-4M21 12l-4 4"/></svg>
-          <div>
-            <span>Ruta enfocada</span>
-            <strong>Córdoba ↔ Jujuy</strong>
-          </div>
-        </div>
-        <div class="quick-strip__item">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <div>
-            <span>Canal directo</span>
-            <strong>Continuación por WhatsApp</strong>
-          </div>
-        </div>
-      </section>
-
-      <!-- ═══════════════════ BOOKING FLOW ═══════════════════ -->
-      <section class="booking-flow" id="viajes">
-        <div class="section-head reveal">
-          <p class="section-head__tag">Flujo de reserva</p>
-          <h2>Buscá, elegí y reservá tu viaje.</h2>
-        </div>
-
-        <div class="screen-tabs" role="tablist" aria-label="Pasos de la reserva">
-          <button class="screen-tab is-active" id="tab-results" role="tab" aria-selected="true" aria-controls="screen-results" type="button" data-screen-target="results">Resultados</button>
-          <button class="screen-tab" id="tab-detail" role="tab" aria-selected="false" aria-controls="screen-detail" type="button" data-screen-target="detail">Detalle</button>
-          <button class="screen-tab" id="tab-passengers" role="tab" aria-selected="false" aria-controls="screen-passengers" type="button" data-screen-target="passengers">Pasajeros</button>
-          <button class="screen-tab" id="tab-confirmation" role="tab" aria-selected="false" aria-controls="screen-confirmation" type="button" data-screen-target="confirmation">Confirmación</button>
-        </div>
-
-        <!-- RESULTS -->
-        <div class="flow-screen is-active" id="screen-results">
-          <div class="flow-panel">
-            <div class="flow-panel__header">
-              <div>
-                <p class="flow-panel__eyebrow">Resultados de búsqueda</p>
-                <h3 id="results-title">Jujuy → Córdoba</h3>
-              </div>
-              <div class="summary-badge" id="search-summary">Jueves 20 de agosto de 2026 · 1 pasajero</div>
-            </div>
-            <div class="result-list" id="results-list"></div>
-          </div>
-        </div>
-
-        <!-- DETAIL -->
-        <div class="flow-screen" id="screen-detail">
-          <div class="flow-panel">
-            <div class="flow-panel__header">
-              <div>
-                <p class="flow-panel__eyebrow">Detalle del viaje</p>
-                <h3>Tu viaje seleccionado</h3>
-              </div>
-              <button class="button button--ghost" type="button" data-go-screen="results">
-                ← Volver
-              </button>
-            </div>
-
-            <div class="detail-card" id="detail-card"></div>
-
-            <div class="detail-actions">
-              <button class="button button--primary" type="button" data-go-screen="passengers">
-                Continuar reserva
-              </button>
-              {% if site_brand.whatsapp_url %}<a class="button button--ghost" href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">
-                Reservar por WhatsApp
-              </a>{% endif %}
-            </div>
-            {% if site_brand.whatsapp_url %}<p class="detail-wa-hint">¿Preferís reservar por WhatsApp? <a href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">Hablar con SC Viajes →</a></p>{% endif %}
-          </div>
-        </div>
-
-        <!-- PASSENGERS -->
-        <div class="flow-screen" id="screen-passengers">
-          <div class="flow-panel">
-            <div class="flow-panel__header">
-              <div>
-                <p class="flow-panel__eyebrow">Datos del pasajero</p>
-                <h3>Completá tus datos</h3>
-              </div>
-              <button class="button button--ghost" type="button" data-go-screen="detail">
-                ← Volver
-              </button>
-            </div>
-
-            <form class="passenger-form" id="passenger-form">
-              <div class="form-grid">
-                <label>
-                  <span>Nombre y apellido</span>
-                  <input type="text" name="fullName" placeholder="Ej: María López" required>
+            <form id="search-form" class="search-form" method="GET" action="{% url 'buscar_viajes' %}">
+              <div class="search-form__trip-type">
+                <label class="trip-type-label">
+                  <input type="radio" name="trip_type" value="oneway" checked id="hero-type-oneway">
+                  <span>Solo ida</span>
                 </label>
-                <label>
-                  <span>DNI</span>
-                  <input type="text" name="dni" inputmode="numeric" placeholder="Ej: 32123456" required>
-                </label>
-                <label>
-                  <span>Teléfono</span>
-                  <input type="tel" name="phone" placeholder="Ej: 388 123 4567" required>
-                </label>
-                <label>
-                  <span>Email</span>
-                  <input type="email" name="email" placeholder="Ej: maria@email.com" required>
+                <label class="trip-type-label">
+                  <input type="radio" name="trip_type" value="roundtrip" id="hero-type-roundtrip">
+                  <span>Ida y vuelta</span>
                 </label>
               </div>
 
-              <div class="passenger-counter">
-                <div>
-                  <p>Cantidad de pasajeros</p>
-                  <strong id="passenger-count-label">1 pasajero</strong>
-                </div>
-                <button class="button button--ghost" type="button" id="add-passenger">
-                  + Agregar pasajero
+              <div class="search-form__route">
+                <label>
+                  <span>Origen</span>
+                  <select id="origin" name="origin" required>
+                    {% if stops %}
+                      {% for stop in stops %}
+                        <option value="{{ stop.pk }}" {% if forloop.first %}selected{% endif %}>{{ stop.name }}</option>
+                      {% endfor %}
+                    {% endif %}
+                  </select>
+                </label>
+
+                <button class="swap-button" type="button" id="swap-route" aria-label="Invertir origen y destino">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 3v14M5 17l-3-3M5 17l3-3M15 17V3M15 3l-3 3M15 3l3 3"/>
+                  </svg>
                 </button>
+
+                <label>
+                  <span>Destino</span>
+                  <select id="destination" name="destination" required>
+                    {% if stops %}
+                      {% for stop in stops %}
+                        <option value="{{ stop.pk }}" {% if forloop.last %}selected{% endif %}>{{ stop.name }}</option>
+                      {% endfor %}
+                    {% endif %}
+                  </select>
+                </label>
               </div>
 
-              <div id="extra-passengers" class="extra-passengers"></div>
+              <div class="search-form__details">
+                <label>
+                  <span>Fecha ida</span>
+                  <input id="travel-date" name="date" type="date" value="{{ today_str }}" min="{{ today_str }}" required>
+                </label>
 
-              <div class="form-submit">
-                <button class="button button--primary button--block" type="submit">Continuar</button>
+                <label id="hero-return-date-container" class="return-date-field">
+                  <span>Fecha vuelta</span>
+                  <input id="hero-return-date" name="return_date" type="date" min="{{ today_str }}">
+                </label>
+
+                <label>
+                  <span>Pasajeros</span>
+                  <select id="passengers" name="passengers">
+                    <option value="1">1 pasajero</option>
+                    <option value="2">2 pasajeros</option>
+                    <option value="3">3 pasajeros</option>
+                    <option value="4">4 pasajeros</option>
+                  </select>
+                </label>
               </div>
+
+              <button class="button button--primary button--block" type="submit">
+                Buscar viaje
+              </button>
             </form>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ═══════════════════ PRÓXIMAS SALIDAS ═══════════════════ -->
+      <section class="departures" id="salidas">
+        <div class="section-head reveal">
+          <p class="section-head__tag">Viajes disponibles</p>
+          <h2>Próximas salidas</h2>
+          <p class="section-head__sub">Viajes reales con reserva abierta.</p>
+        </div>
+
+        {% if upcoming_trips %}
+          <div class="departures-grid reveal">
+            {% for item in upcoming_trips %}
+              <article class="departure-card">
+                <p class="departure-card__route">{{ item.origin.name }} → {{ item.destination.name }}</p>
+                <p class="departure-card__date">{{ item.departure_local|date:"l j \\d\\e F" }}</p>
+                <p class="departure-card__time">{{ item.departure_local|date:"H:i" }} h</p>
+                {% if item.min_fare %}
+                  <p class="departure-card__fare">Desde ${{ item.min_fare|floatformat:"0" }}</p>
+                {% endif %}
+                <a class="button button--primary button--small" href="{{ item.search_url }}">Ver butacas</a>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-state-box reveal">
+            <p><strong>No hay salidas publicadas por el momento.</strong></p>
+            <p>Probá buscar otra fecha o consultanos por WhatsApp.</p>
+          </div>
+        {% endif %}
+      </section>
+
+      <!-- ═══════════════════ RECORRIDO ═══════════════════ -->
+      <section class="routes" id="recorrido">
+        <div class="section-head reveal">
+          <p class="section-head__tag">Nuestro recorrido</p>
+          <h2>Córdoba ↔ Jujuy, sin vueltas.</h2>
+          <p class="section-head__sub">Paradas operativas del servicio.</p>
+        </div>
+
+        <div class="routes-wrap reveal">
+          <div class="routes-photo">
+            <img src="{% static 'assets/jujuy-quebrada.jpg' %}" width="1280" height="720"
+                 alt="Paisaje de la Quebrada de Purmamarca, Jujuy" loading="lazy" decoding="async">
+            <p class="photo-caption">Paisaje de Jujuy — destino turístico de la región, no es una parada del servicio.</p>
+          </div>
+
+          <div class="routes-grid">
+            {% for item in home_routes %}
+              <article class="route-card">
+                <p class="route-card__label">{{ item.route.name }}</p>
+                <div class="route-card__points">
+                  {% for s in item.stops %}
+                    <div class="route-card__point">
+                      <span class="route-card__dot{% if forloop.last %} route-card__dot--end{% endif %}"></span>
+                      <div>
+                        <strong>{{ s.stop.name }}</strong>
+                        <span>{% if s.boarding %}Subida{% elif s.alighting %}Bajada{% else %}Paso{% endif %}</span>
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              </article>
+            {% endfor %}
           </div>
         </div>
-
-        <!-- CONFIRMATION -->
-        <div class="flow-screen" id="screen-confirmation">
-          <div class="flow-panel flow-panel--confirmation">
-            <div class="confirmation-card">
-              <div class="confirmation-card__icon">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
-              <p class="flow-panel__eyebrow">Reserva iniciada</p>
-              <h3>Tu solicitud fue registrada correctamente.</h3>
-              <p class="confirmation-card__desc">Un representante de SC Viajes se comunicará para confirmar tu reserva.</p>
-
-              <div class="confirmation-summary" id="confirmation-summary"></div>
-
-              <div class="detail-actions detail-actions--stack">
-                {% if site_brand.whatsapp_url %}<a class="button button--primary" id="whatsapp-link" href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">
-                  Continuar por WhatsApp
-                </a>{% endif %}
-                <button class="button button--ghost" type="button" data-reset-flow="true">
-                  Volver al inicio
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
-      <!-- ═══════════════════ CONNECTIVITY ═══════════════════ -->
-      <section class="connectivity-section reveal">
-        <div class="connectivity-section__content">
-          <p class="section-head__tag" style="color: var(--accent)">Conectividad</p>
-          <h2>Viajá conectado.</h2>
-          <p>Información del viaje y reserva en un solo lugar.</p>
-        </div>
-        <div class="connectivity-section__visual">
-          <div class="connectivity-icon">
-            <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
-          </div>
-          <p class="connectivity-label">Información del servicio</p>
-        </div>
-      </section>
-
-      <!-- ═══════════════════ ROUTES ═══════════════════ -->
-      <section class="routes reveal">
-        <div class="section-head">
-          <p class="section-head__tag">Rutas</p>
-          <h2>Dos rutas, una conexión directa.</h2>
+      <!-- ═══════════════════ CATEGORÍAS ═══════════════════ -->
+      <section class="categories" id="categorias">
+        <div class="section-head reveal">
+          <p class="section-head__tag">Servicio a bordo</p>
+          <h2>Elegí tu categoría de butaca.</h2>
         </div>
 
-        <div class="routes-grid">
-          <article class="route-card">
-            <p class="route-card__label">Córdoba → Jujuy</p>
-            <div class="route-card__line"></div>
-            <div class="route-card__points">
-              <div class="route-card__point">
-                <span class="route-card__dot"></span>
-                <div>
-                  <strong>Terminal de Córdoba</strong>
-                  <span>Salida</span>
-                </div>
-              </div>
-              <div class="route-card__point">
-                <span class="route-card__dot route-card__dot--end"></span>
-                <div>
-                  <strong>Casa de Turismo de Jujuy</strong>
-                  <span>Llegada</span>
-                </div>
-              </div>
-            </div>
+        <div class="categories-grid reveal">
+          <article class="category-card">
+            <h3>Semicama</h3>
+            <p>Categoría estándar del servicio. La tarifa varía según el viaje.</p>
           </article>
-
-          <article class="route-card route-card--alt">
-            <p class="route-card__label">Jujuy → Córdoba</p>
-            <div class="route-card__line"></div>
-            <div class="route-card__points">
-              <div class="route-card__point">
-                <span class="route-card__dot"></span>
-                <div>
-                  <strong>Casa de Turismo de Jujuy</strong>
-                  <span>Salida</span>
-                </div>
-              </div>
-              <div class="route-card__point">
-                <span class="route-card__dot route-card__dot--end"></span>
-                <div>
-                  <strong>Terminal de Córdoba</strong>
-                  <span>Llegada</span>
-                </div>
-              </div>
-            </div>
+          <article class="category-card category-card--featured">
+            <h3>Cama</h3>
+            <p>Categoría superior del servicio. La tarifa varía según el viaje.</p>
           </article>
         </div>
       </section>
 
-      <!-- ═══════════════════ BENEFITS ═══════════════════ -->
-      <section class="benefits reveal" id="como-funciona">
-        <div class="section-head">
-          <p class="section-head__tag">Por qué SC Viajes</p>
-          <h2>Todo lo que necesitás para viajar tranquilo.</h2>
+      <!-- ═══════════════════ CÓMO COMPRAR ═══════════════════ -->
+      <section class="how-it-works" id="como-comprar">
+        <div class="section-head reveal">
+          <p class="section-head__tag">Cómo comprar</p>
+          <h2>Tu pasaje en cuatro pasos.</h2>
         </div>
 
-        <div class="benefits-grid">
-          <article>
-            <span class="benefit-num">01</span>
-            <h3>Wi-Fi a bordo</h3>
-            <p>Información del viaje y reserva en un solo lugar.</p>
-          </article>
-          <article>
-            <span class="benefit-num">02</span>
-            <h3>Córdoba ↔ Jujuy</h3>
-            <p>Conexión directa entre ambos destinos.</p>
-          </article>
-          <article>
-            <span class="benefit-num">03</span>
-            <h3>Reserva simple</h3>
-            <p>Encontrá tu viaje y avanzá fácilmente.</p>
-          </article>
-          <article>
-            <span class="benefit-num">04</span>
-            <h3>Atención por WhatsApp</h3>
-            <p>Canal directo para consultas y asistencia.</p>
-          </article>
-        </div>
-      </section>
-
-      <!-- ═══════════════════ HOW IT WORKS ═══════════════════ -->
-      <section class="how-it-works reveal">
-        <div class="section-head">
-          <p class="section-head__tag">Cómo funciona</p>
-          <h2>Reservá en 3 pasos.</h2>
-        </div>
-
-        <div class="steps-grid">
+        <div class="steps-grid reveal">
           <div class="step-card">
             <span class="step-num">01</span>
             <h3>Buscá</h3>
-            <p>Elegí origen, destino y fecha.</p>
+            <p>Elegí origen, destino, fecha y cantidad de pasajeros.</p>
           </div>
           <div class="step-card">
             <span class="step-num">02</span>
-            <h3>Elegí</h3>
-            <p>Encontrá el viaje que necesitás.</p>
+            <h3>Elegí tu butaca</h3>
+            <p>Seleccioná la butaca numerada y la categoría.</p>
           </div>
           <div class="step-card">
             <span class="step-num">03</span>
-            <h3>Reservá</h3>
-            <p>Completá tus datos y avanzá con la reserva.</p>
+            <h3>Pagá</h3>
+            <p>Completá tus datos y pagá con el método disponible.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">04</span>
+            <h3>Recibí tu pasaje</h3>
+            <p>Descargá tu pasaje en PDF desde tu resumen.</p>
           </div>
         </div>
       </section>
 
       <!-- ═══════════════════ FAQ ═══════════════════ -->
-      <section class="faq reveal" id="preguntas">
-        <div class="section-head">
+      <section class="faq" id="preguntas">
+        <div class="section-head reveal">
           <p class="section-head__tag">Preguntas frecuentes</p>
-          <h2>Respuestas rápidas.</h2>
+          <h2>Lo que necesitás saber.</h2>
         </div>
 
-        <div class="faq-list">
+        <div class="faq-list reveal">
           <details>
             <summary>¿Desde dónde sale el viaje en Córdoba?</summary>
-            <p>Terminal de Córdoba.</p>
+            <p>Desde las paradas de subida indicadas en el recorrido, comenzando por Córdoba.</p>
           </details>
           <details>
             <summary>¿Desde dónde sale en Jujuy?</summary>
-            <p>Casa de Turismo de Jujuy.</p>
+            <p>Desde las paradas de subida indicadas en el recorrido hacia Córdoba.</p>
           </details>
           <details>
-            <summary>¿Hay Wi-Fi durante el viaje?</summary>
-            <p>La disponibilidad de servicios a bordo se informa según cada viaje.</p>
+            <summary>¿Cuánto tiempo tengo para pagar una reserva online?</summary>
+            <p>La reserva queda retenida por un tiempo limitado que se muestra en pantalla. Si vence, la butaca se libera automáticamente.</p>
           </details>
           <details>
-            <summary>¿Cómo puedo reservar?</summary>
-            <p>Podés comenzar la reserva desde la plataforma o comunicarte por WhatsApp.</p>
+            <summary>¿Cómo pago por transferencia bancaria?</summary>
+            <p>Al confirmar la reserva se muestran los datos de cuenta y tenés un plazo para subir el comprobante. El pasaje se emite cuando el pago se verifica.</p>
           </details>
           <details>
-            <summary>¿Cómo puedo comunicarme con SC Viajes?</summary>
-            <p>Por WhatsApp.</p>
+            <summary>¿Los menores pagan pasaje?</summary>
+            <p>Los menores de 5 años pueden viajar sin cargo acompañados por un adulto de la misma compra. Política vigente sujeta a confirmación.</p>
+          </details>
+          <details>
+            <summary>¿Cómo recibo mi pasaje?</summary>
+            <p>Cuando tu pago está confirmado, descargás el pasaje en PDF desde el resumen de tu reserva o desde Mis viajes.</p>
           </details>
         </div>
       </section>
 
       <!-- ═══════════════════ FINAL CTA ═══════════════════ -->
-      <section class="final-cta reveal">
+      <section class="final-cta">
         <h2>Tu próximo viaje empieza acá.</h2>
         <p>Córdoba ↔ Jujuy — Buscá tu viaje y reservá de forma simple.</p>
         <div class="final-cta__buttons">
@@ -536,13 +321,37 @@
 
     <!-- ═══════════════════ FOOTER ═══════════════════ -->
     <footer class="site-footer">
-      <div class="site-footer__brand">
-        <strong>{{ site_brand.name }}</strong> <span>{{ site_brand.tagline }}</span>
-      </div>
-      <p>Prototipo comercial desarrollado por <strong>RenderByte</strong>.</p>
-      <p class="site-footer__year">2026</p>
-    </footer>
+      <div class="site-footer__grid">
+        <div class="site-footer__brand">
+          <img src="{% static 'assets/scviajes-logo-sm.png' %}" width="40" height="40" alt="{{ site_brand.name }}">
+          <div>
+            <strong>{{ site_brand.name }}</strong>
+            <span>{{ site_brand.tagline }}</span>
+          </div>
+        </div>
 
+        <nav class="site-footer__links" aria-label="Enlaces del pie">
+          <a href="/#salidas">Viajes</a>
+          <a href="/#recorrido">Recorrido</a>
+          <a href="/#como-comprar">Cómo comprar</a>
+          <a href="/#preguntas">Preguntas frecuentes</a>
+          <a href="{% url 'mis_viajes' %}">Mis viajes</a>
+        </nav>
+
+        <div class="site-footer__contact">
+          {% if site_brand.support_email %}
+            <a href="mailto:{{ site_brand.support_email }}">{{ site_brand.support_email }}</a>
+          {% endif %}
+          {% if site_brand.whatsapp_url %}
+            <a href="{{ site_brand.whatsapp_url }}" target="_blank" rel="noreferrer">WhatsApp</a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="site-footer__legal">
+        <p>Prototipo comercial desarrollado por <strong>RenderByte</strong> · 2026</p>
+        <p class="photo-credits">Fotos: Cerro de los Siete Colores (P. Hughes, CC BY 4.0 / Bernard Gagnon, CC BY-SA 4.0) · Jujuy energía viva (Preyes, CC BY-SA 4.0) — Wikimedia Commons.</p>
+      </div>
+    </footer>
   </div>
 
   <!-- WhatsApp Float -->
@@ -552,13 +361,6 @@
     <span>¿Tenés dudas? Hablá con nosotros</span>
   </a>{% endif %}
   </aside>
-
-  <!-- Mobile Sticky CTA -->
-  <div class="mobile-sticky">
-    <button class="button button--primary button--block" type="button" data-scroll-search="true">
-      Reservar ahora
-    </button>
-  </div>
 
   <script src="{% static 'js/checkout.js' %}" defer></script>
   <script src="{% static 'js/script.js' %}" defer></script>
