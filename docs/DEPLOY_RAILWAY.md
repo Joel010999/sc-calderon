@@ -6,8 +6,10 @@ habilitación productiva.
 
 - **URL:** https://sc-calderon-production.up.railway.app
 - **Código desplegado:** rama `feature/mercadopago-checkout-pro` —
-  commit `b3d0387` (candidato `32ba087` + herramientas de backup PG18
-  y docs; sin cambios de negocio).
+  commit `a511d25` (rediseño integral del frontend público + fixes de
+  contraste axe; candidato `32ba087` + herramientas backup PG18 +
+  fix healthcheck). CI verde: quality, playwright (aceptación navegador
+  + axe), tests PG ×2.
 - **Imagen:** `Dockerfile` propio (python:3.12-slim-trixie +
   `postgresql-client-18` PGDG + collectstatic en build). Reemplaza a
   Railpack/mise (elimina la dependencia de
@@ -105,6 +107,17 @@ Correcciones:
 Verificado post-fix: healthcheck interno aprobado (deploy SUCCESS),
 `/health/live/` público 200, `/health/ready/` 503 (semántica intacta),
 login admin + descarga de PDF existente + 404 anónimo.
+
+## Rediseño frontend público (27/11)
+
+Deploys SUCCESS en web y worker sobre `a511d25` (vía auto-deploy del
+push). Verificado en la URL real (esta sesión): `/health/live/` 200,
+portada sirve el nuevo diseño (`Conectamos Córdoba y Jujuy`,
+`Próximas salidas` con cards reales, logo lockup `scviajes-logo-h`,
+hero `hero-jujuy`), estáticos 200 (`styles.css`, `checkout.css`,
+imágenes, `script.js`), fixes de contraste servidos
+(`photo-credits` #94a3b8, `fare-tag--cama` #991b1b).
+Capturas desktop + móvil en `~/scviajes-e2e/`.
 
 ## Aceptación ejecutada en la URL
 
