@@ -269,7 +269,7 @@
 .fare-tag--cama {
   background: rgba(220, 38, 38, 0.06);
   border-color: rgba(220, 38, 38, 0.16);
-  color: var(--primary);
+  color: #991b1b;
 }
 
 .fare-tag--semicama {
