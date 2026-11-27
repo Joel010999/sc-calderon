@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import json
 import os
 import sys
 import dj_database_url
@@ -51,6 +52,9 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
+    # Los healthchecks de la plataforma consultan por HTTP interno; solo el
+    # endpoint de liveness queda exento del redirect a HTTPS.
+    SECURE_REDIRECT_EXEMPT = [r"^health/live/$"]
     SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', 0))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False').lower() in ('true', '1', 't')
     SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'False').lower() in ('true', '1', 't')
@@ -338,6 +342,28 @@ BANK_TRANSFER_CUIT = _bank_setting("BANK_TRANSFER_CUIT")
 BANK_TRANSFER_ENTITY = _bank_setting("BANK_TRANSFER_ENTITY")
 PAYMENTS_PROOF_WINDOW_MINUTES = int(os.getenv("PAYMENTS_PROOF_WINDOW_MINUTES", 5))
 PAYMENTS_REVIEW_WINDOW_HOURS = int(os.getenv("PAYMENTS_REVIEW_WINDOW_HOURS", 24))
+
+# Mercado Pago Checkout Pro: integración deshabilitada por defecto.
+# Las credenciales solo se leen de variables de entorno; nunca se registran en logs.
+MERCADO_PAGO_ENABLED = os.getenv("MERCADO_PAGO_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "").strip()
+MERCADO_PAGO_WEBHOOK_SECRET = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip()
+MERCADO_PAGO_COLLECTOR_ID = os.getenv("MERCADO_PAGO_COLLECTOR_ID", "").strip()
+MERCADO_PAGO_API_BASE = os.getenv("MERCADO_PAGO_API_BASE", "https://api.mercadopago.com").strip().rstrip("/")
+MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS = int(os.getenv("MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS", 300))
+
+# Payway (Decidir2): deshabilitado por defecto; credenciales solo por entorno.
+PAYWAY_ENABLED = os.getenv("PAYWAY_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+PAYWAY_PUBLIC_API_KEY = os.getenv("PAYWAY_PUBLIC_API_KEY", "").strip()
+PAYWAY_PRIVATE_API_KEY = os.getenv("PAYWAY_PRIVATE_API_KEY", "").strip()
+PAYWAY_API_BASE = os.getenv("PAYWAY_API_BASE", "https://ventasonline.payway.com.ar/api/v2").strip().rstrip("/")
+PAYWAY_SANDBOX = os.getenv("PAYWAY_SANDBOX", "").strip().lower() in ("1", "true", "yes", "on")
+PAYWAY_SCRIPT_URL = os.getenv("PAYWAY_SCRIPT_URL", "https://ventasonline.payway.com.ar/static/v2.6.4/decidir.js").strip()
+# Medios habilitados por el comercio: JSON {"payment_method_id": "Etiqueta"}.
+try:
+    PAYWAY_PAYMENT_METHODS = json.loads(os.getenv("PAYWAY_PAYMENT_METHODS", "{}") or "{}")
+except ValueError:
+    PAYWAY_PAYMENT_METHODS = {}
 PANEL_REPORTS_MAX_RANGE_DAYS = int(os.getenv("PANEL_REPORTS_MAX_RANGE_DAYS", 366))
 
 # Customer accounts & Authentication

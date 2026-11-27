@@ -47,6 +47,24 @@ def _add(results, key, status, message):
     results.append({"key": key, "status": status, "message": message})
 
 
+def _tool_major_version(version_string):
+    """Extrae la versión mayor de la salida `tool --version` (None si no se puede)."""
+    import re
+
+    if not version_string:
+        return None
+    match = re.search(r"\)\s*(\d+)", version_string) or re.search(r"(\d+)", version_string)
+    return int(match.group(1)) if match else None
+
+
+def _server_pg_major_version():
+    """Versión mayor del servidor PostgreSQL conectado; None si no se puede saber."""
+    try:
+        return int(connection.pg_version) // 10000 if connection.pg_version else None
+    except Exception:
+        return None
+
+
 def backup_preflight(*, probe_versions=None):
     """Comprueba preparación sin conectar a PostgreSQL ni crear una copia."""
     prod = _production()
@@ -74,6 +92,14 @@ def backup_preflight(*, probe_versions=None):
     _add(results, "pg_restore", "PASS" if restore_version else ("FAIL" if prod else "WARNING"), "pg_restore está disponible." if restore_version else "pg_restore no está disponible.")
     compatible = bool(dump_version and restore_version) and dump_version.split()[2:3] == restore_version.split()[2:3]
     _add(results, "postgres_tools_version", "PASS" if compatible else ("WARNING" if not prod else "FAIL"), "Las versiones de pg_dump y pg_restore son compatibles." if compatible else "No se pudo comprobar compatibilidad de versiones PostgreSQL.")
+    server_major = _server_pg_major_version() if postgres else None
+    client_major = _tool_major_version(dump_version)
+    if server_major is None or client_major is None:
+        _add(results, "postgres_server_tools_version", "WARNING" if not prod else "FAIL", "No se pudo comparar cliente/servidor PostgreSQL (sin conexión o sin pg_dump).")
+    elif server_major > client_major:
+        _add(results, "postgres_server_tools_version", "FAIL", f"pg_dump/pg_restore {client_major} no pueden copiar un servidor PostgreSQL {server_major}.")
+    else:
+        _add(results, "postgres_server_tools_version", "PASS", "Las herramientas cliente son compatibles con el servidor PostgreSQL.")
     retention_days = int(getattr(settings, "BACKUP_RETENTION_DAYS", 0) or 0)
     minimum_copies = int(getattr(settings, "BACKUP_MINIMUM_COPIES", 0) or 0)
     retention_ok = retention_days > 0 and minimum_copies > 0

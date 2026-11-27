@@ -147,12 +147,14 @@ def seed_demo(*, dry_run=False):
     if not awaiting.payments.filter(status=PaymentStatus.AWAITING_VOUCHER).exists():
         initiate_public_transfer_payment(booking_or_id=awaiting, now=now)
     review_booking = _booking(f"review@{DEMO_DOMAIN}", trip_out, 3, channel=BookingChannel.MANUAL, seller=seller, now=now)
+    # La carga del vendedor titular confirma la venta interna; un pago en revisión sólo
+    # surge cuando lo carga un usuario no titular (administrador).
     if not review_booking.payments.filter(status=PaymentStatus.UNDER_REVIEW).exists():
-        register_transfer_payment(booking_or_id=review_booking, seller=seller, voucher=_voucher(), now=now)
+        register_transfer_payment(booking_or_id=review_booking, seller=admin, voucher=_voucher(), now=now)
     rejected_booking = _booking(f"rejected@{DEMO_DOMAIN}", trip_out, 4, channel=BookingChannel.MANUAL, seller=seller, now=now)
     rejected_payment = rejected_booking.payments.filter(status=PaymentStatus.REJECTED).first()
     if not rejected_payment:
-        rejected_payment = rejected_booking.payments.filter(status=PaymentStatus.UNDER_REVIEW).first() or register_transfer_payment(booking_or_id=rejected_booking, seller=seller, voucher=_voucher(), now=now)
+        rejected_payment = rejected_booking.payments.filter(status=PaymentStatus.UNDER_REVIEW).first() or register_transfer_payment(booking_or_id=rejected_booking, seller=admin, voucher=_voucher(), now=now)
         review_transfer_payment(payment_or_id=rejected_payment, reviewer=admin, approved=False, rejection_reason="Demo sintetico", now=now)
     confirmed = _booking(f"confirmed@{DEMO_DOMAIN}", trip_back, 1, now=now)
     if confirmed.status != BookingStatus.CONFIRMED:
@@ -246,6 +248,9 @@ def reset_demo():
     CustomerBooking.objects.filter(booking_id__in=booking_ids).delete()
     BookingClaimToken.objects.filter(booking_id__in=booking_ids).delete()
     SeatAssignment.objects.filter(leg__booking_id__in=booking_ids).delete()
+    # accompanied_by es una FK PROTECT a sí mismo: hay que cortarla antes de
+    # borrar o el delete falla con ProtectedError en reservas con menor.
+    BookingPassenger.objects.filter(booking_id__in=booking_ids).update(accompanied_by=None)
     BookingPassenger.objects.filter(booking_id__in=booking_ids).delete()
     BookingLeg.objects.filter(booking_id__in=booking_ids).delete()
     AuditEvent.objects.filter(entity_id__in=[str(item) for item in booking_ids]).delete()

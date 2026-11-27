@@ -73,6 +73,28 @@ class ProductionPreflightTests(SimpleTestCase):
         self.assertEqual(results["database_engine"].status, "FAIL")
 
 
+class HealthCheckRedirectExemptionTests(SimpleTestCase):
+    """El probe interno llega por HTTP: solo /health/live/ evita el 301."""
+
+    _PROD = dict(
+        DEBUG=False,
+        SECURE_SSL_REDIRECT=True,
+        SECURE_REDIRECT_EXEMPT=[r"^health/live/$"],
+        ALLOWED_HOSTS=["example.com", "testserver"],
+    )
+
+    def test_liveness_http_is_not_redirected(self):
+        with override_settings(**self._PROD):
+            response = self.client.get("/health/live/", secure=False)
+        self.assertEqual(response.status_code, 200)
+
+    def test_other_paths_still_redirect_to_https(self):
+        with override_settings(**self._PROD):
+            response = self.client.get("/", secure=False)
+        self.assertEqual(response.status_code, 301)
+        self.assertTrue(response["Location"].startswith("https://"))
+
+
 class ErrorPageTests(SimpleTestCase):
     def test_custom_error_pages_are_safe_and_include_request_id(self):
         request = RequestFactory().get("/missing", HTTP_X_REQUEST_ID="error-check")

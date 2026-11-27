@@ -114,6 +114,57 @@ const onePixelPng = {
 };
 
 test.describe('aceptación pública y panel interno', () => {
+  test('invitado puede reservar ida y vuelta con menor acompañado', async ({ page }) => {
+    await page.goto('/');
+    const originValue = await page.locator('#origin option').filter({ hasText: 'Cordoba Demo' }).first().getAttribute('value');
+    const destinationValue = await page.locator('#destination option').filter({ hasText: 'Jujuy Demo' }).first().getAttribute('value');
+    expect(originValue).toBeTruthy();
+    expect(destinationValue).toBeTruthy();
+    const travelDate = new Date();
+    let found = false;
+    for (let offset = 0; offset <= 14 && !found; offset += 1) {
+      for (const delta of [3, 4]) {
+        const outbound = new Date(travelDate);
+        outbound.setDate(outbound.getDate() + offset);
+        const ret = new Date(travelDate);
+        ret.setDate(ret.getDate() + offset + delta);
+        await page.goto(`/buscar/?trip_type=roundtrip&origin=${originValue}&destination=${destinationValue}&date=${outbound.toISOString().slice(0, 10)}&return_date=${ret.toISOString().slice(0, 10)}&passengers=2`);
+        if (await page.locator('#continue-roundtrip-btn').count()) {
+          found = true;
+          break;
+        }
+      }
+    }
+    expect(found).toBe(true);
+    // El botón de continuar envía outbound_trip_radio / return_trip_radio reales del buscador.
+    await page.locator('#continue-roundtrip-btn').click();
+    await expect(page).toHaveURL(/\/checkout\//);
+    await page.locator('input[name="outbound_seats"]:not([disabled])').first().check({ force: true });
+    const returnSeats = page.locator('input[name="return_seats"]:not([disabled])');
+    if (await returnSeats.count()) {
+      await returnSeats.first().check({ force: true });
+    }
+    await page.locator('#p_1_first_name').fill('Madre');
+    await page.locator('#p_1_last_name').fill('E2E');
+    await page.locator('#p_1_document_number').fill(`31${Date.now().toString().slice(-6)}`);
+    await page.locator('#p_1_birth_date').fill('1988-03-15');
+    await page.locator('#p_2_first_name').fill('Menor');
+    await page.locator('#p_2_last_name').fill('E2E');
+    await page.locator('#p_2_document_number').fill(`99${(Date.now() + 1).toString().slice(-6)}`);
+    await page.locator('#p_2_birth_date').fill('2022-06-10');
+    const accompanied = page.locator('#p_2_accompanied_by_position');
+    if (await accompanied.count()) {
+      await accompanied.selectOption('1');
+    }
+    await page.locator('#id_email').fill(`roundtrip-${Date.now()}@demo.scviajes.invalid`);
+    await page.locator('#id_phone').fill('3515550000');
+    await page.locator('#submit-booking-btn').click();
+    await expect(page).toHaveURL(/\/resumen\/[0-9a-f-]+\//);
+    await expect(page.getByText(/Tramo 1/)).toBeVisible();
+    await expect(page.getByText(/Tramo 2/)).toBeVisible();
+    await expect(page.getByText(/menor gratuito/).first()).toBeVisible();
+  });
+
   test('invitado puede buscar y retener una butaca', async ({ page }) => {
     await createGuestBooking(page, `e2e-${Date.now()}@demo.scviajes.invalid`);
     await expect(page.getByText(/Reserva online/)).toBeVisible();
@@ -251,15 +302,17 @@ test.describe('aceptación pública y panel interno', () => {
       await expect(sellerPage.locator('body')).not.toContainText(/cobro en efectivo/i);
       await expect(sellerPage.getByRole('button', { name: /cobro en efectivo/i })).toHaveCount(0);
 
-      // Flujo vigente: pago por transferencia bancaria con comprobante
+      // Flujo vigente: el vendedor titular carga el comprobante de su cobro y la venta se confirma
       const voucherInput = sellerPage.locator('input[type="file"][name="voucher"]');
       await expect(voucherInput).toBeVisible();
+      await expect(sellerPage.locator('input[name="payment_verified"]')).toHaveCount(0);
       await voucherInput.setInputFiles(onePixelPng);
       await Promise.all([
         sellerPage.waitForURL(/\/panel\/reservas\/[0-9a-f-]+\//),
-        sellerPage.getByRole('button', { name: /Registrar transferencia/i }).click(),
+        sellerPage.getByRole('button', { name: /Cargar comprobante y confirmar cobro/i }).click(),
       ]);
-      await expect(sellerPage.getByText(/Transferencia en revisión|registrada una transferencia/i)).toBeVisible();
+      await expect(sellerPage.getByText(/Cobro declarado y confirmado/i)).toBeVisible();
+      await expect(sellerPage.getByText(/Transferencia en revisión/i)).toHaveCount(0);
 
       // Reportes de caja retirados (404) para administradores
       const adminPage = await adminContext.newPage();

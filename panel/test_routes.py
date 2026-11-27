@@ -442,6 +442,24 @@ class RouteViewsTests(TestCase):
                 res = getattr(self.client, method)(url, data, secure=True)
                 self.assertEqual(res.status_code, 403)
 
+    def test_route_detail_renders_for_seller_and_admin(self):
+        route = Route.objects.create(code="DET-TEST", name="Ruta Detalle", is_active=True)
+        RouteStop.objects.create(route=route, stop=self.stop_cba, sequence=1, allows_boarding=True, allows_alighting=False)
+        RouteStop.objects.create(route=route, stop=self.stop_ssj, sequence=2, allows_boarding=False, allows_alighting=True)
+        url = reverse("panel:route_detail", args=[route.pk])
+
+        self.client.force_login(self.seller)
+        response = self.client.get(url, secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "DET-TEST")
+        self.assertContains(response, "Jujuy")
+        self.assertNotContains(response, reverse("panel:route_edit", args=[route.pk]))
+
+        self.client.force_login(self.admin)
+        response = self.client.get(url, secure=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("panel:route_edit", args=[route.pk]))
+
     def test_admin_role_access_visibility_and_crud_navigation(self):
         self.client.force_login(self.admin)
 
@@ -597,6 +615,34 @@ class RouteViewsTests(TestCase):
         route.refresh_from_db()
         self.assertFalse(route.is_active)
         self.assertEqual(route.version, 1)
+        trip.refresh_from_db()
+        self.assertEqual(trip.route_id, route.pk)
+
+    def test_new_version_with_renamed_route_is_created(self):
+        """Regresión: renombrar un recorrido en uso debe versionar, no rechazar el formulario."""
+        self.client.force_login(self.admin)
+        route = Route.objects.create(code="REN-V1", name="Nombre Original", is_active=True)
+        RouteStop.objects.create(route=route, stop=self.stop_cba, sequence=1, allows_boarding=True, allows_alighting=False)
+        RouteStop.objects.create(route=route, stop=self.stop_ssj, sequence=2, allows_boarding=False, allows_alighting=True)
+        start = timezone.now() + timedelta(days=5)
+        trip = schedule_trip(route=route, bus=self.bus, schedules={
+            self.stop_cba.pk: start, self.stop_ssj.pk: start + timedelta(hours=12),
+        })
+        response = self.client.post(
+            reverse("panel:route_new_version", args=[route.pk]),
+            {
+                "code": "REN-V1", "name": "Nombre Renovado", "is_active": True,
+                "sequence_1": 1, "stop_id_1": self.stop_cba.pk, "allows_boarding_1": True,
+                "sequence_2": 2, "stop_id_2": self.stop_ssj.pk, "allows_alighting_2": True,
+            },
+            secure=True,
+        )
+        self.assertRedirects(response, reverse("panel:routes"))
+        route_v2 = Route.objects.get(code="REN-V1", version=2)
+        self.assertEqual(route_v2.name, "Nombre Renovado")
+        self.assertEqual(route_v2.parent_route_id, route.pk)
+        route.refresh_from_db()
+        self.assertEqual(route.name, "Nombre Original")
         trip.refresh_from_db()
         self.assertEqual(trip.route_id, route.pk)
 

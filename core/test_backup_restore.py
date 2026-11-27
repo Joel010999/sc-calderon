@@ -97,3 +97,30 @@ class BackupReadinessTests(SimpleTestCase):
     def test_development_preflight_does_not_execute_postgres_tools(self, run):
         backup_preflight()
         run.assert_not_called()
+
+    def _preflight_result(self, results, key):
+        return next(item for item in results["results"] if item["key"] == key)
+
+    @patch("core.backup._server_pg_major_version", return_value=18)
+    @patch("core.backup._tool_version", return_value="pg_dump (PostgreSQL) 17.12 (Debian 17.12-0+deb13u1)")
+    @patch("core.backup.database_config", return_value={"ENGINE": "django.db.backends.postgresql", "NAME": "db"})
+    def test_server_tools_version_fails_when_server_is_newer(self, _config, _tool, _server):
+        with override_settings(DEBUG=False, TESTING=False):
+            result = self._preflight_result(backup_preflight(probe_versions=True), "postgres_server_tools_version")
+        self.assertEqual(result["status"], "FAIL")
+
+    @patch("core.backup._server_pg_major_version", return_value=18)
+    @patch("core.backup._tool_version", return_value="pg_dump (PostgreSQL) 18.6")
+    @patch("core.backup.database_config", return_value={"ENGINE": "django.db.backends.postgresql", "NAME": "db"})
+    def test_server_tools_version_passes_when_client_matches(self, _config, _tool, _server):
+        with override_settings(DEBUG=False, TESTING=False):
+            result = self._preflight_result(backup_preflight(probe_versions=True), "postgres_server_tools_version")
+        self.assertEqual(result["status"], "PASS")
+
+    @patch("core.backup._server_pg_major_version", return_value=None)
+    @patch("core.backup._tool_version", return_value="pg_dump (PostgreSQL) 18.6")
+    @patch("core.backup.database_config", return_value={"ENGINE": "django.db.backends.postgresql", "NAME": "db"})
+    def test_server_tools_version_fails_in_prod_when_server_unknown(self, _config, _tool, _server):
+        with override_settings(DEBUG=False, TESTING=False):
+            result = self._preflight_result(backup_preflight(probe_versions=True), "postgres_server_tools_version")
+        self.assertEqual(result["status"], "FAIL")

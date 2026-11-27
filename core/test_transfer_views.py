@@ -190,10 +190,14 @@ class PublicTransferViewsTestCase(TestCase):
         self.assertContains(resp, "5 minutos")
         # Efectivo NO debe aparecer en el checkout público
         self.assertNotContains(resp, "Efectivo")
-        # Pasarelas automáticas deben aparecer deshabilitadas / próximamente
-        self.assertContains(resp, "Mercado Pago QR")
+        # Pasarelas automáticas: Mercado Pago y Payway aparecen con el
+        # botón deshabilitado mientras no haya credenciales configuradas.
+        self.assertContains(resp, "Mercado Pago")
+        self.assertContains(resp, "Pagar con Mercado Pago")
         self.assertContains(resp, "Payway")
-        self.assertContains(resp, "Próximamente disponible")
+        self.assertContains(resp, "Pagar con Tarjeta")
+        self.assertContains(resp, 'id="btn-start-mercadopago" disabled')
+        self.assertContains(resp, 'id="btn-start-payway" disabled')
 
     def test_payment_pending_redirects_if_active_transfer_exists(self):
         booking = self.create_held_booking()

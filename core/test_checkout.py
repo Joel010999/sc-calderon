@@ -311,6 +311,21 @@ class CheckoutViewTests(CheckoutBaseTestCase):
         self.assertContains(response, "Butacas viaje de regreso")
         self.assertContains(response, "Volvo Starlink")
 
+    def test_checkout_roundtrip_accepts_radio_params_from_search(self):
+        # La búsqueda ida/vuelta envía outbound_trip_radio / return_trip_radio
+        # ("trip:origen:destino"); el checkout debe aceptarlos sin requerir los
+        # campos crudos return_trip/return_origin/return_destination.
+        response = self.client.get(reverse("checkout"), {
+            "outbound_trip_radio": f"{self.trip_out.pk}:{self.ts_out_orig.pk}:{self.ts_out_dest.pk}",
+            "return_trip_radio": f"{self.trip_ret.pk}:{self.ts_ret_orig.pk}:{self.ts_ret_dest.pk}",
+            "passengers": "1",
+            "trip_type": "roundtrip",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Butacas viaje de ida")
+        self.assertContains(response, "Butacas viaje de regreso")
+        self.assertContains(response, "Volvo Starlink")
+
     def test_checkout_rejects_roundtrip_with_same_trip(self):
         response = self.client.get(reverse("checkout"), {
             "outbound_trip": str(self.trip_out.pk),

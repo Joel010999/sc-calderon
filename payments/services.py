@@ -24,7 +24,7 @@ from .exceptions import (
     PaymentError,
 )
 from .models import Payment, PaymentMethod, PaymentStatus
-from .storage import validate_voucher_file
+from .storage import discard_vouchers_on_error, validate_voucher_file
 
 
 def calculate_booking_total(booking):
@@ -67,13 +67,19 @@ def validate_payment_agent(user):
 
 
 def validate_payment_reviewer(user, payment=None):
-    """Regla (5): Pago requiere comprobante PDF/imagen válido; vendedor verifica externamente y
-    aprueba solo sus ventas; admin/superuser global.
+    """Valida quién puede aprobar o rechazar una transferencia.
+
+    - Administrador / superusuario: cualquier transferencia.
+    - Compras públicas (canal ONLINE): exclusivamente administración (decisión confirmada).
+    - Ventas internas (canal MANUAL), regla (5) vigente y pendiente de definición: el
+      vendedor sólo revisa sus propias ventas.
     """
     if not user or not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
         raise ValidationError("El usuario debe estar autenticado y activo.")
     if user.is_superuser or user.groups.filter(name="Administrador").exists():
         return True
+    if payment is not None and payment.booking.channel == BookingChannel.ONLINE:
+        raise ValidationError("Las transferencias de compras públicas solo pueden revisarlas administradores o superusuarios.")
     if user.groups.filter(name="Vendedor").exists():
         if payment is not None:
             seller_id = getattr(payment.booking, "seller_id", None)
@@ -107,14 +113,43 @@ def register_cash_payment(*, booking_or_id, seller, reference="", now=None):
 def _register_cash_payment_atomic(*, booking_or_id, seller, reference="", now=None):
     raise ValidationError("El registro de nuevos pagos en efectivo ha sido deshabilitado.")
 
-def register_transfer_payment(*, booking_or_id, seller, voucher, reference="", now=None):
-    payment, expired_error = _register_transfer_payment_atomic(
-        booking_or_id=booking_or_id,
-        seller=seller,
-        voucher=voucher,
-        reference=reference,
-        now=now,
+def _is_owner_declaration(booking, seller):
+    """Venta interna cuyo comprobante carga el vendedor titular (cobro en su cuenta personal)."""
+    return bool(
+        seller is not None
+        and booking.channel == BookingChannel.MANUAL
+        and booking.seller_id is not None
+        and booking.seller_id == getattr(seller, "pk", None)
     )
+
+
+def register_transfer_payment(*, booking_or_id, seller, voucher, reference="", now=None):
+    """Registra el comprobante de una venta interna.
+
+    Decisión confirmada: cuando lo carga el vendedor titular, la carga es su
+    declaración de cobro en su cuenta personal y, en la misma transacción,
+    aprueba el pago, confirma la reserva y dispara la emisión, sin segunda
+    aprobación administrativa. Si quien carga no es el titular (p. ej. un
+    administrador sobre la venta de otro vendedor), el pago queda en revisión.
+    """
+    if now is not None:
+        validate_aware_datetime(now)
+    effective_now = now or timezone.now()
+    with discard_vouchers_on_error():
+        with transaction.atomic():
+            payment, expired_error = _register_transfer_payment_atomic(
+                booking_or_id=booking_or_id,
+                seller=seller,
+                voucher=voucher,
+                reference=reference,
+                now=effective_now,
+            )
+            if expired_error is None and _is_owner_declaration(payment.booking, seller):
+                payment, review_error = _review_transfer_payment_atomic(
+                    payment_or_id=payment, reviewer=seller, approved=True, now=effective_now,
+                )
+                if review_error is not None:
+                    raise review_error
     if expired_error is not None:
         raise expired_error
     return payment
@@ -228,13 +263,15 @@ def _register_transfer_payment_atomic(*, booking_or_id, seller, voucher, referen
         },
     )
 
-    from notifications.models import NotificationType
-    from notifications.services import schedule_notification
-    schedule_notification(
-        booking=booking, notification_type=NotificationType.VOUCHER_RECEIVED,
-        event_key=f"payment:{payment.public_id}:voucher-received",
-        payload={"booking_ref": str(booking.public_id)},
-    )
+    if not _is_owner_declaration(booking, seller):
+        # La declaración del titular se confirma en la misma operación: no hay revisión pendiente.
+        from notifications.models import NotificationType
+        from notifications.services import schedule_notification
+        schedule_notification(
+            booking=booking, notification_type=NotificationType.VOUCHER_RECEIVED,
+            event_key=f"payment:{payment.public_id}:voucher-received",
+            payload={"booking_ref": str(booking.public_id)},
+        )
 
     return payment, None
 
@@ -616,11 +653,12 @@ def _initiate_public_transfer_payment_atomic(*, booking_or_id, now=None):
 
 
 def upload_public_transfer_voucher(*, booking_or_id, voucher_file, now=None):
-    payment, expired_error = _upload_public_transfer_voucher_atomic(
-        booking_or_id=booking_or_id,
-        voucher_file=voucher_file,
-        now=now,
-    )
+    with discard_vouchers_on_error():
+        payment, expired_error = _upload_public_transfer_voucher_atomic(
+            booking_or_id=booking_or_id,
+            voucher_file=voucher_file,
+            now=now,
+        )
     if expired_error is not None:
         raise expired_error
     return payment
@@ -789,7 +827,7 @@ def expire_public_transfer_if_expired(booking, now=None):
         ).update(status=AssignmentStatus.RELEASED, updated_at=effective_now)
         Payment.objects.filter(
             booking=locked_booking,
-            status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW],
+            status__in=[PaymentStatus.AWAITING_VOUCHER, PaymentStatus.UNDER_REVIEW, PaymentStatus.PENDING],
         ).update(status=PaymentStatus.EXPIRED, updated_at=effective_now)
         if isinstance(booking, Booking):
             booking.status = locked_booking.status

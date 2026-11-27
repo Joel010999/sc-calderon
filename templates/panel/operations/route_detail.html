@@ -1,0 +1,51 @@
+{% extends 'panel/operations/base.html' %}
+{% block actions %}
+{% if can_manage %}
+{% if route.trip_count > 0 %}
+<a class="ops-button" href="{% url 'panel:route_new_version' route.pk %}">Nueva versión</a>
+<a class="ops-button secondary" href="{% url 'panel:route_edit' route.pk %}">Editar</a>
+{% else %}
+<a class="ops-button" href="{% url 'panel:route_edit' route.pk %}">Editar</a>
+{% endif %}
+{% endif %}
+{% endblock %}
+{% block operations_content %}
+<p><a href="{% url 'panel:routes' %}">← Volver a recorridos</a></p>
+<article class="ops-card route-card">
+    <header class="ops-header">
+        <div>
+            <h2>{{ route.code }} · {{ route.name }}</h2>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                <span class="badge">Versión {{ route.version }}</span>
+                {% if route.parent_route %}<small class="muted">(derivada de v{{ route.parent_route.version }})</small>{% endif %}
+                <span class="badge {% if not route.is_active %}inactive{% endif %}">{{ route.is_active|yesno:'Activo,Inactivo' }}</span>
+                {% if route.trip_count > 0 %}
+                    <span class="badge info">{{ route.trip_count }} viaje{{ route.trip_count|pluralize:'s' }}</span>
+                {% else %}
+                    <span class="badge">Sin viajes</span>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Paradas de {{ route.name }}">
+        <table>
+            <caption>Paradas en orden del recorrido {{ route.code }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Orden</th>
+                    <th scope="col">Parada</th>
+                    <th scope="col">Subida</th>
+                    <th scope="col">Bajada</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in route.route_stops.all %}
+                <tr><td>{{ item.sequence }}</td><th scope="row">{{ item.stop.name }} <small>{{ item.stop.code }}</small></th><td>{{ item.allows_boarding|yesno:'Sí,No' }}</td><td>{{ item.allows_alighting|yesno:'Sí,No' }}</td></tr>
+                {% empty %}
+                <tr><td colspan="4">Este recorrido todavía no tiene paradas configuradas.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</article>
+{% endblock %}

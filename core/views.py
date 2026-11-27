@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+import json
 import logging
 import uuid
 from urllib.parse import urlencode
@@ -15,9 +16,10 @@ from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonRespo
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from operations.models import Seat, Stop, Trip, TripStop
+from operations.models import Route, Seat, Stop, Trip, TripStop
 from sales.conf import (
     get_max_passengers_per_booking,
     get_online_cutoff_minutes,
@@ -46,6 +48,21 @@ from payments.exceptions import (
     PaymentError,
 )
 from payments.models import Payment, PaymentMethod, PaymentStatus
+from payments.mercadopago import (
+    initiate_mercadopago_payment,
+    mercadopago_configured,
+    process_mercadopago_notification,
+    verify_webhook_signature,
+)
+from payments.payway import (
+    execute_payway_payment,
+    payway_api_base,
+    payway_configured,
+    payway_payment_method_ids,
+    payway_sandbox,
+    payway_script_url,
+    start_payway_payment,
+)
 from payments.services import (
     calculate_booking_total,
     initiate_public_transfer_payment,
@@ -241,14 +258,57 @@ def _nearby_search_links(origin_stop, destination_stop, outbound_date, return_da
     return links
 
 
+def _home_upcoming_trips(now, limit=6):
+    """Próximas salidas reales para la portada: origen/destino extremos y menor tarifa."""
+    trips = Trip.objects.filter(
+        status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING],
+        departure_at__gte=now,
+    ).select_related("route").prefetch_related("trip_stops__stop", "fares").order_by("departure_at")[:limit]
+    items = []
+    for trip in trips:
+        ordered = sorted(trip.trip_stops.all(), key=lambda ts: ts.sequence)
+        if not ordered:
+            continue
+        fares = {f.seat_category: f.amount for f in trip.fares.all()}
+        origin, destination = ordered[0].stop, ordered[-1].stop
+        local_dep = timezone.localtime(trip.departure_at, AR_TZ)
+        items.append({
+            "trip": trip,
+            "origin": origin,
+            "destination": destination,
+            "departure_local": local_dep,
+            "min_fare": min(fares.values()) if fares else None,
+            "search_url": (
+                f"{reverse('buscar_viajes')}?trip_type=oneway&origin={origin.pk}"
+                f"&destination={destination.pk}&date={local_dep.date().isoformat()}&passengers=1"
+            ),
+        })
+    return items
+
+
+def _home_routes():
+    """Recorridos activos con sus paradas operativas ordenadas."""
+    routes = []
+    for route in Route.objects.filter(is_active=True).prefetch_related("route_stops__stop"):
+        ordered = route.route_stops.order_by("sequence")
+        stops = [{"stop": rs.stop, "boarding": rs.allows_boarding, "alighting": rs.allows_alighting}
+                 for rs in ordered]
+        if stops:
+            routes.append({"route": route, "stops": stops})
+    return routes
+
+
 def home(request):
     """Página institucional principal con buscador integrado."""
     stops = _get_active_stops()
-    today_str = timezone.localtime(timezone.now(), AR_TZ).date().isoformat()
+    now = timezone.now()
+    today_str = timezone.localtime(now, AR_TZ).date().isoformat()
     return render(request, "core/base.html", {
         "stops": stops,
         "today_str": today_str,
         "max_passengers": get_max_passengers_per_booking(),
+        "upcoming_trips": _home_upcoming_trips(now),
+        "home_routes": _home_routes(),
     })
 
 
@@ -468,9 +528,9 @@ def checkout_view(request):
     return_decks = []
 
     if is_roundtrip:
-        return_trip_id = src.get("return_trip")
-        return_orig_id = src.get("return_origin")
-        return_dest_id = src.get("return_destination")
+        return_trip_id = return_trip_id or src.get("return_trip")
+        return_orig_id = return_orig_id or src.get("return_origin")
+        return_dest_id = return_dest_id or src.get("return_destination")
 
         if not return_trip_id or not return_orig_id or not return_dest_id:
             messages.warning(request, "Seleccioná el viaje de regreso para continuar.")
@@ -900,7 +960,195 @@ def payment_pending(request, public_id):
         "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ),
         "is_held": True,
         "bank_transfer_configured": bank_transfer_configured(),
+        "mercadopago_configured": mercadopago_configured(),
+        "payway_configured": payway_configured(),
     })
+
+
+@require_POST
+def iniciar_mercadopago(request, public_id):
+    """POST + CSRF para iniciar o reutilizar el pago de Checkout Pro de una reserva ONLINE HELD."""
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    now = timezone.now()
+    if not consume(request, scope="transfer.start", limit=settings.ABUSE_TRANSFER_LIMIT,
+                   window_seconds=settings.ABUSE_TRANSFER_WINDOW_SECONDS,
+                   identifier=request_identifier(request)):
+        messages.error(request, "límite de solicitudes alcanzado; aguardá unos minutos.")
+        return redirect("pago_pendiente", public_id=public_id)
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+
+    if not mercadopago_configured():
+        messages.error(request, "El pago con Mercado Pago no está configurado en este momento.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    try:
+        _, init_point = initiate_mercadopago_payment(booking_or_id=booking, now=now)
+        return redirect(init_point)
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except PaymentDuplicateError as pde:
+        messages.info(request, str(pde))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except (InvalidBookingError, PaymentError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("pago_pendiente", public_id=booking.public_id)
+    except Exception:
+        logger.exception("Error inesperado al iniciar pago con Mercado Pago")
+        messages.error(request, "Ocurrió un error al iniciar el pago. Por favor intentá nuevamente.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+
+@csrf_exempt
+@require_POST
+def mercadopago_webhook(request):
+    """Webhook de notificaciones de Mercado Pago (Checkout Pro).
+
+    Valida la firma x-signature (HMAC-SHA256) antes de procesar; las firmas
+    inválidas se rechazan con 401. El procesamiento consulta el pago de forma
+    autenticada y es idempotente ante duplicados o desorden.
+    """
+    if not mercadopago_configured():
+        return HttpResponseForbidden("La integración de Mercado Pago no está habilitada.")
+
+    try:
+        body = json.loads(request.body.decode("utf-8")) if request.body else {}
+    except (ValueError, UnicodeDecodeError):
+        return HttpResponseBadRequest("Payload inválido.")
+
+    data_id = (
+        request.GET.get("data.id")
+        or str((body.get("data") or {}).get("id") or "")
+    )
+    action = body.get("action") or request.GET.get("type") or ""
+    request_id = request.headers.get("x-request-id", "")
+    x_signature = request.headers.get("x-signature", "")
+
+    if not data_id:
+        return HttpResponseBadRequest("Notificación sin identificador de pago.")
+
+    if not verify_webhook_signature(
+        x_signature=x_signature,
+        x_request_id=request_id,
+        data_id=data_id,
+        now=timezone.now(),
+    ):
+        return JsonResponse({"detail": "Firma inválida."}, status=401)
+
+    outcome, _detail = process_mercadopago_notification(
+        data_id=data_id, action=action, request_id=request_id,
+    )
+    # 200 siempre que la firma sea válida: MP reintenta ante errores y el
+    # procesamiento es idempotente.
+    return JsonResponse({"outcome": outcome})
+
+
+@require_POST
+def iniciar_payway(request, public_id):
+    """POST + CSRF: inicia o reutiliza el intento de pago con tarjeta (Payway)
+    de una reserva ONLINE HELD y muestra el formulario de tokenización."""
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    now = timezone.now()
+    if not consume(request, scope="transfer.start", limit=settings.ABUSE_TRANSFER_LIMIT,
+                   window_seconds=settings.ABUSE_TRANSFER_WINDOW_SECONDS,
+                   identifier=request_identifier(request)):
+        messages.error(request, "límite de solicitudes alcanzado; aguardá unos minutos.")
+        return redirect("pago_pendiente", public_id=public_id)
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+
+    if not payway_configured():
+        messages.error(request, "El pago con tarjeta no está disponible en este momento.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    try:
+        payment = start_payway_payment(booking_or_id=booking, now=now)
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except PaymentDuplicateError as pde:
+        messages.info(request, str(pde))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except (InvalidBookingError, PaymentError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    return render(request, "core/payway_checkout.html", {
+        "booking": booking,
+        "payment": payment,
+        "total": payment.amount,
+        "payway_script_url": payway_script_url(),
+        "payway_payment_methods": payway_payment_method_ids(),
+        "payway_public_key": getattr(settings, "PAYWAY_PUBLIC_API_KEY", ""),
+        "payway_api_base": payway_api_base(),
+        "payway_sandbox": payway_sandbox(),
+        "expires_at_local": timezone.localtime(booking.expires_at, AR_TZ) if booking.expires_at else None,
+    })
+
+
+@require_POST
+def ejecutar_payway(request, public_id):
+    """POST + CSRF: ejecuta el cobro con el token generado por decidir.js.
+
+    La confirmación se basa exclusivamente en la respuesta del proveedor o en
+    una consulta autenticada; el token nunca se registra en logs.
+    """
+    session_token = request.session.get(f"booking_access_{public_id}")
+    if not session_token:
+        return HttpResponseForbidden("No tenés permiso para operar sobre esta reserva.")
+
+    booking = get_object_or_404(Booking, public_id=public_id, channel=BookingChannel.ONLINE)
+    payment = booking.payments.filter(
+        method=PaymentMethod.PAYWAY,
+    ).order_by("-created_at", "-pk").first()
+    if payment is None:
+        messages.error(request, "No hay un pago con tarjeta iniciado para esta reserva.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    token = request.POST.get("token", "")
+    payment_method_id = request.POST.get("payment_method_id", "")
+    card_bin = request.POST.get("bin", "")
+    try:
+        outcome, detail = execute_payway_payment(
+            payment_or_id=payment,
+            token=token,
+            payment_method_id=payment_method_id,
+            bin=card_bin,
+            now=timezone.now(),
+        )
+    except BookingExpiredError as bee:
+        messages.error(request, str(bee))
+        return redirect("resumen_reserva", public_id=booking.public_id)
+    except (InvalidBookingError, PaymentError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("pago_pendiente", public_id=booking.public_id)
+    except Exception:
+        logger.exception("Error inesperado al ejecutar pago con Payway")
+        messages.error(request, "Ocurrió un error al procesar el pago. Por favor intentá nuevamente.")
+        return redirect("pago_pendiente", public_id=booking.public_id)
+
+    if outcome == "CONFIRMED":
+        messages.success(request, "Pago aprobado. Tu reserva quedó confirmada y tus pasajes se emiten en breve.")
+    elif outcome == "REJECTED":
+        messages.error(request, "El pago fue rechazado por el emisor de la tarjeta. Podés intentarlo nuevamente.")
+    elif outcome == "VALIDATION_ERROR":
+        messages.error(request, detail)
+    elif outcome == "ALREADY_CONFIRMED":
+        messages.info(request, detail)
+    elif outcome in ("IN_PROGRESS", "STILL_PENDING"):
+        messages.info(request, detail + " Verificá el estado en unos instantes desde el resumen.")
+    else:
+        messages.warning(request, "No pudimos confirmar el resultado del pago en este momento. "
+                                  "El intento quedó registrado y se verificará automáticamente; "
+                                  "no realices otro pago hasta que se resuelva.")
+    return redirect("resumen_reserva", public_id=booking.public_id)
 
 
 @require_POST

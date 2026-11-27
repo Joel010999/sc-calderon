@@ -254,7 +254,7 @@ class PanelPaymentsTestCase(TestCase):
             resp = self.client.get(url)
             self.assertEqual(resp.status_code, 200)
             self.assertNotContains(resp, "Confirmar cobro en efectivo")
-            self.assertNotContains(resp, "Registrar transferencia")
+            self.assertNotContains(resp, "Cargar comprobante y confirmar cobro")
 
     def test_booking_detail_with_pending_transfer_shows_review_notice(self):
         """Cuando una reserva tiene transferencia en revisión, no muestra el formulario de pago
@@ -263,7 +263,7 @@ class PanelPaymentsTestCase(TestCase):
         booking = self.create_booking()
         payment = register_transfer_payment(
             booking_or_id=booking,
-            seller=self.seller_user,
+            seller=self.admin_user,
             voucher=self.sample_voucher(),
         )
 
@@ -306,6 +306,41 @@ class PanelPaymentsTestCase(TestCase):
         payment = Payment.objects.get(booking=booking)
         self.assertEqual(payment.amount, Decimal("12000.00"))
 
+    @override_settings(
+        BANK_TRANSFER_ACCOUNT_HOLDER="Titular Negocio Ficticio",
+        BANK_TRANSFER_ALIAS="alias.negocio.ficticio",
+        BANK_TRANSFER_CVU="0000003100099999999999",
+        BANK_TRANSFER_CUIT="30-99999999-7",
+        BANK_TRANSFER_ENTITY="Banco Negocio Ficticio",
+    )
+    def test_owner_voucher_upload_from_detail_confirms_without_second_approval(self):
+        """Decisión confirmada: el titular carga el comprobante (cobro en su cuenta personal) y la
+        venta queda confirmada sin aprobación administrativa ni casilla adicional. El panel no
+        muestra los datos bancarios del negocio en ventas internas."""
+        business_bank = ("Titular Negocio Ficticio", "alias.negocio.ficticio", "0000003100099999999999",
+                         "30-99999999-7", "Banco Negocio Ficticio")
+        self.client.force_login(self.seller_user)
+        booking = self.create_booking()
+        detail_url = reverse("panel:booking_detail", kwargs={"public_id": booking.public_id})
+        detail = self.client.get(detail_url)
+        self.assertContains(detail, "Cargar comprobante y confirmar cobro")
+        self.assertNotContains(detail, 'name="payment_verified"')
+        for value in business_bank:
+            self.assertNotContains(detail, value)
+        url = reverse("panel:booking_pay_transfer", kwargs={"public_id": booking.public_id})
+        resp = self.client.post(url, {"voucher": self.sample_voucher(), "reference": "Cobro personal"}, follow=True)
+        for value in business_bank:
+            self.assertNotContains(resp, value)
+        payment = Payment.objects.get(booking=booking)
+        self.assertEqual(payment.status, PaymentStatus.APPROVED)
+        self.assertEqual(payment.reviewed_by, self.seller_user)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+        self.assertContains(resp, "Cobro declarado y confirmado")
+        self.client.force_login(self.admin_user)
+        pending = self.client.get(reverse("panel:pending_transfers"))
+        self.assertNotContains(pending, str(payment.public_id))
+
     # --- Listado y Búsqueda de Pagos ---
 
     def test_payment_list_filters_and_search(self):
@@ -328,7 +363,7 @@ class PanelPaymentsTestCase(TestCase):
         )
 
         b2 = self.create_booking(email="ana@correo.com", seats=[self.seat_2])
-        p2 = register_transfer_payment(booking_or_id=b2, seller=self.seller_user, voucher=self.sample_voucher())
+        p2 = register_transfer_payment(booking_or_id=b2, seller=self.admin_user, voucher=self.sample_voucher())
 
         list_url = reverse("panel:payment_list")
 
@@ -409,7 +444,7 @@ class PanelPaymentsTestCase(TestCase):
         booking = self.create_booking()
         payment = register_transfer_payment(
             booking_or_id=booking,
-            seller=self.seller_user,
+            seller=self.admin_user,
             voucher=self.sample_voucher(),
         )
 
@@ -438,7 +473,7 @@ class PanelPaymentsTestCase(TestCase):
         booking = self.create_booking()
         payment = register_transfer_payment(
             booking_or_id=booking,
-            seller=self.seller_user,
+            seller=self.admin_user,
             voucher=self.sample_voucher(),
         )
 
@@ -507,17 +542,17 @@ class PanelPaymentsTestCase(TestCase):
 
         # 2. Pago transferencia aprobado (8000)
         b2 = self.create_booking(email="transf_app@correo.com", seats=[self.seat_2])
-        p2 = register_transfer_payment(booking_or_id=b2, seller=self.seller_user, voucher=self.sample_voucher())
+        p2 = register_transfer_payment(booking_or_id=b2, seller=self.admin_user, voucher=self.sample_voucher())
         from payments.services import review_transfer_payment
         review_transfer_payment(payment_or_id=p2, reviewer=self.admin_user, approved=True)
 
         # 3. Pago transferencia en revisión (12000) -> NO DEBE CONTAR EN INGRESOS NI VENTAS CONFIRMADAS
         b3 = self.create_booking(email="transf_pend@correo.com")
-        register_transfer_payment(booking_or_id=b3, seller=self.seller_user, voucher=self.sample_voucher())
+        register_transfer_payment(booking_or_id=b3, seller=self.admin_user, voucher=self.sample_voucher())
 
         # 4. Pago transferencia rechazada (12000) -> NO DEBE CONTAR
         b4 = self.create_booking(email="transf_rej@correo.com")
-        p4 = register_transfer_payment(booking_or_id=b4, seller=self.seller_user, voucher=self.sample_voucher())
+        p4 = register_transfer_payment(booking_or_id=b4, seller=self.admin_user, voucher=self.sample_voucher())
         review_transfer_payment(payment_or_id=p4, reviewer=self.admin_user, approved=False, rejection_reason="Ilegible")
 
         dash_url = reverse("panel:dashboard")

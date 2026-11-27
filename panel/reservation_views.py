@@ -533,17 +533,18 @@ def booking_create(request):
 
                 earliest_dep, is_last_hour = validate_internal_sale_timing(trips, now=now)
                 voucher_file = request.FILES.get("voucher")
-                payment_verified = request.POST.get("payment_verified") in ("1", "true", "on", "yes")
                 transfer_reference = (request.POST.get("transfer_reference") or "").strip()
                 is_admin = _reservation_admin(request.user)
 
                 if not is_admin:
-                    # Regla (8): Última hora antes de salida inicial exige comprobante y declaración de pago verificado
+                    # Decisión confirmada: el comprobante cargado por el vendedor titular es su
+                    # declaración de cobro en su cuenta personal y confirma la venta.
+                    # Regla (8): en la última hora sólo se admiten ventas confirmadas con comprobante.
                     if is_last_hour:
-                        if not voucher_file or not payment_verified:
+                        if not voucher_file:
                             raise ValidationError(
                                 "Dentro de la última hora previa a la salida inicial, solo se admiten "
-                                "operaciones confirmadas con datos completos, comprobante y declaración de pago verificado."
+                                "operaciones confirmadas con datos completos y comprobante del cobro."
                             )
                         booking = create_immediate_transfer_sale(
                             seller=request.user,
@@ -562,7 +563,7 @@ def booking_create(request):
                             f"Venta inmediata por transferencia confirmada exitosamente (Reserva {booking.public_id})."
                         )
                     else:
-                        if voucher_file and payment_verified:
+                        if voucher_file:
                             booking = create_immediate_transfer_sale(
                                 seller=request.user,
                                 email=contact_email,
@@ -598,8 +599,9 @@ def booking_create(request):
                                 f"Butaca retenida hasta el vencimiento ({timezone.localtime(booking.expires_at).strftime('%d/%m/%Y %H:%M')})."
                             )
                 else:
-                    # Administrador: puede crear manual sin vencimiento o con flujo de transferencia
-                    if voucher_file and payment_verified:
+                    # Administrador: puede crear manual sin vencimiento o con flujo de transferencia.
+                    # Como titular de su venta, su comprobante también confirma el cobro.
+                    if voucher_file:
                         booking = create_immediate_transfer_sale(
                             seller=request.user,
                             email=contact_email,
@@ -616,11 +618,11 @@ def booking_create(request):
                             request,
                             f"Venta confirmada exitosamente (Reserva {booking.public_id})."
                         )
-                    elif sale_type == "transfer" or voucher_file or is_last_hour:
-                        if is_last_hour and not payment_verified:
+                    elif sale_type == "transfer" or is_last_hour:
+                        if is_last_hour:
                             raise ValidationError(
                                 "Dentro de la última hora previa a la salida inicial, solo se admiten "
-                                "operaciones confirmadas con datos completos, comprobante y declaración de pago verificado."
+                                "operaciones confirmadas con datos completos y comprobante del cobro."
                             )
                         booking = create_internal_transfer_booking(
                             seller=request.user,

@@ -3,9 +3,11 @@
 import hashlib
 import logging
 import secrets
+import traceback
 import uuid
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -40,6 +42,17 @@ from .rendering.data import PENDING_SANDRO_VALUE
 from .storage import get_ticket_storage
 
 logger = logging.getLogger(__name__)
+
+
+def _exception_origin(exc):
+    """Último frame propio del proyecto como ``archivo:línea:función`` (sin variables ni mensaje)."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    base = str(settings.BASE_DIR)
+    own = [f for f in frames if f.filename.startswith(base) and "site-packages" not in f.filename]
+    frame = (own or frames or [None])[-1]
+    if frame is None:
+        return "desconocido"
+    return f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
 
 
 def _format_money(currency: str, amount: Decimal) -> str:
@@ -616,7 +629,13 @@ def process_booking_fulfillment(job_or_id, retry=False, actor=None, now=None):
 
     try:
         issue_tickets_for_booking(job.booking_id, now=effective_now)
-    except Exception:
+    except Exception as exc:
+        # Diagnóstico sin datos personales: nunca se registra str(exc) ni el traceback,
+        # que pueden contener correos, documentos o URLs firmadas del storage.
+        logger.error(
+            "Falló la emisión de pasajes: fulfillment=%s reserva=%s error_type=%s origen=%s",
+            job_id, job.booking_id, type(exc).__name__, _exception_origin(exc),
+        )
         with transaction.atomic():
             job = TicketFulfillment.objects.select_for_update().get(pk=job_id)
             job.issue_status = FulfillmentIssueStatus.FAILED

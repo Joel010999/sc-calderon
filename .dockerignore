@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+db.sqlite3
+*.sqlite3
+media
+protected_media
+private_tickets
+staticfiles
+node_modules
+.e2e-secret*
+.pytest_cache

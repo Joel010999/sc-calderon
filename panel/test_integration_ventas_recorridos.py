@@ -357,10 +357,9 @@ class IntegrationVentasRecorridosTests(TestCase):
         self.assertContains(resp1, "Dentro de la última hora previa a la salida inicial, solo se admiten operaciones confirmadas")
         self.assertFalse(Booking.objects.filter(email="lh_fail@test.com").exists())
 
-        # Intento 2: Con comprobante y declaración verificada -> confirmado inmediato
+        # Intento 2: con comprobante del vendedor titular (sin casilla adicional) -> confirmado inmediato
         post_ok = dict(post_fail)
         post_ok["contact_email"] = "lh_ok@test.com"
-        post_ok["payment_verified"] = "1"
         post_ok["voucher"] = self.sample_voucher("comprobante_lh.pdf")
 
         resp2 = self.client.post(create_url, post_ok, secure=True)

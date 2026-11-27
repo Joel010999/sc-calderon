@@ -31,6 +31,20 @@ class DemoScenarioCommandTests(TransactionTestCase):
         self.assertEqual(Booking.objects.filter(email__endswith="@demo.scviajes.invalid").count(), 0)
         self.assertEqual(get_user_model().objects.filter(email__endswith="@demo.scviajes.invalid").count(), 0)
 
+    def test_reset_deletes_bookings_with_accompanied_minors(self):
+        from sales.models import BookingPassenger
+        management.call_command("seed_demo_scenario", stdout=StringIO())
+        booking = Booking.objects.get(email="held@demo.scviajes.invalid")
+        mother = booking.passengers.order_by("position").first()
+        BookingPassenger.objects.create(
+            booking=booking, position=mother.position + 1,
+            first_name="Menor", last_name="Demo",
+            accompanied_by=mother, is_lap_infant=True,
+        )
+        management.call_command("seed_demo_scenario", "--reset", stdout=StringIO())
+        self.assertEqual(BookingPassenger.objects.filter(booking_id=booking.pk).count(), 0)
+        self.assertEqual(Booking.objects.filter(email__endswith="@demo.scviajes.invalid").count(), 0)
+
     def test_seed_covers_acceptance_surfaces(self):
         management.call_command("seed_demo_scenario", stdout=StringIO())
         self.assertEqual(Route.objects.filter(code__startswith="DEMO-20261005-").count(), 2)

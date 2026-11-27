@@ -1,18 +1,19 @@
 """Elegibilidad server-side para butacas prioritarias (51 y 54).
 
-Las butacas 51 y 54 son prioritarias por salida/asiento para personas con
-discapacidad. Mientras no estén definidas las reglas comerciales de
-acreditación, tarifa diferencial y autorización interna, permanecen bloqueadas
-para el circuito general (web y panel) hasta su liberación automática.
+Decisión confirmada por Joel: las butacas 51 y 54 de cada viaje permanecen
+reservadas para personas con discapacidad, cuya solicitud se gestiona por
+correo electrónico, hasta 48 horas exactas antes de la salida del viaje.
+A partir de ese instante se liberan automáticamente para venta general
+(web y panel) si están disponibles según las reglas normales.
 
-La liberación para venta general ocurre dos días calendario antes de la fecha
-local de salida del viaje a las 00:00 en ``America/Argentina/Buenos_Aires``
-(no restando 48 horas). Las reservas o ventas preexistentes conservan su
-ocupante. No se utiliza ``Seat.is_active`` global ni se requiere un worker para
-que la liberación tenga efecto.
+El límite es un instante absoluto (salida menos 48 horas), no una fecha ni
+una medianoche. Las reservas o ventas preexistentes conservan su ocupante:
+la liberación no cancela reservas ni libera asignaciones válidas. No se
+utiliza ``Seat.is_active`` global ni se requiere un worker para que la
+liberación tenga efecto.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from django.utils import timezone
@@ -22,8 +23,8 @@ from .validators import validate_aware_datetime
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 PRIORITY_SEAT_NUMBERS = frozenset({51, 54})
-PRIORITY_RELEASE_DAYS_BEFORE = 2
-PRIORITY_POLICY_ID = "provisional-priority-seats-51-54-until-sandro"
+PRIORITY_RELEASE_HOURS_BEFORE = 48
+PRIORITY_POLICY_ID = "priority-seats-51-54-release-48h-before-departure"
 
 
 def _extract_seat_number(seat_or_number) -> int:
@@ -52,11 +53,9 @@ def is_priority_seat(seat_or_number) -> bool:
 
 
 def priority_seat_release_at(trip_or_departure_at) -> datetime:
-    """Devuelve el instante exacto de liberación (00:00 AR dos días calendario antes de la salida)."""
+    """Devuelve el instante exacto de liberación: la salida del viaje menos 48 horas."""
     departure_at = _extract_departure_at(trip_or_departure_at)
-    local_departure = timezone.localtime(departure_at, AR_TZ)
-    release_date = local_departure.date() - timedelta(days=PRIORITY_RELEASE_DAYS_BEFORE)
-    return datetime.combine(release_date, time.min, tzinfo=AR_TZ)
+    return departure_at - timedelta(hours=PRIORITY_RELEASE_HOURS_BEFORE)
 
 
 def is_priority_seat_released_for_general_sale(trip_or_departure_at, now=None) -> bool:
@@ -64,8 +63,7 @@ def is_priority_seat_released_for_general_sale(trip_or_departure_at, now=None) -
     if now is None:
         now = timezone.now()
     validate_aware_datetime(now)
-    release_at = priority_seat_release_at(trip_or_departure_at)
-    return timezone.localtime(now, AR_TZ) >= release_at
+    return now >= priority_seat_release_at(trip_or_departure_at)
 
 
 def is_seat_blocked_for_general_sale(trip_or_departure_at, seat_or_number, now=None) -> bool:
@@ -83,9 +81,10 @@ def is_seat_eligible_for_general_sale(trip_or_departure_at, seat_or_number, now=
 def validate_seat_eligible_for_general_sale(trip, seat, now=None) -> None:
     """Rechaza la selección en venta general si la butaca prioritaria aún no se liberó."""
     if is_seat_blocked_for_general_sale(trip, seat, now=now):
-        release_local = priority_seat_release_at(trip)
+        release_local = timezone.localtime(priority_seat_release_at(trip), AR_TZ)
         seat_number = _extract_seat_number(seat)
         raise PrioritySeatUnavailableError(
-            f"La butaca {seat_number} es prioritaria para personas con discapacidad y no está "
-            f"disponible para venta general antes del {release_local:%d/%m/%Y} a las 00:00 hs."
+            f"La butaca {seat_number} es prioritaria para personas con discapacidad y se gestiona "
+            f"por correo electrónico hasta 48 horas antes de la salida. Estará disponible para "
+            f"venta general desde el {release_local:%d/%m/%Y} a las {release_local:%H:%M} hs."
         )
