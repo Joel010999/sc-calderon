@@ -87,6 +87,25 @@ servicio** en Railway (antes `null`; Railway no exigía endpoint).
 en `core/health.py` exige backend SMTP + `EMAIL_HOST`; sin SMTP real
 queda not_ready. No se falsea.
 
+### Incidente del healthcheck (27/11) — resuelto
+
+| Deploy | Commit | Resultado | Causa |
+|---|---|---|---|
+| `c09c7e88` | `9d908e5` | FAILED | 1.ª capa: `Invalid HTTP_HOST header: 'healthcheck.railway.app'` |
+| `3398f690` | `9d908e5` | FAILED | 2.ª capa (sin logs porque el redirect corre antes del middleware de logging): probe HTTP interno → `301` por `SECURE_SSL_REDIRECT`, no es 2xx |
+| `5169f3bc` | `83189c0` | **SUCCESS** | ambos corregidos |
+
+Correcciones:
+- `ALLOWED_HOSTS` del servicio += `healthcheck.railway.app`
+  (sin comodín, sin desactivar validación).
+- `SECURE_REDIRECT_EXEMPT = [r"^health/live/$"]` en settings —
+  solo el endpoint de liveness evita el redirect; el resto sigue
+  exigiendo HTTPS. Regresiones incluidas.
+
+Verificado post-fix: healthcheck interno aprobado (deploy SUCCESS),
+`/health/live/` público 200, `/health/ready/` 503 (semántica intacta),
+login admin + descarga de PDF existente + 404 anónimo.
+
 ## Aceptación ejecutada en la URL
 
 | Ítem | Resultado |
